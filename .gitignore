@@ -1,0 +1,9 @@
+*.swp
+*/*.swp
+*/*.swo
+*/out
+target
+Cargo.lock
+.vimsession
+.vim_session
+core
