@@ -2,7 +2,7 @@ use log::trace;
 use ropey::Rope;
 use unicode_width::UnicodeWidthChar;
 
-use std::{cmp, io};
+use std::{cmp, ffi, io};
 
 use crate::{
     config::Config,
@@ -22,6 +22,7 @@ pub enum State {
 #[derive(Clone)]
 pub struct Buffer {
     buf: Rope,
+    file_loc: ffi::OsString,
     state: State,
     cursor: usize, // cursor is char_idx into buffer.
     config: Config,
@@ -38,6 +39,7 @@ impl Default for Buffer {
         let bytes: Vec<u8> = vec![];
         Buffer {
             buf: Rope::from_reader(bytes.as_slice()).unwrap(),
+            file_loc: Default::default(),
             state: State::Normal,
             cursor: 0,
             config: Default::default(),
@@ -53,16 +55,25 @@ impl Buffer {
         let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
         Ok(Buffer {
             buf,
+            file_loc: Default::default(),
             state: State::Normal,
             cursor: 0,
             config,
         })
+    }
+
+    pub fn set_file_loc(&mut self, file_loc: &ffi::OsStr) {
+        self.file_loc = file_loc.to_os_string()
     }
 }
 
 impl Buffer {
     pub fn to_string(&self) -> String {
         self.as_ref().to_string()
+    }
+
+    pub fn to_file_loc(&self) -> ffi::OsString {
+        self.file_loc.clone()
     }
 
     pub fn view_lines(&self, from: usize) -> Vec<String> {
@@ -74,19 +85,19 @@ impl Buffer {
 }
 
 impl Buffer {
-    pub fn handle_event(&mut self, evnt: Event) -> Result<Cursor> {
+    pub fn handle_event(&mut self, evnt: Event) -> Result<Res> {
         match self.state {
             State::Normal => self.handle_normal_event(evnt),
             State::Insert => self.handle_insert_event(evnt),
         }
     }
 
-    fn handle_normal_event(&mut self, evnt: Event) -> Result<Cursor> {
+    fn handle_normal_event(&mut self, evnt: Event) -> Result<Res> {
         let (col_at, row_at) = self.update_cursor(self.cursor);
-        Ok(Cursor::new(col_at, row_at, Some(evnt)))
+        Ok(Res::new(col_at, row_at, Some(evnt)))
     }
 
-    fn handle_insert_event(&mut self, evnt: Event) -> Result<Cursor> {
+    fn handle_insert_event(&mut self, evnt: Event) -> Result<Res> {
         use Event::{BackTab, Backspace, Char, Delete, Down, End, Enter};
         use Event::{Esc, Home, Insert, Left, Noop, PageDown, PageUp};
         use Event::{Right, Tab, Up, F};
@@ -177,7 +188,7 @@ impl Buffer {
             }
         };
 
-        Ok(Cursor::new(col_at, row_at, evnt))
+        Ok(Res::new(col_at, row_at, evnt))
     }
 
     fn update_cursor(&mut self, new_cursor: usize) -> (usize, usize) {
@@ -222,16 +233,16 @@ fn line_last_char(buf: &Rope, cursor: usize) -> usize {
     start_idx + chars.len() - n
 }
 
-pub struct Cursor {
-    pub col_at: usize,
-    pub row_at: usize,
+pub struct Res {
+    pub col_at: usize, // starts from ZERO
+    pub row_at: usize, // starts from ZERO
     pub evnt: Option<Event>,
 }
 
-impl Cursor {
+impl Res {
     #[inline]
-    fn new(col_at: usize, row_at: usize, evnt: Option<Event>) -> Cursor {
-        Cursor {
+    fn new(col_at: usize, row_at: usize, evnt: Option<Event>) -> Res {
+        Res {
             col_at,
             row_at,
             evnt,

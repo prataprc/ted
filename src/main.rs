@@ -2,7 +2,7 @@ use crossterm::{
     self, cursor,
     event::{self as ct_event, Event as TermEvent},
     event::{DisableMouseCapture, EnableMouseCapture},
-    execute,
+    execute, queue,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use dirs;
@@ -16,7 +16,8 @@ use std::{
     path,
 };
 
-use kavi::{err_at, Config, Error, Viewport};
+use kavi::{err_at, util, view_port};
+use kavi::{Buffer, Config, Error, Event, Result, Viewport};
 
 #[derive(Debug, StructOpt)]
 pub struct Opt {
@@ -29,7 +30,7 @@ pub struct Opt {
     #[structopt(long = "trace")]
     trace: bool,
 
-    file: String,
+    files: Vec<String>,
 }
 
 fn main() {
@@ -55,31 +56,78 @@ fn main() {
 struct Application {
     tm: Terminal,
     vp: Viewport,
+    buffers: Vec<Buffer>,
 }
 
 impl Application {
-    pub fn run(opts: &Opt) -> Result<(), String> {
+    pub fn run(opts: &Opt) -> Result<()> {
         let config: Config = Default::default();
         let mut app = {
             let tm = Terminal::init()?;
-            let vp = Viewport::new(0, 0, tm.rows, tm.cols, config).map_err(|e| e.to_string())?;
-            Application { tm, vp }
+            let vp = err_at!(Fatal, Viewport::new(0, 0, tm.rows, tm.cols, config.clone()))?;
+            Application {
+                tm,
+                vp,
+                buffers: Default::default(),
+            }
         };
+        // TODO: for now assume that file has r/w permission
+        for file in opts.files.iter() {
+            let file_loc = util::to_file_loc(file.as_ref())?;
+            let f = {
+                let mut opts = fs::OpenOptions::new();
+                err_at!(Fatal, opts.read(true).write(true).open(&file_loc))?
+            };
+            let mut buffer = Buffer::from_reader(f, config.clone())?;
+            buffer.set_file_loc(&file_loc);
+            app.buffers.push(buffer);
+        }
+
         app.event_loop()
     }
 
-    fn event_loop(mut self) -> Result<(), String> {
+    fn event_loop(mut self) -> Result<()> {
         loop {
-            let evnt: TermEvent = err_at!(Fatal, ct_event::read()).map_err(|e| e.to_string())?;
-            trace!("Event-{:?}", evnt);
-        }
-    }
-}
+            let evnt: TermEvent = err_at!(Fatal, ct_event::read())?;
 
-impl Application {
-    #[inline]
-    pub fn to_viewport(&self) -> Viewport {
-        self.vp.clone()
+            err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
+
+            trace!("Event-{:?}", evnt);
+            let res = err_at!(Fatal, self.vp.handle_event(evnt.clone().into()))?;
+            let (col, row, bevnt) = match res {
+                view_port::Res::Cursor { col, row, evnt } => (col, row, evnt),
+                view_port::Res::Render {
+                    lines,
+                    col,
+                    row,
+                    evnt,
+                } => {
+                    for (col, row, span) in lines {
+                        err_at!(
+                            Fatal,
+                            queue!(self.tm.stdout, cursor::MoveTo(col - 1, row - 1), span)
+                        )?;
+                    }
+                    (col, row, evnt)
+                }
+            };
+
+            err_at!(
+                Fatal,
+                queue!(
+                    self.tm.stdout,
+                    cursor::MoveTo(col - 1, row - 1),
+                    cursor::Show
+                )
+            )?;
+
+            match bevnt {
+                Some(Event::Char('q', m)) if m.is_empty() => break Ok(()),
+                _ => (),
+            }
+
+            err_at!(Fatal, self.tm.stdout.flush())?;
+        }
     }
 }
 
@@ -90,14 +138,9 @@ struct Terminal {
 }
 
 impl Terminal {
-    fn init() -> Result<Terminal, String> {
+    fn init() -> Result<Terminal> {
         let mut stdout = io::stdout();
-        err_at!(
-            //
-            Fatal,
-            terminal::enable_raw_mode()
-        )
-        .map_err(|e| e.to_string())?;
+        err_at!(Fatal, terminal::enable_raw_mode())?;
         err_at!(
             Fatal,
             execute!(
@@ -106,15 +149,9 @@ impl Terminal {
                 EnableMouseCapture,
                 cursor::Hide
             )
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
 
-        let (cols, rows) = err_at!(
-            //
-            Fatal,
-            terminal::size()
-        )
-        .map_err(|e| e.to_string())?;
+        let (cols, rows) = err_at!(Fatal, terminal::size())?;
         Ok(Terminal { stdout, cols, rows })
     }
 }
@@ -132,12 +169,15 @@ impl Drop for Terminal {
     }
 }
 
-fn init_logger(opts: &Opt) -> Result<(), String> {
+fn init_logger(opts: &Opt) -> Result<()> {
     if opts.log_file.is_empty() {
         Ok(())
     } else {
         let log_file: path::PathBuf = [
-            dirs::home_dir().ok_or(format!("can't find home-directory"))?,
+            err_at!(
+                Fatal,
+                dirs::home_dir().ok_or(format!("can't find home-directory"))
+            )?,
             path::Path::new(&opts.log_file).to_path_buf(),
         ]
         .iter()
@@ -160,9 +200,11 @@ fn init_logger(opts: &Opt) -> Result<(), String> {
             .set_time_to_local(true)
             .set_time_format("%Y-%m-%dT%H-%M-%S%.3f".to_string());
 
-        let fs = fs::File::create(&log_file).map_err(|e| e.to_string())?;
-        simplelog::WriteLogger::init(level_filter, config.build(), fs)
-            .map_err(|e| e.to_string())?;
+        let fs = err_at!(Fatal, fs::File::create(&log_file))?;
+        err_at!(
+            Fatal,
+            simplelog::WriteLogger::init(level_filter, config.build(), fs)
+        )?;
 
         Ok(())
     }

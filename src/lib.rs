@@ -1,7 +1,7 @@
 use std::{fmt, result};
 
 #[macro_use]
-mod util;
+pub mod util;
 mod buffer;
 pub mod config;
 pub mod event;
