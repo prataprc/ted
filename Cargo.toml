@@ -11,6 +11,7 @@ name = "kavi"
 path = "src/main.rs"
 
 [dependencies]
+structopt = { version = "*", default-features = false }
 dirs = "2.0.2"
 crossterm = "0.16.0"
 log = { version = "0.4.8", features = ["max_level_trace", "release_max_level_debug"] }

@@ -1,9 +1,19 @@
 use dirs;
-use log::error;
 use simplelog;
+use log::trace;
 use structopt::StructOpt;
+use crossterm::{
+    self,
+    cursor,
+    event::{self as ct_event, Event as TermEvent},
+    event::{DisableMouseCapture, EnableMouseCapture},
+    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+    execute,
+};
 
-use std::{ffi, fs};
+use std::{path, ffi, result, io::{self, Write}, fs};
+
+use kavi::{err_at, Error, view_port::Viewport};
 
 //mod app;
 //mod edit_buffer;
@@ -61,15 +71,92 @@ fn main() {
     //}
 }
 
+struct Application {
+    tm: Terminal,
+    vp: Viewport,
+}
+
+impl Application {
+    pub fn run(dir: &ffi::OsStr) -> Result<(), String> {
+        let mut app = {
+            let tm = Terminal::init()?;
+            let vp = Viewport::new(0, 0, tm.rows, tm.cols);
+            Application { tm, vp }
+        };
+        app.event_loop()
+    }
+
+    fn event_loop(mut self) -> Result<(), String> {
+        loop {
+            let evnt: TermEvent = err_at!(Fatal, ct_event::read())
+                //
+                .map_err(|e| e.to_string())?;
+            trace!("Event-{:?}", evnt);
+        }
+    }
+}
+
+impl Application {
+    #[inline]
+    pub fn to_viewport(&self) -> Viewport {
+        self.vp.clone()
+    }
+}
+
+
+struct Terminal {
+    stdout: io::Stdout,
+    cols: u16,
+    rows: u16,
+}
+
+impl Terminal {
+    fn init() -> Result<Terminal, String> {
+        let mut stdout = io::stdout();
+        err_at!(
+            //
+            Fatal,
+            terminal::enable_raw_mode()).map_err(|e| e.to_string()
+        )?;
+        err_at!(
+            Fatal,
+            execute!(
+                stdout,
+                EnterAlternateScreen,
+                EnableMouseCapture,
+                cursor::Hide
+            )
+        ).map_err(|e| e.to_string())?;
+
+        let (cols, rows) = err_at!(
+            //
+            Fatal, terminal::size()).map_err(|e| e.to_string()
+        )?;
+        Ok(Terminal { stdout, cols, rows })
+    }
+}
+
+impl Drop for Terminal {
+    fn drop(&mut self) {
+        execute!(
+            self.stdout,
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            cursor::Show
+        )
+        .unwrap();
+        terminal::disable_raw_mode().unwrap();
+    }
+}
+
 fn init_logger(opts: &Opt) -> Result<(), String> {
-    if log_file.is_empty() {
+    if opts.log_file.is_empty() {
         Ok(())
     } else {
         let log_file: path::PathBuf = [
-            dirs::home_dir().map_err(|e| e.to_string())?,
-            opts.file
+            dirs::home_dir().ok_or(format!("can't find home-directory"))?,
+            path::Path::new(&opts.log_file).to_path_buf()
         ].iter().collect();
-        let log_file = log_file.into_os_file();
 
         let level_filter = if opts.trace {
             simplelog::LevelFilter::Trace
@@ -94,3 +181,4 @@ fn init_logger(opts: &Opt) -> Result<(), String> {
         Ok(())
     }
 }
+
