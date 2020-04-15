@@ -1,41 +1,29 @@
-use crossterm::event::{KeyCode, KeyModifiers};
 use log::trace;
 use ropey::Rope;
 use unicode_width::UnicodeWidthChar;
 
 use std::{cmp, io};
 
-use crate::event::Event;
-use ledger::{
-    core::{Error, Result},
-    err_at,
+use crate::{
+    config::Config,
+    event::Event,
+    {err_at, Error, Result},
 };
 
 const NEW_LINE_CHAR: char = '\n';
 
-pub struct EditRes {
-    pub col_at: usize,
-    pub row_at: usize,
-    pub evnt: Option<Event>,
+#[derive(Clone)]
+pub enum State {
+    Insert,
+    Normal,
 }
 
-impl EditRes {
-    #[inline]
-    fn new(col_at: usize, row_at: usize, evnt: Option<Event>) -> EditRes {
-        EditRes {
-            col_at,
-            row_at,
-            evnt,
-        }
-    }
-}
-
-// all bits and pieces of content in a layer/page is managed by buffer.
-// cursor is char_idx into buffer.
+// all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
 pub struct Buffer {
     buf: Rope,
-    cursor: usize,
+    state: State,
+    cursor: usize, // cursor is char_idx into buffer.
     config: Config,
 }
 
@@ -50,35 +38,29 @@ impl Default for Buffer {
         let bytes: Vec<u8> = vec![];
         Buffer {
             buf: Rope::from_reader(bytes.as_slice()).unwrap(),
-            cursor: Default::default(),
+            state: State::Normal,
+            cursor: 0,
             config: Default::default(),
         }
     }
 }
 
 impl Buffer {
-    pub fn from_reader<R>(data: R) -> Result<Buffer>
+    pub fn from_reader<R>(data: R, config: Config) -> Result<Buffer>
     where
         R: io::Read,
     {
-        let buf = err_at!(IOError, Rope::from_reader(data))?;
+        let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
         Ok(Buffer {
             buf,
+            state: State::Normal,
             cursor: 0,
-            config: Default::default(),
+            config,
         })
     }
+}
 
-    pub fn empty() -> Result<Buffer> {
-        let bytes: Vec<u8> = vec![];
-        let buf = err_at!(IOError, Rope::from_reader(bytes.as_slice()))?;
-        Ok(Buffer {
-            buf,
-            cursor: 0,
-            config: Default::default(),
-        })
-    }
-
+impl Buffer {
     pub fn to_string(&self) -> String {
         self.as_ref().to_string()
     }
@@ -89,19 +71,31 @@ impl Buffer {
             .map(|s| s.to_string().replace('\t', "    "))
             .collect()
     }
+}
 
-    pub fn handle_event(&mut self, evnt: Event) -> Result<EditRes> {
-        use EditEvent::{BackTab, Backspace, Char, Delete, Down, End, Enter};
-        use EditEvent::{Esc, Home, Insert, Left, Noop, PageDown, PageUp};
-        use EditEvent::{Right, Tab, Up, F};
+impl Buffer {
+    pub fn handle_event(&mut self, evnt: Event) -> Result<Cursor> {
+        match self.state {
+            State::Normal => self.handle_normal_event(evnt),
+            State::Insert => self.handle_insert_event(evnt),
+        }
+    }
 
-        let eevnt: EditEvent = evnt.clone().into();
+    fn handle_normal_event(&mut self, evnt: Event) -> Result<Cursor> {
+        let (col_at, row_at) = self.update_cursor(self.cursor);
+        Ok(Cursor::new(col_at, row_at, Some(evnt)))
+    }
+
+    fn handle_insert_event(&mut self, evnt: Event) -> Result<Cursor> {
+        use Event::{BackTab, Backspace, Char, Delete, Down, End, Enter};
+        use Event::{Esc, Home, Insert, Left, Noop, PageDown, PageUp};
+        use Event::{Right, Tab, Up, F};
+
         let cursr = self.cursor;
-
         let line_idx = self.buf.char_to_line(cursr);
         let start_idx = self.buf.line_to_char(line_idx);
 
-        let ((col_at, row_at), evnt) = match eevnt {
+        let ((col_at, row_at), evnt) = match evnt.clone() {
             Char(ch, _) => {
                 self.buf.insert_char(cursr, ch);
                 (self.update_cursor(cursr + 1), None)
@@ -183,15 +177,9 @@ impl Buffer {
             }
         };
 
-        Ok(EditRes {
-            col_at,
-            row_at,
-            evnt,
-        })
+        Ok(Cursor::new(col_at, row_at, evnt))
     }
-}
 
-impl Buffer {
     fn update_cursor(&mut self, new_cursor: usize) -> (usize, usize) {
         let (col_at, row_at) = {
             let row_at = self.buf.char_to_line(new_cursor);
@@ -234,6 +222,19 @@ fn line_last_char(buf: &Rope, cursor: usize) -> usize {
     start_idx + chars.len() - n
 }
 
-#[cfg(test)]
-#[path = "edit_buffer_test.rs"]
-mod edit_buffer_test;
+pub struct Cursor {
+    pub col_at: usize,
+    pub row_at: usize,
+    pub evnt: Option<Event>,
+}
+
+impl Cursor {
+    #[inline]
+    fn new(col_at: usize, row_at: usize, evnt: Option<Event>) -> Cursor {
+        Cursor {
+            col_at,
+            row_at,
+            evnt,
+        }
+    }
+}

@@ -1,47 +1,26 @@
-use dirs;
-use simplelog;
-use log::trace;
-use structopt::StructOpt;
 use crossterm::{
-    self,
-    cursor,
+    self, cursor,
     event::{self as ct_event, Event as TermEvent},
     event::{DisableMouseCapture, EnableMouseCapture},
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
     execute,
+    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use dirs;
+use log::trace;
+use simplelog;
+use structopt::StructOpt;
+
+use std::{
+    fs,
+    io::{self, Write},
+    path,
 };
 
-use std::{path, ffi, result, io::{self, Write}, fs};
-
-use kavi::{err_at, Error, view_port::Viewport};
-
-//mod app;
-//mod edit_buffer;
-//mod event;
-
-// commands:
-//      blinking, hide, show, enablemousecapture, disablemousecapture, clear, setsize,
-//      resetcolor, setattribute, setattributes, setbackgroundcolor, setforegroundcolor, printstyledcontent, print
-//      movedown, moveup, moveleft, moveright, moveto, movetocolumn, movetonextline, movetopreviousline,
-//      restoreposition, saveposition
-//      enteralternatescreen, leavealternatescreen,
-//      scrolldown, scrollup,
+use kavi::{err_at, Config, Error, Viewport};
 
 #[derive(Debug, StructOpt)]
 pub struct Opt {
-    //#[structopt(long = "seed", default_value = "0")]
-    //seed: u128,
-
-    //#[structopt(long = "plot", default_value = "")]
-    //plot: plot::PlotFiles,
-
-    //#[structopt(long = "ignore-error", help = "Ignore log errors while plotting")]
-    //ignore_error: bool,
-
-    //#[structopt(long = "percentile", default_value = "99")]
-    //percentile: String,
-
-    #[structopt(long = "log", default_value="")]
+    #[structopt(long = "log", default_value = "")]
     log_file: String,
 
     #[structopt(short = "v", long = "verbose")]
@@ -64,11 +43,13 @@ fn main() {
         }
     }
 
-    //let dir: &ffi::OsStr = opts.dir.as_ref();
-    //match app::Application::<db_files::Db>::run(dir) {
-    //    Ok(()) => (),
-    //    Err(err) => error!("{}", err),
-    //}
+    match Application::run(&opts) {
+        Ok(()) => (),
+        Err(err) => {
+            println!("{}", err);
+            std::process::exit(1);
+        }
+    }
 }
 
 struct Application {
@@ -77,10 +58,11 @@ struct Application {
 }
 
 impl Application {
-    pub fn run(dir: &ffi::OsStr) -> Result<(), String> {
+    pub fn run(opts: &Opt) -> Result<(), String> {
+        let config: Config = Default::default();
         let mut app = {
             let tm = Terminal::init()?;
-            let vp = Viewport::new(0, 0, tm.rows, tm.cols);
+            let vp = Viewport::new(0, 0, tm.rows, tm.cols, config).map_err(|e| e.to_string())?;
             Application { tm, vp }
         };
         app.event_loop()
@@ -88,9 +70,7 @@ impl Application {
 
     fn event_loop(mut self) -> Result<(), String> {
         loop {
-            let evnt: TermEvent = err_at!(Fatal, ct_event::read())
-                //
-                .map_err(|e| e.to_string())?;
+            let evnt: TermEvent = err_at!(Fatal, ct_event::read()).map_err(|e| e.to_string())?;
             trace!("Event-{:?}", evnt);
         }
     }
@@ -102,7 +82,6 @@ impl Application {
         self.vp.clone()
     }
 }
-
 
 struct Terminal {
     stdout: io::Stdout,
@@ -116,8 +95,9 @@ impl Terminal {
         err_at!(
             //
             Fatal,
-            terminal::enable_raw_mode()).map_err(|e| e.to_string()
-        )?;
+            terminal::enable_raw_mode()
+        )
+        .map_err(|e| e.to_string())?;
         err_at!(
             Fatal,
             execute!(
@@ -126,12 +106,15 @@ impl Terminal {
                 EnableMouseCapture,
                 cursor::Hide
             )
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
 
         let (cols, rows) = err_at!(
             //
-            Fatal, terminal::size()).map_err(|e| e.to_string()
-        )?;
+            Fatal,
+            terminal::size()
+        )
+        .map_err(|e| e.to_string())?;
         Ok(Terminal { stdout, cols, rows })
     }
 }
@@ -155,8 +138,10 @@ fn init_logger(opts: &Opt) -> Result<(), String> {
     } else {
         let log_file: path::PathBuf = [
             dirs::home_dir().ok_or(format!("can't find home-directory"))?,
-            path::Path::new(&opts.log_file).to_path_buf()
-        ].iter().collect();
+            path::Path::new(&opts.log_file).to_path_buf(),
+        ]
+        .iter()
+        .collect();
 
         let level_filter = if opts.trace {
             simplelog::LevelFilter::Trace
@@ -176,9 +161,9 @@ fn init_logger(opts: &Opt) -> Result<(), String> {
             .set_time_format("%Y-%m-%dT%H-%M-%S%.3f".to_string());
 
         let fs = fs::File::create(&log_file).map_err(|e| e.to_string())?;
-        simplelog::WriteLogger::init(level_filter, config.build(), fs).map_err(|e| e.to_string())?;
+        simplelog::WriteLogger::init(level_filter, config.build(), fs)
+            .map_err(|e| e.to_string())?;
 
         Ok(())
     }
 }
-

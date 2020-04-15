@@ -1,16 +1,28 @@
 use log::trace;
 
-use std::{result, fmt, ops::{self, RangeBounds}, convert::TryInto};
+use std::{
+    convert::TryInto,
+    fmt, io,
+    ops::{self, RangeBounds},
+    result,
+};
 
-#[derive(Clone, Debug, Default)]
+use crate::{Buffer, Config, Event, Result};
+
+#[derive(Clone, Default)]
 pub struct Viewport {
     col: u16,
     row: u16,
     height: u16,
     width: u16,
-    ed_origin: (usize, usize), // absolute (col, row) within buffer, (0,0)
     vp_cursor_off: (u16, u16), // (col-offset, row-offset)
-    scroll_off: u16,
+
+    buffer: Buffer,
+    // absolute (col, row) within buffer inrelation to view-port
+    // origin, starts from (0,0).
+    buf_origin: (usize, usize),
+
+    config: Config,
 }
 
 impl fmt::Display for Viewport {
@@ -25,22 +37,42 @@ impl fmt::Display for Viewport {
 
 impl Viewport {
     #[inline]
-    pub fn new(col: u16, row: u16, height: u16, width: u16) -> Viewport {
-        Viewport {
+    pub fn new(col: u16, row: u16, height: u16, width: u16, config: Config) -> Result<Viewport> {
+        let bytes: Vec<u8> = vec![];
+        Ok(Viewport {
             col,
             row,
             height,
             width,
-            ed_origin: Default::default(),
-            vp_cursor_off: Default::default(),
-            scroll_off: Default::default(),
-        }
+            vp_cursor_off: (0, 0),
+
+            buffer: Buffer::from_reader(bytes.as_slice(), config.clone())?,
+            buf_origin: (0, 0),
+
+            config,
+        })
     }
 
-    #[inline]
-    pub fn set_scroll_off(&mut self, scroll_off: u16) -> &mut Self {
-        self.scroll_off = scroll_off;
-        self
+    pub fn clear(&mut self) -> Result<()> {
+        let bytes: Vec<u8> = vec![];
+        self.buffer = Buffer::from_reader(bytes.as_slice(), self.config.clone())?;
+        self.buf_origin = (0, 0);
+
+        self.vp_cursor_off = (0, 0);
+
+        Ok(())
+    }
+
+    pub fn load<R>(&mut self, data: R) -> Result<()>
+    where
+        R: io::Read,
+    {
+        self.buffer = Buffer::from_reader(data, self.config.clone())?;
+        self.buf_origin = (0, 0);
+
+        self.vp_cursor_off = (0, 0);
+
+        Ok(())
     }
 
     #[inline]
@@ -80,8 +112,8 @@ impl Viewport {
     }
 
     #[inline]
-    pub fn to_ed_origin(&self) -> (usize, usize) {
-        self.ed_origin
+    pub fn to_buf_origin(&self) -> (usize, usize) {
+        self.buf_origin
     }
 
     #[inline]
@@ -119,54 +151,59 @@ impl Viewport {
         (col + coff, row + roff)
     }
 
-    fn to_ed_cursor(&self, ed_origin: (usize, usize)) -> (usize, usize) {
-        let col = ed_origin.0 + (self.vp_cursor_off.0 as usize);
-        let row = ed_origin.1 + (self.vp_cursor_off.1 as usize);
+    fn to_ed_cursor(&self, buf_origin: (usize, usize)) -> (usize, usize) {
+        let col = buf_origin.0 + (self.vp_cursor_off.0 as usize);
+        let row = buf_origin.1 + (self.vp_cursor_off.1 as usize);
         (col, row)
     }
+}
 
-    pub fn apply_ed_cursor(&mut self, ed_cursor: (usize, usize)) {
-        let (cdiff, rdiff) = match (self.to_ed_cursor(self.ed_origin), ed_cursor) {
-            ((old_c, old_r), (new_c, new_r)) => (
-                (new_c as isize) - (old_c as isize),
-                (new_r as isize) - (old_r as isize),
+impl Viewport {
+    fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
+        let cursor = self.buffer.handle_event(evnt)?;
+
+        let (cdiff, rdiff) = match self.to_ed_cursor(self.buf_origin) {
+            (old_c, old_r) => (
+                (cursor.col_at as isize) - (old_c as isize),
+                (cursor.row_at as isize) - (old_r as isize),
             ),
         };
 
         let ccol = ((self.col + self.vp_cursor_off.0) as isize) + cdiff;
         let crow = ((self.row + self.vp_cursor_off.1) as isize) + rdiff;
 
-        let top = (self.to_top() + self.scroll_off) as isize;
-        let bottom = (self.to_bottom() - self.scroll_off) as isize;
+        let top = (self.to_top() + self.config.scroll_off) as isize;
+        let bottom = (self.to_bottom() - self.config.scroll_off) as isize;
 
         let (vp_col, ed_col): (u16, usize) = if ccol < (self.to_left() as isize) {
-            (0, ed_cursor.0)
+            (0, cursor.col_at)
         } else if ccol > (self.to_right() as isize) {
-            (self.width - 1, ed_cursor.0 - (self.width as usize) + 1)
+            (self.width - 1, cursor.col_at - (self.width as usize) + 1)
         } else {
             let new_col: u16 = ccol.try_into().unwrap();
-            (new_col - self.col, self.ed_origin.0)
+            (new_col - self.col, self.buf_origin.0)
         };
         let (vp_row, ed_row): (u16, usize) = if crow < top {
-            (0, ed_cursor.1)
+            (0, cursor.row_at)
         } else if crow > bottom {
-            (self.height - 1, ed_cursor.1 - (self.height as usize) + 1)
+            (self.height - 1, cursor.row_at - (self.height as usize) + 1)
         } else {
             let new_row: u16 = crow.try_into().unwrap();
-            (new_row - self.row, self.ed_origin.1)
+            (new_row - self.row, self.buf_origin.1)
         };
 
         trace!(
-            "ed_cursor:{:?} ed_origin:{:?}->{:?} vp_cursor:{:?}->{:?}",
-            ed_cursor,
-            self.ed_origin,
+            "buf_cursor:{:?} buf_origin:{:?}->{:?} vp_cursor:{:?}->{:?}",
+            (cursor.col_at, cursor.row_at),
+            self.buf_origin,
             (ed_col, ed_row),
             self.vp_cursor_off,
             (vp_col, vp_row)
         );
 
-        self.ed_origin = (ed_col, ed_row);
+        self.buf_origin = (ed_col, ed_row);
         self.vp_cursor_off = (vp_col, vp_row);
+
+        Ok(cursor.evnt)
     }
 }
-
