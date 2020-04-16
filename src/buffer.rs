@@ -1,12 +1,15 @@
+use lazy_static::lazy_static;
 use log::trace;
 use ropey::{self, Rope};
 use unicode_width::UnicodeWidthChar;
 
 use std::{
     cell::{self, RefCell},
-    cmp, ffi, io,
+    cmp, ffi, fmt, io,
     ops::{Bound, RangeBounds},
     rc::{self, Rc},
+    result,
+    sync::Mutex,
 };
 
 use crate::{
@@ -17,16 +20,57 @@ use crate::{
 
 const NEW_LINE_CHAR: char = '\n';
 
+// Buffer state.
 #[derive(Clone)]
 pub enum State {
-    Insert,
     Normal,
+}
+
+// Location of buffer's content, typically a persistent medium.
+#[derive(Clone)]
+pub enum Location {
+    Anonymous(String),
+    Disk(ffi::OsString),
+}
+
+lazy_static! {
+    static ref ANONYMOUS_COUNT: Mutex<usize> = Mutex::new(0);
+}
+
+impl Location {
+    fn new_anonymous() -> Location {
+        let mut count = ANONYMOUS_COUNT.lock().unwrap();
+        *count = *count + 1;
+        Location::Anonymous(format!("anonymous-{}", count))
+    }
+
+    fn new_disk(loc: &ffi::OsStr) -> Location {
+        Location::Disk(loc.to_os_string())
+    }
+}
+
+impl Default for Location {
+    fn default() -> Location {
+        Location::new_anonymous()
+    }
+}
+
+impl fmt::Display for Location {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Location::Anonymous(s) => write!(f, "{}", s),
+            Location::Disk(s) => {
+                let s = s.clone().into_string().unwrap();
+                write!(f, "{}", s)
+            }
+        }
+    }
 }
 
 // all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
 pub struct Buffer {
-    file_loc: ffi::OsString,
+    location: Location,
     config: Config,
 
     state: State,
@@ -37,7 +81,7 @@ pub struct Buffer {
 impl Default for Buffer {
     fn default() -> Buffer {
         Buffer {
-            file_loc: Default::default(),
+            location: Default::default(),
             config: Default::default(),
 
             state: State::Normal,
@@ -54,7 +98,7 @@ impl Buffer {
     {
         let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
         Ok(Buffer {
-            file_loc: Default::default(),
+            location: Default::default(),
             config,
 
             state: State::Normal,
@@ -63,8 +107,13 @@ impl Buffer {
         })
     }
 
-    pub fn set_file_loc(&mut self, file_loc: &ffi::OsStr) -> &mut Self {
-        self.file_loc = file_loc.to_os_string();
+    pub fn empty(config: Config) -> Result<Buffer> {
+        let buf = vec![];
+        Self::from_reader(buf.as_slice(), config)
+    }
+
+    pub fn set_location(&mut self, loc: Location) -> &mut Self {
+        self.location = loc;
         self
     }
 
@@ -79,8 +128,8 @@ impl Buffer {
         self.as_change().as_ref().to_string()
     }
 
-    pub fn to_file_loc(&self) -> ffi::OsString {
-        self.file_loc.clone()
+    pub fn to_location(&self) -> Location {
+        self.location.clone()
     }
 
     fn as_change(&self) -> cell::Ref<Change> {
@@ -138,7 +187,7 @@ impl Buffer {
     pub fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
         match self.state {
             State::Normal => self.handle_normal_event(evnt),
-            State::Insert => self.handle_insert_event(evnt),
+            //State::Insert => self.handle_insert_event(evnt),
         }
     }
 

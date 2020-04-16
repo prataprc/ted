@@ -6,7 +6,6 @@ pub mod buffer;
 pub mod config;
 pub mod event;
 pub mod file_window;
-pub mod nbuffers;
 pub mod window;
 
 pub use buffer::Buffer;
@@ -24,8 +23,8 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
-            Error::Fatal(msg) => write!(f, "Fatal:{}", msg),
-            Error::FailBuffer(msg) => write!(f, "FailBuffer:{}", msg),
+            Error::Fatal(msg) => write!(f, "Fatal: {}", msg),
+            Error::FailBuffer(msg) => write!(f, "FailBuffer: {}", msg),
         }
     }
 }

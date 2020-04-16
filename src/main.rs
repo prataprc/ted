@@ -19,10 +19,8 @@ use std::{
     path,
 };
 
-use kavi::err_at;
-use kavi::file_window::FileWindow;
-use kavi::nbuffers::AnonymousBuffers;
 use kavi::window::{Coord, Render};
+use kavi::{err_at, file_window::FileWindow};
 use kavi::{Buffer, Config, Error, Event, Result, Window};
 
 #[derive(Debug, StructOpt)]
@@ -56,17 +54,19 @@ fn main() {
             panic_info.payload().downcast_ref::<String>().unwrap()
         );
         s.push_str(&format!("{}", std::backtrace::Backtrace::capture()));
-        fs::write("kavi-panic.out", s.as_bytes());
+        fs::write("kavi-panic.out", s.as_bytes()).unwrap();
     });
-    Application::run(opts);
+
+    match Application::run(opts) {
+        Ok(_) => (),
+        Err(err) => println!("{}", err),
+    }
 }
 
 struct Application {
     tm: Terminal,
     window: Box<dyn Window>,
     buffers: Vec<Buffer>,
-
-    anonymous_buffers: AnonymousBuffers,
 }
 
 impl Application {
@@ -75,11 +75,11 @@ impl Application {
         let mut app = {
             let tm = Terminal::init()?;
             let coord = Coord::new(1, 1, tm.rows, tm.cols);
+            let w = err_at!(Fatal, FileWindow::new(coord, config.clone()))?;
             Application {
                 tm,
-                window: Box::new(err_at!(Fatal, FileWindow::new(coord, config.clone()))?),
+                window: Box::new(w),
                 buffers: Default::default(),
-                anonymous_buffers: AnonymousBuffers::new(),
             }
         };
 
@@ -95,8 +95,11 @@ impl Application {
         //    app.buffers.push(buffer);
         //}
 
-        let buffer = app.anonymous_buffers.to_new_buffer(config.clone())?;
-        app.buffers.push(buffer);
+        app.buffers.push({
+            let mut b = Buffer::empty(config)?;
+            b.set_location(Default::default());
+            b
+        });
 
         app.event_loop()
     }
