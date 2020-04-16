@@ -5,7 +5,7 @@ use std::{
     convert::TryInto,
     fmt, io,
     iter::FromIterator,
-    ops::{self, RangeBounds},
+    ops::{self, Bound, RangeBounds},
     result,
 };
 
@@ -239,8 +239,10 @@ impl Viewport {
         let mut items = vec![];
         for (i, line) in self
             .buffer
-            .view_lines(buf_row)
-            .into_iter()
+            .iter_lines(
+                Bound::Included(buf_row),
+                Bound::Included(buf_row + (height as usize)),
+            )
             .enumerate()
             .take(height as usize)
         {
