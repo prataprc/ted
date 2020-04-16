@@ -16,8 +16,8 @@ use std::{
     path,
 };
 
-use kavi::{err_at, util, view_port};
-use kavi::{Buffer, Config, Error, Event, Result, Viewport};
+use kavi::{err_at, util, window};
+use kavi::{Buffer, Config, Error, Event, Result, Window};
 
 #[derive(Debug, StructOpt)]
 pub struct Opt {
@@ -55,7 +55,7 @@ fn main() {
 
 struct Application {
     tm: Terminal,
-    vp: Viewport,
+    w: Window,
     buffers: Vec<Buffer>,
 }
 
@@ -64,10 +64,10 @@ impl Application {
         let config: Config = Default::default();
         let mut app = {
             let tm = Terminal::init()?;
-            let vp = err_at!(Fatal, Viewport::new(0, 0, tm.rows, tm.cols, config.clone()))?;
+            let w = err_at!(Fatal, Window::new(0, 0, tm.rows, tm.cols, config.clone()))?;
             Application {
                 tm,
-                vp,
+                w,
                 buffers: Default::default(),
             }
         };
@@ -93,10 +93,10 @@ impl Application {
             err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
 
             trace!("Event-{:?}", evnt);
-            let res = err_at!(Fatal, self.vp.handle_event(evnt.clone().into()))?;
+            let res = err_at!(Fatal, self.w.handle_event(evnt.clone().into()))?;
             let (col, row, bevnt) = match res {
-                view_port::Res::Cursor { col, row, evnt } => (col, row, evnt),
-                view_port::Res::Render {
+                window::Res::Cursor { col, row, evnt } => (col, row, evnt),
+                window::Res::Render {
                     lines,
                     col,
                     row,

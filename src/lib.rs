@@ -5,12 +5,12 @@ pub mod util;
 mod buffer;
 pub mod config;
 pub mod event;
-pub mod view_port;
+pub mod window;
 
 pub use buffer::Buffer;
 pub use config::Config;
 pub use event::Event;
-pub use view_port::Viewport;
+pub use window::Window;
 
 pub type Result<T> = result::Result<T, Error>;
 
