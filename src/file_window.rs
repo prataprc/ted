@@ -1,13 +1,21 @@
+use crossterm::{cursor, queue};
 use log::trace;
 
-use std::{convert::TryInto, fmt, iter::FromIterator, ops::Bound, result};
+use std::{
+    convert::TryInto,
+    fmt,
+    io::{self, Write},
+    iter::FromIterator,
+    ops::Bound,
+    result,
+};
 
 use crate::{
     buffer::Buffer,
     config::Config,
     event::Event,
-    window::{Coord, Cursor, Render, Span, Window},
-    Result,
+    window::{Coord, Cursor, Span, Window},
+    Error, Result,
 };
 
 //
@@ -85,12 +93,6 @@ impl FileWindow {
         self.bw_coord.col
     }
 
-    #[inline]
-    fn to_cursor(&self) -> (u16, u16) {
-        let (col, row) = self.bw_coord.to_origin();
-        (col + self.bw_cursor.col, row + self.bw_cursor.row)
-    }
-
     fn is_top_margin(&self) -> bool {
         match self.to_origin() {
             (_, 1) => false,
@@ -144,6 +146,155 @@ impl FileWindow {
         };
         Coord::new(col, row, hgt, wth)
     }
+
+    fn refresh_once(&mut self, buffer: &mut Buffer) -> Result<()> {
+        let (nboc, nbor) = buffer.visual_cursor();
+
+        self.bw_coord = self.refresh_bw_coord(buffer);
+        self.bw_cursor = Cursor::new(0, 0);
+        self.buf_origin = Some((0, 0));
+        buffer.set_cursor(0);
+
+        trace!(
+            "buf_cursor:{:?} buf_origin:X->{:?} vp_cursor:X->{:?}",
+            (nboc, nbor),
+            self.buf_origin,
+            (self.bw_cursor.col, self.bw_cursor.row)
+        );
+
+        let mut stdout = io::stdout();
+        let (mut col, mut row) = {
+            let (c, r) = self.w_coord.to_origin();
+            (c - 1, r - 1)
+        };
+
+        if self.is_top_margin() {
+            let span = Span::new(String::from_iter(
+                std::iter::repeat(self.config.top_margin_char)
+                    .take(self.w_coord.to_origin().0 as usize),
+            ));
+            err_at!(Fatal, queue!(stdout, cursor::MoveTo(col, row), span))?;
+            col += 1;
+            row += 1;
+        }
+
+        let (from, to) = {
+            let from = Bound::Included(0);
+            let to = Bound::Included((self.bw_coord.hgt - 1) as usize);
+            (from, to)
+        };
+        for (line_no, line) in buffer.iter_lines(from, to) {
+            let mut l: String = Default::default();
+            if self.is_left_margin() {
+                l.push(self.config.left_margin_char);
+            }
+            if self.config.line_number {
+                l.push_str(&line_no.to_string());
+            }
+            l.push_str(&line);
+            err_at!(
+                Fatal,
+                queue!(stdout, cursor::MoveTo(col, row), Span::new(l))
+            )?;
+            col += 1;
+            row += 1;
+        }
+
+        Ok(())
+    }
+
+    fn refresh_again(&mut self, buffer: &mut Buffer) -> Result<()> {
+        let (nboc, nbor) = buffer.visual_cursor();
+
+        let (b_o_c, b_o_r) = self.buf_origin.unwrap();
+        let Cursor { col, row } = self.bw_cursor;
+        let (cdiff, rdiff) = {
+            // calculate the old cursor point into the buffer.
+            let (old_cc, old_cr) = (
+                (b_o_c as isize) + (col as isize),
+                (b_o_r as isize) + (row as isize),
+            );
+            // new cursor point into the buffer.
+            let (new_cc, new_cr) = ((nboc as isize), (nbor as isize));
+
+            (new_cc - old_cc, new_cr - old_cr)
+        };
+
+        let (ccol, crow) = {
+            let Cursor { col: c, row: r } = self.to_cursor(); // abslut (col, row)
+            (((c as isize) + cdiff), ((r as isize) + rdiff))
+        };
+
+        // update the buffer-window coordinates.
+        self.bw_coord = self.refresh_bw_coord(buffer);
+
+        let t = (self.to_bw_top() + self.config.scroll_off) as isize;
+        let r = self.to_bw_right() as isize;
+        let b = (self.to_bw_bottom() - self.config.scroll_off) as isize;
+        let l = self.to_bw_left() as isize;
+
+        let (col, row) = self.bw_coord.to_origin();
+        let (height, width) = self.bw_coord.to_size();
+
+        let (ccol, oc): (u16, usize) = if ccol < l {
+            (0, nboc)
+        } else if ccol > r {
+            (width - 1, nboc - (width as usize) + 1)
+        } else {
+            let new_col: u16 = ccol.try_into().unwrap();
+            (new_col - col, b_o_c)
+        };
+
+        let (crow, or): (u16, usize) = if crow < t {
+            (0, nbor)
+        } else if crow > b {
+            (height - 1, nbor - (height as usize) + 1)
+        } else {
+            let new_row: u16 = crow.try_into().unwrap();
+            (new_row - row, b_o_r)
+        };
+
+        trace!(
+            "buf_cursor:{:?} buf_origin:{:?}->{:?} vp_cursor:{:?}->{:?}",
+            (nboc, nbor),
+            self.buf_origin,
+            (oc, or),
+            self.bw_cursor,
+            (ccol, crow)
+        );
+
+        self.buf_origin = Some((oc, or));
+        self.bw_cursor = Cursor::new(ccol, crow);
+
+        let mut stdout = io::stdout();
+        let (mut col, mut row) = {
+            let (c, r) = self.w_coord.to_origin();
+            (c - 1, r - 1)
+        };
+
+        let (from, to) = (
+            Bound::Included(or),
+            Bound::Included(or + (self.bw_coord.hgt as usize) - 1),
+        );
+        for (line_no, line) in buffer.iter_lines(from, to) {
+            let mut l: String = Default::default();
+            if self.is_left_margin() {
+                l.push(self.config.left_margin_char);
+            }
+            if self.config.line_number {
+                l.push_str(&line_no.to_string());
+            }
+            l.push_str(&line);
+            err_at!(
+                Fatal,
+                queue!(stdout, cursor::MoveTo(col, row), Span::new(l))
+            )?;
+            col += 1;
+            row += 1;
+        }
+
+        Ok(())
+    }
 }
 
 impl Window for FileWindow {
@@ -152,141 +303,25 @@ impl Window for FileWindow {
         self.w_coord.to_origin()
     }
 
-    fn refresh(&mut self, buffer: &mut Buffer) -> Result<Render> {
-        let (nboc, nbor) = buffer.visual_cursor();
+    #[inline]
+    fn to_cursor(&self) -> Cursor {
+        let (col, row) = self.bw_coord.to_origin();
+        Cursor::new(col + self.bw_cursor.col, row + self.bw_cursor.row)
+    }
 
-        match (self.buf_origin, self.bw_cursor) {
-            (Some((b_o_c, b_o_r)), Cursor { col, row }) => {
-                let (cdiff, rdiff) = {
-                    // calculate the old cursor point into the buffer.
-                    let (old_cc, old_cr) = (
-                        (b_o_c as isize) + (col as isize),
-                        (b_o_r as isize) + (row as isize),
-                    );
-                    // new cursor point into the buffer.
-                    let (new_cc, new_cr) = ((nboc as isize), (nbor as isize));
-
-                    (new_cc - old_cc, new_cr - old_cr)
-                };
-
-                let (ccol, crow) = {
-                    let (c, r) = self.to_cursor(); // absolute (col, row)
-                    (((c as isize) + cdiff), ((r as isize) + rdiff))
-                };
-
-                // update the buffer-window coordinates.
-                self.bw_coord = self.refresh_bw_coord(buffer);
-
-                let t = (self.to_bw_top() + self.config.scroll_off) as isize;
-                let r = self.to_bw_right() as isize;
-                let b = (self.to_bw_bottom() - self.config.scroll_off) as isize;
-                let l = self.to_bw_left() as isize;
-
-                let (col, row) = self.bw_coord.to_origin();
-                let (height, width) = self.bw_coord.to_size();
-
-                let (ccol, oc): (u16, usize) = if ccol < l {
-                    (0, nboc)
-                } else if ccol > r {
-                    (width - 1, nboc - (width as usize) + 1)
-                } else {
-                    let new_col: u16 = ccol.try_into().unwrap();
-                    (new_col - col, b_o_c)
-                };
-
-                let (crow, or): (u16, usize) = if crow < t {
-                    (0, nbor)
-                } else if crow > b {
-                    (height - 1, nbor - (height as usize) + 1)
-                } else {
-                    let new_row: u16 = crow.try_into().unwrap();
-                    (new_row - row, b_o_r)
-                };
-
-                trace!(
-                    "buf_cursor:{:?} buf_origin:{:?}->{:?} vp_cursor:{:?}->{:?}",
-                    (nboc, nbor),
-                    self.buf_origin,
-                    (oc, or),
-                    self.bw_cursor,
-                    (ccol, crow)
-                );
-
-                self.buf_origin = Some((oc, or));
-                self.bw_cursor = Cursor::new(ccol, crow);
-
-                let (from, to) = (
-                    Bound::Included(or),
-                    Bound::Included(or + (self.bw_coord.hgt as usize) - 1),
-                );
-
-                let mut lines = vec![];
-                for (line_no, line) in buffer.iter_lines(from, to) {
-                    let mut l: String = Default::default();
-                    if self.is_left_margin() {
-                        l.push(self.config.left_margin_char);
-                    }
-                    if self.config.line_number {
-                        l.push_str(&line_no.to_string());
-                    }
-                    l.push_str(&line);
-                    lines.push(Span::new(l));
-                }
-                Ok(Render {
-                    lines: Some(Box::new(lines.into_iter())),
-                    cursor: Some(self.to_cursor().into()),
-                })
-            }
-            (None, _) => {
-                // initial case
-                self.bw_coord = self.refresh_bw_coord(buffer);
-                self.bw_cursor = Cursor::new(0, 0);
-                self.buf_origin = Some((0, 0));
-                buffer.set_cursor(0);
-
-                trace!(
-                    "buf_cursor:{:?} buf_origin:X->{:?} vp_cursor:X->{:?}",
-                    (nboc, nbor),
-                    self.buf_origin,
-                    (self.bw_cursor.col, self.bw_cursor.row)
-                );
-
-                let (from, to) = {
-                    let from = Bound::Included(0);
-                    let to = Bound::Included((self.bw_coord.hgt - 1) as usize);
-                    (from, to)
-                };
-
-                let mut lines = if self.is_top_margin() {
-                    let col = self.w_coord.to_origin().0 as usize;
-                    vec![Span::new(String::from_iter(
-                        std::iter::repeat(self.config.top_margin_char).take(col),
-                    ))]
-                } else {
-                    vec![]
-                };
-
-                for (line_no, line) in buffer.iter_lines(from, to) {
-                    let mut l: String = Default::default();
-                    if self.is_left_margin() {
-                        l.push(self.config.left_margin_char);
-                    }
-                    if self.config.line_number {
-                        l.push_str(&line_no.to_string());
-                    }
-                    l.push_str(&line);
-                    lines.push(Span::new(l))
-                }
-
-                Ok(Render {
-                    lines: Some(Box::new(lines.into_iter())),
-                    cursor: Some(self.to_cursor().into()),
-                })
-            }
+    fn refresh(&mut self, buffer: &mut Buffer) -> Result<()> {
+        match &self.buf_origin {
+            Some(_) => self.refresh_again(buffer),
+            None => self.refresh_once(buffer),
         }
     }
 
-    fn handle_event(&mut self, buffer: &mut Buffer, evnt: Event) -> Result<Option<Event>> {
+    fn handle_event(
+        //
+        &mut self,
+        buffer: &mut Buffer,
+        evnt: Event,
+    ) -> Result<Option<Event>> {
         buffer.handle_event(evnt)
     }
 }

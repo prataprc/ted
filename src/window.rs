@@ -7,9 +7,11 @@ use crate::{Buffer, Event, Result};
 pub trait Window {
     fn to_origin(&self) -> (u16, u16);
 
+    fn to_cursor(&self) -> Cursor;
+
     fn handle_event(&mut self, buffer: &mut Buffer, evnt: Event) -> Result<Option<Event>>;
 
-    fn refresh(&mut self, buffer: &mut Buffer) -> Result<Render>;
+    fn refresh(&mut self, buffer: &mut Buffer) -> Result<()>;
 }
 
 // Terminal coordinates, describes the four corners of a window.

@@ -24,6 +24,7 @@ const NEW_LINE_CHAR: char = '\n';
 #[derive(Clone)]
 pub enum State {
     Normal,
+    Insert,
 }
 
 // Location of buffer's content, typically a persistent medium.
@@ -187,7 +188,7 @@ impl Buffer {
     pub fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
         match self.state {
             State::Normal => self.handle_normal_event(evnt),
-            //State::Insert => self.handle_insert_event(evnt),
+            State::Insert => self.handle_insert_event(evnt),
         }
     }
 

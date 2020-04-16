@@ -19,9 +19,12 @@ use std::{
     path,
 };
 
-use kavi::window::{Coord, Render};
-use kavi::{err_at, file_window::FileWindow};
-use kavi::{Buffer, Config, Error, Event, Result, Window};
+use kavi::{
+    err_at,
+    file_window::FileWindow,
+    window::{Coord, Cursor},
+    Buffer, Config, Error, Event, Result, Window,
+};
 
 #[derive(Debug, StructOpt)]
 pub struct Opt {
@@ -113,25 +116,14 @@ impl Application {
             err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
 
             let mut b = self.buffers.remove(0);
-            let evnt = err_at!(Fatal, self.window.handle_event(&mut b, evnt))?;
-            let Render { lines, cursor: _ } = err_at!(Fatal, self.window.refresh(&mut b))?;
-            let (col, row) = self.window.to_origin();
-            match lines {
-                Some(lines) => {
-                    for (i, span) in lines.enumerate() {
-                        err_at!(
-                            Fatal,
-                            queue!(
-                                self.tm.stdout,
-                                cursor::MoveTo(col - 1, row - 1 + (i as u16)),
-                                span
-                            )
-                        )?;
-                    }
-                }
-                None => (),
+            match err_at!(Fatal, self.window.handle_event(&mut b, evnt))? {
+                Some(Event::Char('q', m)) if m.is_empty() => break Ok(()),
+                _ => (),
             }
+            err_at!(Fatal, self.window.refresh(&mut b))?;
+            self.buffers.insert(0, b);
 
+            let Cursor { col, row } = self.window.to_cursor();
             err_at!(
                 Fatal,
                 queue!(
@@ -140,11 +132,6 @@ impl Application {
                     cursor::Show
                 )
             )?;
-
-            match evnt {
-                Some(Event::Char('q', m)) if m.is_empty() => break Ok(()),
-                _ => (),
-            }
 
             err_at!(Fatal, self.tm.stdout.flush())?;
         }
