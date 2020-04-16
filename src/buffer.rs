@@ -418,12 +418,12 @@ impl<'a> Iterator for TabfixIter<'a> {
         let n_lines = r.len_lines();
         match (self.from, self.to) {
             (Bound::Included(from), Bound::Unbounded) if from < n_lines => {
-                self.from = Bound::Included(from + 1);
                 // TODO: can this replace be made in-place
+                self.from = Bound::Included(from + 1);
                 let l = r.line(from).to_string().replace('\t', &self.tabstop);
                 Some((from + 1, l))
             }
-            (Bound::Included(from), Bound::Included(to)) if from <= to => {
+            (Bound::Included(from), Bound::Included(to)) if from < n_lines && from <= to => {
                 self.from = Bound::Included(from + 1);
                 // TODO: can this replace be made in-place
                 let l = r.line(from).to_string().replace('\t', &self.tabstop);

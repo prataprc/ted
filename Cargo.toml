@@ -18,3 +18,9 @@ dirs = "2.0.2"
 crossterm = "0.16.0"
 log = { version = "0.4.8", features = ["max_level_trace", "release_max_level_debug"] }
 simplelog = "0.7.5"
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"

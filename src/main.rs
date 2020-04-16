@@ -1,3 +1,6 @@
+#![feature(backtrace)]
+#![feature(box_syntax)]
+
 use crossterm::{
     self, cursor,
     event::{self as ct_event, Event as TermEvent},
@@ -47,13 +50,15 @@ fn main() {
         }
     }
 
-    match Application::run(&opts) {
-        Ok(()) => (),
-        Err(err) => {
-            println!("{}", err);
-            std::process::exit(1);
-        }
-    }
+    std::panic::set_hook(box |panic_info| {
+        let mut s = format!(
+            "panic occured: {:?}",
+            panic_info.payload().downcast_ref::<String>().unwrap()
+        );
+        s.push_str(&format!("{}", std::backtrace::Backtrace::capture()));
+        fs::write("kavi-panic.out", s.as_bytes());
+    });
+    Application::run(opts);
 }
 
 struct Application {
@@ -65,7 +70,7 @@ struct Application {
 }
 
 impl Application {
-    pub fn run(_opts: &Opt) -> Result<()> {
+    pub fn run(_opts: Opt) -> Result<()> {
         let config: Config = Default::default();
         let mut app = {
             let tm = Terminal::init()?;
