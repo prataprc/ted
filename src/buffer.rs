@@ -30,7 +30,7 @@ pub struct Buffer {
     config: Config,
 
     state: State,
-    change: Rc<RefCell<RopeOuter>>,
+    change: Rc<RefCell<Change>>,
     cursor: usize, // cursor is char_idx into buffer, where next insert happens.
 }
 
@@ -58,7 +58,7 @@ impl Buffer {
             config,
 
             state: State::Normal,
-            change: Rc::new(RefCell::new(buf.into())),
+            change: Change::start(buf),
             cursor: 0,
         })
     }
@@ -70,18 +70,18 @@ impl Buffer {
 
 impl Buffer {
     pub fn to_string(&self) -> String {
-        self.as_orope().as_ref().to_string()
+        self.as_change().as_ref().to_string()
     }
 
     pub fn to_file_loc(&self) -> ffi::OsString {
         self.file_loc.clone()
     }
 
-    fn as_orope(&self) -> cell::Ref<RopeOuter> {
+    fn as_change(&self) -> cell::Ref<Change> {
         self.change.as_ref().borrow()
     }
 
-    fn as_mut_orope(&mut self) -> cell::RefMut<RopeOuter> {
+    fn as_mut_change(&mut self) -> cell::RefMut<Change> {
         self.change.as_ref().borrow_mut()
     }
 
@@ -91,11 +91,16 @@ impl Buffer {
         to: Bound<usize>,
     ) -> impl Iterator<Item = String> + 'a {
         TabfixIter {
-            orope: self.as_orope(),
+            change: self.as_change(),
             from,
             to,
             tabstop: self.config.tabstop.clone(),
         }
+    }
+
+    pub fn change_lines<'a>(&'a self) -> impl Iterator<Item = String> + 'a {
+        let (from, to) = self.as_change().change_at;
+        self.iter_lines(from, to)
     }
 }
 
@@ -118,28 +123,31 @@ impl Buffer {
         use Event::{Right, Tab, Up, F};
 
         let cursr = self.cursor;
-        let line_idx = self.as_orope().char_to_line(cursr);
-        let start_idx = self.as_orope().line_to_char(line_idx);
+        let line_idx = self.as_change().char_to_line(cursr);
+        let start_idx = self.as_change().line_to_char(line_idx);
 
         let ((col_at, row_at), evnt) = match evnt.clone() {
             Char(ch, _) => {
-                self.as_mut_orope().insert_char(cursr, ch);
+                self.change = Change::to_next_change(&mut self.change);
+                self.as_mut_change().insert_char(cursr, ch);
                 (self.update_cursor(cursr + 1), None)
             }
             Backspace if cursr == 0 => ((0, 0), None),
             Backspace => {
                 let new_cursor = cursr - 1;
-                self.as_mut_orope().remove(new_cursor..cursr);
+                self.change = Change::to_next_change(&mut self.change);
+                self.as_mut_change().remove(new_cursor..cursr);
                 (self.update_cursor(new_cursor), None)
             }
             Enter => {
-                self.as_mut_orope().insert_char(cursr, NEW_LINE_CHAR);
+                self.change = Change::to_next_change(&mut self.change);
+                self.as_mut_change().insert_char(cursr, NEW_LINE_CHAR);
                 (self.update_cursor(cursr + 1), None)
             }
             Left if start_idx == cursr => (self.update_cursor(cursr), None),
             Left => (self.update_cursor(cursr - 1), None),
             Right => {
-                if line_last_char(self.as_orope().as_ref(), cursr) == cursr {
+                if line_last_char(self.as_change().as_ref(), cursr) == cursr {
                     (self.update_cursor(cursr), None)
                 } else {
                     (self.update_cursor(cursr + 1), None)
@@ -148,8 +156,8 @@ impl Buffer {
             Up if cursr == 0 => (self.update_cursor(cursr), None),
             Up => {
                 let (prev_line, cur_line) = {
-                    let orope = self.as_orope();
-                    let mut lines = orope.lines_at(line_idx);
+                    let change = self.as_change();
+                    let mut lines = change.lines_at(line_idx);
                     (
                         lines.prev().map(|x| x.to_string()),
                         lines.next().map(|x| x.to_string()),
@@ -163,7 +171,7 @@ impl Buffer {
                             pline.chars().collect::<Vec<char>>().len() - 1,
                             cursr - start_idx,
                         );
-                        let new_cursor = self.as_orope().line_to_char(row_at);
+                        let new_cursor = self.as_change().line_to_char(row_at);
                         (self.update_cursor(new_cursor + col_at), None)
                     }
                     _ => err_at!(Fatal, msg: format!("unreachable"))?,
@@ -171,8 +179,8 @@ impl Buffer {
             }
             Down => {
                 let (cur_line, next_line) = {
-                    let orope = self.as_orope();
-                    let mut lines = orope.lines_at(line_idx);
+                    let change = self.as_change();
+                    let mut lines = change.lines_at(line_idx);
                     (
                         lines.next().map(|x| x.to_string()),
                         lines.next().map(|x| x.to_string()),
@@ -189,23 +197,25 @@ impl Buffer {
                         } else {
                             0
                         };
-                        let new_cursor = self.as_orope().line_to_char(row_at);
+                        let new_cursor = self.as_change().line_to_char(row_at);
                         (self.update_cursor(new_cursor + col_at), None)
                     }
                 }
             }
             Home => (self.update_cursor(start_idx), None),
             End => {
-                let new_cursor = line_last_char(self.as_orope().as_ref(), cursr);
+                let new_cursor = line_last_char(self.as_change().as_ref(), cursr);
                 (self.update_cursor(new_cursor), None)
             }
             Tab => {
-                self.as_mut_orope().insert_char(cursr, '\t');
+                self.change = Change::to_next_change(&mut self.change);
+                self.as_mut_change().insert_char(cursr, '\t');
                 (self.update_cursor(cursr + 1), None)
             }
             Delete => {
-                if cursr < line_last_char(self.as_orope().as_ref(), cursr) {
-                    self.as_mut_orope().remove(cursr..(cursr + 1));
+                if cursr < line_last_char(self.as_change().as_ref(), cursr) {
+                    self.change = Change::to_next_change(&mut self.change);
+                    self.as_mut_change().remove(cursr..(cursr + 1));
                 }
                 (self.update_cursor(cursr), None)
             }
@@ -219,9 +229,9 @@ impl Buffer {
 
     fn update_cursor(&mut self, new_cursor: usize) -> (usize, usize) {
         let (col_at, row_at) = {
-            let row_at = self.as_orope().char_to_line(new_cursor);
-            let col_at = new_cursor - self.as_orope().line_to_char(row_at);
-            match self.as_orope().lines_at(row_at).next() {
+            let row_at = self.as_change().char_to_line(new_cursor);
+            let col_at = new_cursor - self.as_change().line_to_char(row_at);
+            match self.as_change().lines_at(row_at).next() {
                 Some(line) => {
                     let a_col_at: usize = line
                         .to_string()
@@ -277,64 +287,82 @@ impl Res {
 }
 
 #[derive(Clone)]
-struct RopeOuter {
+struct Change {
     buf: Rope,
-    change_lines: (usize, usize), // (from, to) inclusive
-    parent: Option<rc::Weak<RefCell<RopeOuter>>>,
-    children: Vec<Rc<RefCell<RopeOuter>>>,
+    change_at: (Bound<usize>, Bound<usize>),
+    parent: Option<rc::Weak<RefCell<Change>>>,
+    children: Vec<Rc<RefCell<Change>>>,
 }
 
-impl Default for RopeOuter {
-    fn default() -> RopeOuter {
+impl Default for Change {
+    fn default() -> Change {
         let bytes: Vec<u8> = vec![];
 
-        RopeOuter {
+        Change {
             buf: Rope::from_reader(bytes.as_slice()).unwrap(),
-            change_lines: (0, 0),
+            change_at: (Bound::Unbounded, Bound::Unbounded),
             parent: None,
             children: Default::default(),
         }
     }
 }
 
-impl From<Rope> for RopeOuter {
-    fn from(buf: Rope) -> RopeOuter {
-        RopeOuter {
+impl From<Rope> for Change {
+    fn from(buf: Rope) -> Change {
+        Change {
             buf,
-            change_lines: (0, 0),
+            change_at: (Bound::Unbounded, Bound::Unbounded),
             parent: None,
             children: Default::default(),
         }
     }
 }
 
-impl AsRef<Rope> for RopeOuter {
+impl AsRef<Rope> for Change {
     fn as_ref(&self) -> &Rope {
         &self.buf
     }
 }
 
-impl AsMut<Rope> for RopeOuter {
+impl AsMut<Rope> for Change {
     fn as_mut(&mut self) -> &mut Rope {
         &mut self.buf
     }
 }
 
-impl RopeOuter {
-    fn new(
-        buf: Rope,
-        parent: Option<Rc<RefCell<RopeOuter>>>,
-        change_lines: (usize, usize),
-    ) -> RopeOuter {
-        RopeOuter {
+impl Change {
+    fn start(buf: Rope) -> Rc<RefCell<Change>> {
+        Rc::new(RefCell::new(Change {
             buf,
-            change_lines,
-            parent: parent.as_ref().map(|x| Rc::downgrade(x)),
+            change_at: (Bound::Unbounded, Bound::Unbounded),
+            parent: None,
             children: Default::default(),
-        }
+        }))
     }
 
+    fn to_next_change(prev: &mut Rc<RefCell<Change>>) -> Rc<RefCell<Change>> {
+        let next = Rc::new(RefCell::new(Change {
+            buf: prev.borrow().as_ref().clone(),
+            change_at: (Bound::Unbounded, Bound::Unbounded),
+            parent: None,
+            children: Default::default(),
+        }));
+
+        next.borrow_mut().children.push(Rc::clone(prev));
+        prev.borrow_mut().parent = Some(Rc::downgrade(&next));
+
+        next
+    }
+}
+
+impl Change {
     fn insert_char(&mut self, cursor: usize, ch: char) {
+        let line_idx = if ch == NEW_LINE_CHAR {
+            self.buf.char_to_line(cursor) + 1
+        } else {
+            self.buf.char_to_line(cursor)
+        };
+        self.change_at = (Bound::Included(line_idx), Bound::Included(line_idx));
         self.buf.insert_char(cursor, ch)
     }
 
@@ -342,9 +370,17 @@ impl RopeOuter {
     where
         R: RangeBounds<usize>,
     {
+        let line_idx = match char_range.start_bound() {
+            Bound::Excluded(char_idx) => self.buf.char_to_line(*char_idx),
+            Bound::Included(char_idx) => self.buf.char_to_line(*char_idx + 1),
+            Bound::Unbounded => 0,
+        };
+        self.change_at = (Bound::Included(line_idx), Bound::Included(line_idx));
         self.buf.remove(char_range)
     }
+}
 
+impl Change {
     fn char_to_line(&self, cursor: usize) -> usize {
         self.buf.char_to_line(cursor)
     }
@@ -359,7 +395,7 @@ impl RopeOuter {
 }
 
 struct TabfixIter<'a> {
-    orope: cell::Ref<'a, RopeOuter>,
+    change: cell::Ref<'a, Change>,
     from: Bound<usize>,
     to: Bound<usize>,
     tabstop: String,
@@ -369,7 +405,7 @@ impl<'a> Iterator for TabfixIter<'a> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let r: &Rope = self.orope.as_ref();
+        let r: &Rope = self.change.as_ref();
         let n_lines = r.len_lines();
         let (line, from) = match (self.from, self.to) {
             (Bound::Included(from), Bound::Unbounded) if from < n_lines => {
