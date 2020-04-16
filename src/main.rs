@@ -16,7 +16,10 @@ use std::{
     path,
 };
 
-use kavi::{err_at, util, window};
+use kavi::err_at;
+use kavi::file_window::FileWindow;
+use kavi::nbuffers::AnonymousBuffers;
+use kavi::window::{Coord, Render};
 use kavi::{Buffer, Config, Error, Event, Result, Window};
 
 #[derive(Debug, StructOpt)]
@@ -55,62 +58,71 @@ fn main() {
 
 struct Application {
     tm: Terminal,
-    w: Window,
+    window: Box<dyn Window>,
     buffers: Vec<Buffer>,
+
+    anonymous_buffers: AnonymousBuffers,
 }
 
 impl Application {
-    pub fn run(opts: &Opt) -> Result<()> {
+    pub fn run(_opts: &Opt) -> Result<()> {
         let config: Config = Default::default();
         let mut app = {
             let tm = Terminal::init()?;
-            let w = err_at!(Fatal, Window::new(0, 0, tm.rows, tm.cols, config.clone()))?;
+            let coord = Coord::new(1, 1, tm.rows, tm.cols);
             Application {
                 tm,
-                w,
+                window: Box::new(err_at!(Fatal, FileWindow::new(coord, config.clone()))?),
                 buffers: Default::default(),
+                anonymous_buffers: AnonymousBuffers::new(),
             }
         };
+
         // TODO: for now assume that file has r/w permission
-        for file in opts.files.iter() {
-            let file_loc = util::to_file_loc(file.as_ref())?;
-            let f = {
-                let mut opts = fs::OpenOptions::new();
-                err_at!(Fatal, opts.read(true).write(true).open(&file_loc))?
-            };
-            let mut buffer = Buffer::from_reader(f, config.clone())?;
-            buffer.set_file_loc(&file_loc);
-            app.buffers.push(buffer);
-        }
+        //for file in opts.files.iter() {
+        //    let file_loc = util::to_file_loc(file.as_ref())?;
+        //    let f = {
+        //        let mut opts = fs::OpenOptions::new();
+        //        err_at!(Fatal, opts.read(true).write(true).open(&file_loc))?
+        //    };
+        //    let mut buffer = Buffer::from_reader(f, config.clone())?;
+        //    buffer.set_file_loc(&file_loc);
+        //    app.buffers.push(buffer);
+        //}
+
+        let buffer = app.anonymous_buffers.to_new_buffer(config.clone())?;
+        app.buffers.push(buffer);
 
         app.event_loop()
     }
 
     fn event_loop(mut self) -> Result<()> {
         loop {
-            let evnt: TermEvent = err_at!(Fatal, ct_event::read())?;
+            let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
+            let evnt: Event = tevnt.clone().into();
+            trace!("Event-{:?}", tevnt);
 
             err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
 
-            trace!("Event-{:?}", evnt);
-            let res = err_at!(Fatal, self.w.handle_event(evnt.clone().into()))?;
-            let (col, row, bevnt) = match res {
-                window::Res::Cursor { col, row, evnt } => (col, row, evnt),
-                window::Res::Render {
-                    lines,
-                    col,
-                    row,
-                    evnt,
-                } => {
-                    for (col, row, span) in lines {
+            let mut b = self.buffers.remove(0);
+            let evnt = err_at!(Fatal, self.window.handle_event(&mut b, evnt))?;
+            let Render { lines, cursor: _ } = err_at!(Fatal, self.window.refresh(&mut b))?;
+            let (col, row) = self.window.to_origin();
+            match lines {
+                Some(lines) => {
+                    for (i, span) in lines.enumerate() {
                         err_at!(
                             Fatal,
-                            queue!(self.tm.stdout, cursor::MoveTo(col - 1, row - 1), span)
+                            queue!(
+                                self.tm.stdout,
+                                cursor::MoveTo(col - 1, row - 1 + (i as u16)),
+                                span
+                            )
                         )?;
                     }
-                    (col, row, evnt)
                 }
-            };
+                None => (),
+            }
 
             err_at!(
                 Fatal,
@@ -121,7 +133,7 @@ impl Application {
                 )
             )?;
 
-            match bevnt {
+            match evnt {
                 Some(Event::Char('q', m)) if m.is_empty() => break Ok(()),
                 _ => (),
             }

@@ -1,42 +1,35 @@
 use crossterm::Command;
-use log::trace;
 
-use std::{
-    convert::TryInto,
-    fmt, io,
-    iter::FromIterator,
-    ops::{self, Bound, RangeBounds},
-    result,
-};
+use std::{fmt, result};
 
-use crate::{buffer, Buffer, Config, Event, Result};
+use crate::{Buffer, Event, Result};
 
 pub trait Window {
-    fn new(coord: Coord, config: Config) -> Result<Self>;
+    fn to_origin(&self) -> (u16, u16);
 
-    fn load<R>(&mut self, buffer: &Buffer) -> Result<Self> where R: io::Read;
+    fn handle_event(&mut self, buffer: &mut Buffer, evnt: Event) -> Result<Option<Event>>;
 
-    fn refresh(&mut self, buffer: &Buffer) -> Result<Render>;
-
-    fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>>;
-
-    fn move_by(mut self, col_off: i16, row_off: i16) -> Self;
-
-    fn resize_to(mut self, height: u16, width: u16) -> Self;
+    fn refresh(&mut self, buffer: &mut Buffer) -> Result<Render>;
 }
 
 // Terminal coordinates, describes the four corners of a window.
 // Origin is at (1, 1).
+#[derive(Clone, Debug)]
 pub struct Coord {
-    col: u16,
-    row: u16,
-    hgt: u16,
-    wth: u16,
+    pub col: u16,
+    pub row: u16,
+    pub hgt: u16,
+    pub wth: u16,
 }
 
 impl Default for Coord {
     fn default() -> Coord {
-        Coord { col: 1, row: 1, hgt: 0, wth: 0 }
+        Coord {
+            col: 1,
+            row: 1,
+            hgt: 0,
+            wth: 0,
+        }
     }
 }
 
@@ -81,14 +74,21 @@ impl fmt::Display for Coord {
 }
 
 // Cursor within the Terminal/Window, starts from (0, 0)
+#[derive(Clone, Default, Copy, Debug)]
 pub struct Cursor {
-    col: u16
-    row: u16
+    pub col: u16,
+    pub row: u16,
 }
 
 impl Cursor {
-    fn new(col: u16, row: u16) -> Cursor {
-        Cursor{ col, row }
+    pub fn new(col: u16, row: u16) -> Cursor {
+        Cursor { col, row }
+    }
+}
+
+impl From<(u16, u16)> for Cursor {
+    fn from((col, row): (u16, u16)) -> Cursor {
+        Cursor { col, row }
     }
 }
 
@@ -100,11 +100,17 @@ impl fmt::Display for Cursor {
 
 // lines and cursor point point to render within the Terminal
 pub struct Render {
-    pub lines: Option<std::vec::IntoIter<(u16, u16, Span)>>,
+    pub lines: Option<Box<dyn Iterator<Item = Span>>>,
     pub cursor: Option<Cursor>,
 }
 
 pub struct Span(String);
+
+impl Span {
+    pub fn new(s: String) -> Span {
+        Span(s)
+    }
+}
 
 impl Command for Span {
     type AnsiType = String;
@@ -113,4 +119,3 @@ impl Command for Span {
         self.0.clone()
     }
 }
-

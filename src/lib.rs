@@ -2,9 +2,11 @@ use std::{fmt, result};
 
 #[macro_use]
 pub mod util;
-mod buffer;
+pub mod buffer;
 pub mod config;
 pub mod event;
+pub mod file_window;
+pub mod nbuffers;
 pub mod window;
 
 pub use buffer::Buffer;

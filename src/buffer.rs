@@ -63,8 +63,14 @@ impl Buffer {
         })
     }
 
-    pub fn set_file_loc(&mut self, file_loc: &ffi::OsStr) {
-        self.file_loc = file_loc.to_os_string()
+    pub fn set_file_loc(&mut self, file_loc: &ffi::OsStr) -> &mut Self {
+        self.file_loc = file_loc.to_os_string();
+        self
+    }
+
+    pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
+        self.cursor = cursor;
+        self
     }
 }
 
@@ -89,7 +95,7 @@ impl Buffer {
         &'a self,
         from: Bound<usize>,
         to: Bound<usize>,
-    ) -> impl Iterator<Item = String> + 'a {
+    ) -> impl Iterator<Item = (usize, String)> + 'a {
         TabfixIter {
             change: self.as_change(),
             from,
@@ -103,8 +109,7 @@ impl Buffer {
         &'a self,
     ) -> impl Iterator<Item = (usize, String)> + 'a {
         let (from, to) = self.as_change().change_at;
-        let line_nos = (from..=to).into_iter();
-        lines_nos.zip(self.iter_lines(from, to))
+        self.iter_lines(from, to)
     }
 }
 
@@ -138,7 +143,6 @@ impl Buffer {
     }
 
     fn handle_normal_event(&mut self, evnt: Event) -> Result<Option<Event>> {
-        let (col_at, row_at) = self.visual_cursor();
         Ok(Some(evnt))
     }
 
@@ -158,7 +162,7 @@ impl Buffer {
                 self.cursor = cursr + 1;
                 Ok(None)
             }
-            Backspace if cursr == 0 => ((0, 0), None),
+            Backspace if cursr == 0 => Ok(None),
             Backspace => {
                 let new_cursor = cursr - 1;
                 self.change = Change::to_next_change(&mut self.change);
@@ -172,17 +176,20 @@ impl Buffer {
                 self.cursor = cursr + 1;
                 Ok(None)
             }
-            Left if start_idx == cursr => None,
+            Left if start_idx == cursr => Ok(None),
             Left => {
                 self.cursor = cursr - 1;
                 Ok(None)
             }
             Right => {
-                let r: &Rope = self.as_change().as_ref();
-                self.cursor = if line_last_char(r, cursr) == cursr {
-                    cursr,
+                let new_cursor = {
+                    let c = self.as_change();
+                    line_last_char(c.as_ref(), cursr)
+                };
+                self.cursor = if new_cursor == cursr {
+                    cursr
                 } else {
-                    cursr + 1,
+                    cursr + 1
                 };
                 Ok(None)
             }
@@ -221,7 +228,7 @@ impl Buffer {
                     )
                 };
                 match (cur_line, next_line) {
-                    (None, _) | (Some(_), None)=> Ok(None),
+                    (None, _) | (Some(_), None) => Ok(None),
                     (Some(_), Some(nline)) => {
                         let row_at = line_idx + 1;
                         let n = nline.chars().collect::<Vec<char>>().len();
@@ -238,9 +245,13 @@ impl Buffer {
             }
             Home => {
                 self.cursor = start_idx;
-                Ok(None),
+                Ok(None)
+            }
             End => {
-                self.cursor = line_last_char(self.as_change().as_ref(), cursr);
+                self.cursor = {
+                    let c = self.as_change();
+                    line_last_char(c.as_ref(), cursr)
+                };
                 Ok(None)
             }
             Tab => {
@@ -250,14 +261,19 @@ impl Buffer {
                 Ok(None)
             }
             Delete => {
-                if cursr < line_last_char(self.as_change().as_ref(), cursr) {
+                let new_cursor = {
+                    let c = self.as_change();
+                    line_last_char(c.as_ref(), cursr)
+                };
+                if cursr < new_cursor {
                     self.change = Change::to_next_change(&mut self.change);
                     self.as_mut_change().remove(cursr..(cursr + 1));
                 }
                 Ok(None)
             }
             F(_, _) | BackTab | Insert | PageUp | PageDown | Noop | Esc => {
-                Some(evnt)
+                //
+                Ok(Some(evnt))
             }
         }
     }
@@ -395,27 +411,25 @@ struct TabfixIter<'a> {
 }
 
 impl<'a> Iterator for TabfixIter<'a> {
-    type Item = String;
+    type Item = (usize, String);
 
     fn next(&mut self) -> Option<Self::Item> {
         let r: &Rope = self.change.as_ref();
         let n_lines = r.len_lines();
-        let (line, from) = match (self.from, self.to) {
+        match (self.from, self.to) {
             (Bound::Included(from), Bound::Unbounded) if from < n_lines => {
-                (Some(r.line(from).to_string()), Bound::Included(from + 1))
+                self.from = Bound::Included(from + 1);
+                // TODO: can this replace be made in-place
+                let l = r.line(from).to_string().replace('\t', &self.tabstop);
+                Some((from + 1, l))
             }
             (Bound::Included(from), Bound::Included(to)) if from <= to => {
-                (Some(r.line(from).to_string()), Bound::Included(from + 1))
+                self.from = Bound::Included(from + 1);
+                // TODO: can this replace be made in-place
+                let l = r.line(from).to_string().replace('\t', &self.tabstop);
+                Some((from + 1, l))
             }
-            (from, _) => (None, from),
-        };
-
-        self.from = from;
-
-        match line {
-            // TODO: can this replace be made in-place
-            Some(line) => Some(line.replace('\t', &self.tabstop)),
-            None => None,
+            _ => None,
         }
     }
 }
