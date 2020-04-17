@@ -1,17 +1,26 @@
-use crossterm::{cursor, style::{self, Color, Attribute}, Command};
+use crossterm::{
+    cursor,
+    style::{self, Attribute, Color},
+    Command,
+};
 
 use std::{fmt, result};
 
-use crate::{Buffer, Event, Result};
+use crate::{Buffer, Config, Event, Result};
 
 pub trait Window {
     fn to_origin(&self) -> (u16, u16);
 
     fn to_cursor(&self) -> Cursor;
 
-    fn handle_event(&mut self, buffer: &mut Buffer, evnt: Event) -> Result<Option<Event>>;
+    fn handle_event(&mut self, ctxt: &mut Context, evnt: Event) -> Result<Option<Event>>;
 
-    fn refresh(&mut self, buffer: &mut Buffer) -> Result<()>;
+    fn refresh(&mut self, ctxt: &mut Context) -> Result<()>;
+}
+
+struct Context {
+    buffers: Vec<Buffer>,
+    config: Config,
 }
 
 // Terminal coordinates, describes the four corners of a window.
@@ -101,7 +110,7 @@ impl fmt::Display for Cursor {
 }
 
 // Span object to render on screen.
-pub struct Span{
+pub struct Span {
     text: String,
     fg: Color,
     bg: Color,
@@ -111,12 +120,18 @@ pub struct Span{
 
 impl Span {
     // Refer to https://jonasjacek.github.io/colors
-    const DEFAULT_BG: Color = Color::AnsiValue(0);   // Black
+    const DEFAULT_BG: Color = Color::AnsiValue(0); // Black
     const DEFAULT_FG: Color = Color::AnsiValue(124); // Red3
     const DEFAULT_ATTR: Attribute = Attribute::Bold;
 
     pub fn new(text: String, cursor: Cursor) -> Span {
-        Span{ text, fg: Self::DEFAULT_FG, bg: Self::DEFAULT_BG, attr: Self::DEFAULT_ATTR, cursor }
+        Span {
+            text,
+            fg: Self::DEFAULT_FG,
+            bg: Self::DEFAULT_BG,
+            attr: Self::DEFAULT_ATTR,
+            cursor,
+        }
     }
 
     pub fn set_fg(&mut self, fg: Color) -> &mut Self {
@@ -141,7 +156,11 @@ impl Command for Span {
     fn ansi_code(&self) -> Self::AnsiType {
         let mut s = cursor::MoveTo(self.cursor.col, self.cursor.row).to_string();
         s.push_str(
-            &style::style(&self.text).on(self.bg).with(self.fg).attribute(self.attr).to_string()
+            &style::style(&self.text)
+                .on(self.bg)
+                .with(self.fg)
+                .attribute(self.attr)
+                .to_string(),
         );
         s
     }

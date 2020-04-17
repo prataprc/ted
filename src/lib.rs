@@ -5,8 +5,8 @@ pub mod util;
 pub mod buffer;
 pub mod config;
 pub mod event;
-pub mod window_file;
 pub mod window;
+pub mod window_file;
 
 pub use buffer::Buffer;
 pub use config::Config;

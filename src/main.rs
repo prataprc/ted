@@ -21,8 +21,8 @@ use std::{
 
 use ted::{
     err_at,
-    window_file::WindowFile,
     window::{Coord, Cursor},
+    window_file::WindowFile,
     Buffer, Config, Error, Event, Result, Window,
 };
 

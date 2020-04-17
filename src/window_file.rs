@@ -1,4 +1,4 @@
-use crossterm::{queue};
+use crossterm::queue;
 use log::trace;
 
 use std::{
@@ -169,10 +169,13 @@ impl WindowFile {
         };
 
         if self.is_top_margin() {
-            let span = Span::new(String::from_iter(
-                std::iter::repeat(self.config.top_margin_char)
-                    .take(self.w_coord.to_origin().0 as usize),
-            ), Cursor::new(col, row));
+            let span = Span::new(
+                String::from_iter(
+                    std::iter::repeat(self.config.top_margin_char)
+                        .take(self.w_coord.to_origin().0 as usize),
+                ),
+                Cursor::new(col, row),
+            );
             err_at!(Fatal, queue!(stdout, span))?;
             col += 1;
             row += 1;
@@ -192,10 +195,7 @@ impl WindowFile {
                 l.push_str(&line_no.to_string());
             }
             l.push_str(&line);
-            err_at!(
-                Fatal,
-                queue!(stdout, Span::new(l, Cursor::new(col, row)))
-            )?;
+            err_at!(Fatal, queue!(stdout, Span::new(l, Cursor::new(col, row))))?;
             col += 1;
             row += 1;
         }
@@ -285,10 +285,7 @@ impl WindowFile {
                 l.push_str(&line_no.to_string());
             }
             l.push_str(&line);
-            err_at!(
-                Fatal,
-                queue!(stdout, Span::new(l, Cursor::new(col, row)))
-            )?;
+            err_at!(Fatal, queue!(stdout, Span::new(l, Cursor::new(col, row))))?;
             col += 1;
             row += 1;
         }
