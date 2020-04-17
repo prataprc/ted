@@ -19,7 +19,7 @@ use std::{
     path,
 };
 
-use kavi::{
+use ted::{
     err_at,
     file_window::FileWindow,
     window::{Coord, Cursor},
@@ -57,7 +57,7 @@ fn main() {
             panic_info.payload().downcast_ref::<String>().unwrap()
         );
         s.push_str(&format!("{}", std::backtrace::Backtrace::capture()));
-        fs::write("kavi-panic.out", s.as_bytes()).unwrap();
+        fs::write("ted-panic.out", s.as_bytes()).unwrap();
     });
 
     match Application::run(opts) {
