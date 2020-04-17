@@ -24,6 +24,7 @@ pub enum Event {
     Insert,
     // Application events
     EditBuffer { buffer_id: String },
+    PromptAns { input: String },
 }
 
 impl From<TermEvent> for Event {

@@ -20,25 +20,33 @@ use crate::{
 
 #[derive(Clone, Default)]
 pub struct WindowPrompt {
-    w_coord: Coord,                     // x window coord.
-    prompt_lines: Span,
+    coord: Coord,
+    prompt_lines: Vec<Span>,
     prompt_cursor: Cursor,
+    rendered: false,
+
     input: String,
 }
 
 impl fmt::Display for WindowPrompt {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "WindowPrompt<{}>", self.w_coord)
+        write!(f, "WindowPrompt<{}>", self.coord)
     }
 }
 
 impl WindowPrompt {
     #[inline]
-    pub fn new(cursor: Coord, prompt_lines: Vec<Span>, prompt_cursor: Cursor) -> Result<WindowPrompt> {
+    pub fn new(
+        cursor: Coord,
+        prompt_lines: Vec<Span>,
+        prompt_cursor: Cursor,
+    ) -> Result<WindowPrompt> {
         Ok(WindowPrompt {
-            w_coord: coord,
+            coord,
             prompt_lines,
             prompt_cursor,
+            rendered: false,
+
             input: Default::default(),
         })
     }
@@ -47,7 +55,7 @@ impl WindowPrompt {
 impl Window for WindowPrompt {
     #[inline]
     fn to_origin(&self) -> (u16, u16) {
-        self.w_coord.to_origin()
+        self.coord.to_origin()
     }
 
     #[inline]
@@ -56,19 +64,36 @@ impl Window for WindowPrompt {
     }
 
     fn refresh(&mut self, buffer: &mut Buffer) -> Result<()> {
-        Ok(())
+        if rendered == false {
+            let mut stdout = io::stdout();
+            for span in self.spans.iter() {
+                err_at!(Fatal, queue!(stdout, span))?
+            }
+        } else {
+            let span = Span::new(self.input, self.prompt_cursor);
+            err_at!(Fatal, queue!(stdout, span))?;
+            let n: usize =self.input.chars().map(|ch| ch.width()).sum();
+            let Cursor { col, row } = self.prompt_cursor;
+            err_at!(Fatal, queue!(stdout, cursor::MoveTo(col + n, row)))?;
+        }
     }
 
     fn handle_event(
+        //
         &mut self,
         buffer: &mut Buffer,
         evnt: Event,
     ) -> Result<Option<Event>> {
         match evnt {
-            Event::Backspace => self.input.pop(),
-            Event::Enter => self.input.pop(),
-            Event::Char(ch, m) => self.input.push(ch),
+            Event::Backspace => {
+                self.input.pop();
+                Ok(None)
+            }
+            Event::Enter => Ok(Event::PromptAns{ input: self.input }),
+            Event::Char(ch, m) => {
+                self.input.push(ch);
+                Ok(None)
+            }
         }
     }
 }
-
