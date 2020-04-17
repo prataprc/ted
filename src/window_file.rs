@@ -327,7 +327,7 @@ impl Window for WindowFile {
         evnt: Event,
     ) -> Result<Option<Event>> {
         match evnt {
-            Event::EditBuffer { buffer_id } => {
+            Event::UseBuffer { buffer_id } => {
                 self.buffer_id = buffer_id;
                 Ok(None)
             }

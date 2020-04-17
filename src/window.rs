@@ -129,6 +129,7 @@ impl fmt::Display for Cursor {
 }
 
 // Span object to render on screen.
+#[derive(Clone)]
 pub struct Span {
     text: String,
     fg: Color,

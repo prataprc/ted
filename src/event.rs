@@ -1,5 +1,7 @@
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
+use std::ffi;
+
 #[derive(Clone)]
 pub enum Event {
     Noop,
@@ -23,7 +25,9 @@ pub enum Event {
     Delete,
     Insert,
     // Application events
-    EditBuffer { buffer_id: String },
+    NewBuffer,
+    OpenFiles { files: Vec<ffi::OsString> },
+    UseBuffer { buffer_id: String },
     PromptAns { input: String },
 }
 

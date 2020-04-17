@@ -14,7 +14,7 @@ use simplelog;
 use structopt::StructOpt;
 
 use std::{
-    fs,
+    ffi, fs,
     io::{self, Write},
     path,
 };
@@ -23,6 +23,7 @@ use ted::{
     err_at,
     window::{Context, Coord, Cursor},
     window_file::WindowFile,
+    window_prompt::WindowPrompt,
     Buffer, Config, Error, Event, Result, Window,
 };
 
@@ -68,92 +69,169 @@ fn main() {
 
 struct Application {
     tm: Terminal,
-    window: Option<Box<dyn Window>>,
     context: Context,
+
+    inner: Option<InnerApp>,
+}
+
+enum InnerApp {
+    OpenFiles {
+        pw: WindowPrompt,
+        window: Box<dyn Window>,
+    },
+    Usual {
+        window: Box<dyn Window>,
+    },
 }
 
 impl Application {
-    pub fn run(_opts: Opt) -> Result<()> {
-        let config: Config = Default::default();
-        let mut app = {
-            let tm = Terminal::init()?;
-            let coord = Coord::new(1, 1, tm.rows, tm.cols);
-            let w = err_at!(Fatal, WindowFile::new(coord, config.clone()))?;
-            Application {
-                tm,
-                window: Some(Box::new(w)),
-                context: Context::new(config.clone()),
-            }
-        };
-
-        // TODO: for now assume that file has r/w permission
-        //for file in opts.files.iter() {
-        //    let file_loc = util::to_file_loc(file.as_ref())?;
-        //    let f = {
-        //        let mut opts = fs::OpenOptions::new();
-        //        err_at!(Fatal, opts.read(true).write(true).open(&file_loc))?
-        //    };
-        //    let mut buffer = Buffer::from_reader(f, config.clone())?;
-        //    buffer.set_file_loc(&file_loc);
-        //    app.buffers.push(buffer);
-        //}
-
-        let (buffer_id, buffer) = {
-            let mut b = Buffer::empty(config)?;
-            b.set_location(Default::default());
-            (b.to_id(), b)
-        };
-        app.context.buffers.push(buffer);
-        match app.window.take() {
-            Some(mut window) => {
-                window.handle_event(&mut app.context, Event::EditBuffer { buffer_id });
-                app.window = Some(window);
-            }
-            None => err_at!(Fatal, msg: format!("unreachable"))?,
-        };
-
-        app.event_loop()
+    fn take_window(&mut self) -> Box<dyn Window> {
+        match self.inner.take() {
+            Some(InnerApp::Usual { window }) => window,
+            Some(InnerApp::OpenFiles { window, .. }) => window,
+            None => unreachable!(),
+        }
     }
 
-    fn event_loop(mut self) -> Result<()> {
+    fn to_window_cursor(&self) -> Cursor {
+        match self.inner.as_ref().unwrap() {
+            InnerApp::Usual { window } => window.to_cursor(),
+            InnerApp::OpenFiles { window, .. } => window.to_cursor(),
+        }
+    }
+
+    fn set_window(&mut self, w: Box<dyn Window>) {
+        match self.inner.as_mut().unwrap() {
+            InnerApp::Usual { window } => *window = w,
+            InnerApp::OpenFiles { window, .. } => *window = w,
+        }
+    }
+
+    fn run(opts: Opt) -> Result<()> {
+        let config: Config = Default::default();
+        let app = {
+            let tm = Terminal::init()?;
+            let coord = Coord::new(1, 1, tm.rows, tm.cols);
+            let window = err_at!(Fatal, WindowFile::new(coord, config.clone()))?;
+            Application {
+                tm,
+                context: Context::new(config.clone()),
+                inner: Some(InnerApp::Usual {
+                    window: Box::new(window),
+                }),
+            }
+        };
+
+        let evnt = if opts.files.len() == 0 {
+            Event::NewBuffer
+        } else {
+            Event::NewBuffer
+            //Event::OpenFiles {
+            //    files: opts
+            //        .files
+            //        .iter()
+            //        .map(|f| f.as_ref().to_os_string())
+            //        .collect(),
+            //}
+        };
+
+        app.event_loop(Some(evnt))
+    }
+
+    fn event_loop(mut self, mut evnt: Option<Event>) -> Result<()> {
         loop {
-            let (evnt, _tevnt): (Event, TermEvent) = {
+            // app-handle bubble up event.
+            self = match evnt {
+                Some(evnt) => match self.handle_up(evnt)? {
+                    Some(app) => app,
+                    None => break Ok(()),
+                },
+                None => self,
+            };
+
+            err_at!(Fatal, self.dispatch_refresh())?;
+
+            // show-cursor
+            let Cursor { col, row } = self.to_window_cursor();
+            err_at!(Fatal, queue!(self.tm.stdout, cursor::MoveTo(col, row)))?;
+            err_at!(Fatal, queue!(self.tm.stdout, cursor::Show))?;
+            err_at!(Fatal, self.tm.stdout.flush())?;
+
+            // new event
+            evnt = {
                 let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
                 trace!("Event-{:?}", tevnt);
-                (tevnt.clone().into(), tevnt)
+                Some(tevnt.clone().into())
             };
 
+            // hide-cursor
             err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
-
-            let cursor = match self.window.take() {
-                Some(mut window) => {
-                    match window.handle_event(&mut self.context, evnt)? {
-                        Some(Event::Char('q', m)) if m.is_empty() => {
-                            //
-                            break Ok(());
-                        }
-                        _ => (),
-                    }
-                    err_at!(Fatal, window.refresh(&mut self.context))?;
-                    let cursor = window.to_cursor();
-                    self.window = Some(window);
-                    Some(cursor)
-                }
-                None => {
-                    err_at!(Fatal, msg: format!("unreachable"))?;
-                    None
-                }
-            };
-
-            match cursor {
-                Some(Cursor { col, row }) => {
-                    err_at!(Fatal, queue!(self.tm.stdout, cursor::MoveTo(col, row)))?;
-                    err_at!(Fatal, queue!(self.tm.stdout, cursor::Show))?;
-                    err_at!(Fatal, self.tm.stdout.flush())?;
-                }
-                None => (),
-            }
+            // app-handle bubble down event
+            self = self.handle_down(evnt.clone().unwrap())?;
+            // event handling
+            evnt = self.dispatch_event(evnt)?;
         }
+    }
+
+    fn dispatch_event(
+        //
+        &mut self,
+        mut evnt: Option<Event>,
+    ) -> Result<Option<Event>> {
+        self.inner = match self.inner.take() {
+            Some(InnerApp::Usual { mut window }) => {
+                evnt = window.handle_event(&mut self.context, evnt.unwrap())?;
+                Some(InnerApp::Usual { window })
+            }
+            Some(InnerApp::OpenFiles { pw, mut window }) => {
+                evnt = window.handle_event(&mut self.context, evnt.unwrap())?;
+                Some(InnerApp::OpenFiles { pw, window })
+            }
+            None => unreachable!(),
+        };
+
+        Ok(evnt)
+    }
+
+    fn dispatch_refresh(&mut self) -> Result<()> {
+        let mut inner = self.inner.take().unwrap();
+        let res = match &mut inner {
+            InnerApp::Usual { window } => window,
+            InnerApp::OpenFiles { window, .. } => window,
+        }
+        .refresh(&mut self.context);
+        self.inner = Some(inner);
+        res
+    }
+
+    fn handle_up(mut self, evnt: Event) -> Result<Option<Self>> {
+        match evnt {
+            Event::NewBuffer => {
+                let (buffer_id, buffer) = {
+                    let mut b = Buffer::empty(self.context.config.clone())?;
+                    b.set_location(Default::default());
+                    (b.to_id(), b)
+                };
+
+                self.context.buffers.push(buffer);
+
+                let mut window = self.take_window();
+                window.handle_event(
+                    //
+                    &mut self.context,
+                    Event::UseBuffer { buffer_id },
+                )?;
+                self.set_window(window);
+                Ok(Some(self))
+            }
+            Event::OpenFiles { .. } => Ok(Some(self)),
+            Event::Char('q', m) if m.is_empty() => Ok(None),
+            _ => Ok(Some(self)),
+        }
+    }
+
+    fn handle_down(self, _evnt: Event) -> Result<Self> {
+        Ok(self)
     }
 }
 

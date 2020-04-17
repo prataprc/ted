@@ -1,20 +1,15 @@
 use crossterm::{cursor, queue};
-use log::trace;
+use unicode_width::UnicodeWidthChar;
 
 use std::{
-    convert::TryInto,
     fmt,
     io::{self, Write},
-    iter::FromIterator,
-    ops::Bound,
     result,
 };
 
 use crate::{
-    buffer::Buffer,
-    config::Config,
     event::Event,
-    window::{Coord, Cursor, Span, Window},
+    window::{Context, Coord, Cursor, Span, Window},
     Error, Result,
 };
 
@@ -23,7 +18,7 @@ pub struct WindowPrompt {
     coord: Coord,
     prompt_lines: Vec<Span>,
     prompt_cursor: Cursor,
-    rendered: false,
+    rendered: bool,
 
     input: String,
 }
@@ -37,7 +32,7 @@ impl fmt::Display for WindowPrompt {
 impl WindowPrompt {
     #[inline]
     pub fn new(
-        cursor: Coord,
+        coord: Coord,
         prompt_lines: Vec<Span>,
         prompt_cursor: Cursor,
     ) -> Result<WindowPrompt> {
@@ -49,6 +44,11 @@ impl WindowPrompt {
 
             input: Default::default(),
         })
+    }
+
+    pub fn set_prompt(&mut self, prompt_lines: Vec<Span>, prompt_cursor: Cursor) {
+        self.prompt_lines = prompt_lines;
+        self.prompt_cursor = prompt_cursor;
     }
 }
 
@@ -63,25 +63,30 @@ impl Window for WindowPrompt {
         self.prompt_cursor
     }
 
-    fn refresh(&mut self, buffer: &mut Buffer) -> Result<()> {
-        if rendered == false {
+    fn refresh(&mut self, _context: &mut Context) -> Result<()> {
+        let mut stdout = io::stdout();
+
+        if !self.rendered {
             let mut stdout = io::stdout();
-            for span in self.spans.iter() {
-                err_at!(Fatal, queue!(stdout, span))?
+            for span in self.prompt_lines.iter() {
+                err_at!(Fatal, queue!(stdout, span))?;
             }
         } else {
-            let span = Span::new(self.input, self.prompt_cursor);
+            let span = Span::new(self.input.clone(), self.prompt_cursor);
             err_at!(Fatal, queue!(stdout, span))?;
-            let n: usize =self.input.chars().map(|ch| ch.width()).sum();
-            let Cursor { col, row } = self.prompt_cursor;
-            err_at!(Fatal, queue!(stdout, cursor::MoveTo(col + n, row)))?;
+            let n: usize = self.input.chars().map(|ch| ch.width().unwrap()).sum();
+            let Cursor { mut col, row } = self.prompt_cursor;
+            col += n as u16;
+            err_at!(Fatal, queue!(stdout, cursor::MoveTo(col, row)))?;
         }
+
+        Ok(())
     }
 
     fn handle_event(
         //
         &mut self,
-        buffer: &mut Buffer,
+        _context: &mut Context,
         evnt: Event,
     ) -> Result<Option<Event>> {
         match evnt {
@@ -89,11 +94,14 @@ impl Window for WindowPrompt {
                 self.input.pop();
                 Ok(None)
             }
-            Event::Enter => Ok(Event::PromptAns{ input: self.input }),
-            Event::Char(ch, m) => {
+            Event::Enter => Ok(Some(Event::PromptAns {
+                input: self.input.clone(),
+            })),
+            Event::Char(ch, _m) => {
                 self.input.push(ch);
                 Ok(None)
             }
+            _ => Ok(Some(evnt)),
         }
     }
 }

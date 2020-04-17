@@ -7,6 +7,7 @@ pub mod config;
 pub mod event;
 pub mod window;
 pub mod window_file;
+pub mod window_prompt;
 
 pub use buffer::Buffer;
 pub use config::Config;

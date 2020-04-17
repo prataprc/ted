@@ -73,6 +73,7 @@ impl fmt::Display for Location {
 pub struct Buffer {
     location: Location,
     config: Config,
+    read_only: bool,
 
     state: State,
     change: Rc<RefCell<Change>>,
@@ -84,6 +85,7 @@ impl Default for Buffer {
         Buffer {
             location: Default::default(),
             config: Default::default(),
+            read_only: false,
 
             state: State::Normal,
             change: Default::default(),
@@ -101,6 +103,7 @@ impl Buffer {
         Ok(Buffer {
             location: Default::default(),
             config,
+            read_only: false,
 
             state: State::Normal,
             change: Change::start(buf),
@@ -111,6 +114,11 @@ impl Buffer {
     pub fn empty(config: Config) -> Result<Buffer> {
         let buf = vec![];
         Self::from_reader(buf.as_slice(), config)
+    }
+
+    pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
+        self.read_only = read_only;
+        self
     }
 
     pub fn set_location(&mut self, loc: Location) -> &mut Self {
