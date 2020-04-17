@@ -21,7 +21,7 @@ use std::{
 
 use ted::{
     err_at,
-    window::{Coord, Cursor},
+    window::{Context, Coord, Cursor},
     window_file::WindowFile,
     Buffer, Config, Error, Event, Result, Window,
 };
@@ -68,8 +68,8 @@ fn main() {
 
 struct Application {
     tm: Terminal,
-    window: Box<dyn Window>,
-    buffers: Vec<Buffer>,
+    window: Option<Box<dyn Window>>,
+    context: Context,
 }
 
 impl Application {
@@ -81,8 +81,8 @@ impl Application {
             let w = err_at!(Fatal, WindowFile::new(coord, config.clone()))?;
             Application {
                 tm,
-                window: Box::new(w),
-                buffers: Default::default(),
+                window: Some(Box::new(w)),
+                context: Context::new(config.clone()),
             }
         };
 
@@ -98,42 +98,61 @@ impl Application {
         //    app.buffers.push(buffer);
         //}
 
-        app.buffers.push({
+        let (buffer_id, buffer) = {
             let mut b = Buffer::empty(config)?;
             b.set_location(Default::default());
-            b
-        });
+            (b.to_id(), b)
+        };
+        app.context.buffers.push(buffer);
+        match app.window.take() {
+            Some(mut window) => {
+                window.handle_event(&mut app.context, Event::EditBuffer { buffer_id });
+                app.window = Some(window);
+            }
+            None => err_at!(Fatal, msg: format!("unreachable"))?,
+        };
 
         app.event_loop()
     }
 
     fn event_loop(mut self) -> Result<()> {
         loop {
-            let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
-            let evnt: Event = tevnt.clone().into();
-            trace!("Event-{:?}", tevnt);
+            let (evnt, _tevnt): (Event, TermEvent) = {
+                let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
+                trace!("Event-{:?}", tevnt);
+                (tevnt.clone().into(), tevnt)
+            };
 
             err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
 
-            let mut b = self.buffers.remove(0);
-            match err_at!(Fatal, self.window.handle_event(&mut b, evnt))? {
-                Some(Event::Char('q', m)) if m.is_empty() => break Ok(()),
-                _ => (),
+            let cursor = match self.window.take() {
+                Some(mut window) => {
+                    match window.handle_event(&mut self.context, evnt)? {
+                        Some(Event::Char('q', m)) if m.is_empty() => {
+                            //
+                            break Ok(());
+                        }
+                        _ => (),
+                    }
+                    err_at!(Fatal, window.refresh(&mut self.context))?;
+                    let cursor = window.to_cursor();
+                    self.window = Some(window);
+                    Some(cursor)
+                }
+                None => {
+                    err_at!(Fatal, msg: format!("unreachable"))?;
+                    None
+                }
+            };
+
+            match cursor {
+                Some(Cursor { col, row }) => {
+                    err_at!(Fatal, queue!(self.tm.stdout, cursor::MoveTo(col, row)))?;
+                    err_at!(Fatal, queue!(self.tm.stdout, cursor::Show))?;
+                    err_at!(Fatal, self.tm.stdout.flush())?;
+                }
+                None => (),
             }
-            err_at!(Fatal, self.window.refresh(&mut b))?;
-            self.buffers.insert(0, b);
-
-            let Cursor { col, row } = self.window.to_cursor();
-            err_at!(
-                Fatal,
-                queue!(
-                    self.tm.stdout,
-                    cursor::MoveTo(col - 1, row - 1),
-                    cursor::Show
-                )
-            )?;
-
-            err_at!(Fatal, self.tm.stdout.flush())?;
         }
     }
 }

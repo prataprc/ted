@@ -3,6 +3,10 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 #[derive(Clone)]
 pub enum Event {
     Noop,
+    // Input events
+    F(u8, KeyModifiers),
+    Char(char, KeyModifiers),
+    // Processed Input events
     Esc,
     Backspace,
     Enter,
@@ -18,8 +22,8 @@ pub enum Event {
     BackTab,
     Delete,
     Insert,
-    F(u8, KeyModifiers),
-    Char(char, KeyModifiers),
+    // Application events
+    EditBuffer { buffer_id: String },
 }
 
 impl From<TermEvent> for Event {

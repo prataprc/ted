@@ -18,9 +18,28 @@ pub trait Window {
     fn refresh(&mut self, ctxt: &mut Context) -> Result<()>;
 }
 
-struct Context {
-    buffers: Vec<Buffer>,
-    config: Config,
+// Application context.
+pub struct Context {
+    pub buffers: Vec<Buffer>,
+    pub config: Config,
+}
+
+impl Context {
+    pub fn new(config: Config) -> Context {
+        Context {
+            buffers: Default::default(),
+            config,
+        }
+    }
+
+    pub fn as_mut_buffer(&mut self, id: &str) -> Option<&mut Buffer> {
+        for b in self.buffers.iter_mut() {
+            if b.to_id() == id {
+                return Some(b);
+            }
+        }
+        None
+    }
 }
 
 // Terminal coordinates, describes the four corners of a window.

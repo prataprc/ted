@@ -14,7 +14,7 @@ use crate::{
     buffer::Buffer,
     config::Config,
     event::Event,
-    window::{Coord, Cursor, Span, Window},
+    window::{Context, Coord, Cursor, Span, Window},
     Error, Result,
 };
 
@@ -33,6 +33,8 @@ pub struct WindowFile {
     bw_coord: Coord,                    // y buffer's coordinate inside window.
     bw_cursor: Cursor,                  // z cursor relative to buffer's coord.
     buf_origin: Option<(usize, usize)>, // (col, row) within buffer, from (0,0).
+
+    buffer_id: String,
     config: Config,
 }
 
@@ -50,6 +52,8 @@ impl WindowFile {
             bw_coord: coord,
             bw_cursor: Cursor::new(0, 0),
             buf_origin: None,
+
+            buffer_id: Default::default(),
             config,
         })
     }
@@ -306,19 +310,31 @@ impl Window for WindowFile {
         Cursor::new(col + self.bw_cursor.col, row + self.bw_cursor.row)
     }
 
-    fn refresh(&mut self, buffer: &mut Buffer) -> Result<()> {
-        match &self.buf_origin {
-            Some(_) => self.refresh_again(buffer),
-            None => self.refresh_once(buffer),
+    fn refresh(&mut self, context: &mut Context) -> Result<()> {
+        match context.as_mut_buffer(&self.buffer_id) {
+            Some(buffer) => match &self.buf_origin {
+                Some(_) => self.refresh_again(buffer),
+                None => self.refresh_once(buffer),
+            },
+            None => todo!(),
         }
     }
 
     fn handle_event(
         //
         &mut self,
-        buffer: &mut Buffer,
+        context: &mut Context,
         evnt: Event,
     ) -> Result<Option<Event>> {
-        buffer.handle_event(evnt)
+        match evnt {
+            Event::EditBuffer { buffer_id } => {
+                self.buffer_id = buffer_id;
+                Ok(None)
+            }
+            evnt => match context.as_mut_buffer(&self.buffer_id) {
+                Some(buffer) => buffer.handle_event(evnt),
+                None => todo!(),
+            },
+        }
     }
 }

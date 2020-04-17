@@ -133,6 +133,13 @@ impl Buffer {
         self.location.clone()
     }
 
+    pub fn to_id(&self) -> String {
+        match &self.location {
+            Location::Anonymous(s) => s.clone(),
+            Location::Disk(s) => s.to_str().unwrap().to_string(),
+        }
+    }
+
     fn as_change(&self) -> cell::Ref<Change> {
         self.change.as_ref().borrow()
     }
@@ -325,6 +332,7 @@ impl Buffer {
                 //
                 Ok(Some(evnt))
             }
+            _ => todo!(),
         }
     }
 }
