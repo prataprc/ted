@@ -5,7 +5,7 @@ pub mod util;
 pub mod buffer;
 pub mod config;
 pub mod event;
-pub mod file_window;
+pub mod window_file;
 pub mod window;
 
 pub use buffer::Buffer;

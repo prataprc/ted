@@ -1,4 +1,4 @@
-use crossterm::{cursor, queue};
+use crossterm::{queue};
 use log::trace;
 
 use std::{
@@ -28,7 +28,7 @@ use crate::{
 //  +----+-------------------------
 //
 #[derive(Clone, Default)]
-pub struct FileWindow {
+pub struct WindowFile {
     w_coord: Coord,                     // x window coord.
     bw_coord: Coord,                    // y buffer's coordinate inside window.
     bw_cursor: Cursor,                  // z cursor relative to buffer's coord.
@@ -36,16 +36,16 @@ pub struct FileWindow {
     config: Config,
 }
 
-impl fmt::Display for FileWindow {
+impl fmt::Display for WindowFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "FileWindow<{}>", self.w_coord)
+        write!(f, "WindowFile<{}>", self.w_coord)
     }
 }
 
-impl FileWindow {
+impl WindowFile {
     #[inline]
-    pub fn new(coord: Coord, config: Config) -> Result<FileWindow> {
-        Ok(FileWindow {
+    pub fn new(coord: Coord, config: Config) -> Result<WindowFile> {
+        Ok(WindowFile {
             w_coord: coord.clone(),
             bw_coord: coord,
             bw_cursor: Cursor::new(0, 0),
@@ -67,7 +67,7 @@ impl FileWindow {
     }
 }
 
-impl FileWindow {
+impl WindowFile {
     #[inline]
     pub fn to_size(&self) -> (u16, u16) {
         self.w_coord.to_size()
@@ -108,7 +108,7 @@ impl FileWindow {
     }
 }
 
-impl FileWindow {
+impl WindowFile {
     fn header_height(&self) -> u16 {
         if self.is_top_margin() {
             1
@@ -172,8 +172,8 @@ impl FileWindow {
             let span = Span::new(String::from_iter(
                 std::iter::repeat(self.config.top_margin_char)
                     .take(self.w_coord.to_origin().0 as usize),
-            ));
-            err_at!(Fatal, queue!(stdout, cursor::MoveTo(col, row), span))?;
+            ), Cursor::new(col, row));
+            err_at!(Fatal, queue!(stdout, span))?;
             col += 1;
             row += 1;
         }
@@ -194,7 +194,7 @@ impl FileWindow {
             l.push_str(&line);
             err_at!(
                 Fatal,
-                queue!(stdout, cursor::MoveTo(col, row), Span::new(l))
+                queue!(stdout, Span::new(l, Cursor::new(col, row)))
             )?;
             col += 1;
             row += 1;
@@ -287,7 +287,7 @@ impl FileWindow {
             l.push_str(&line);
             err_at!(
                 Fatal,
-                queue!(stdout, cursor::MoveTo(col, row), Span::new(l))
+                queue!(stdout, Span::new(l, Cursor::new(col, row)))
             )?;
             col += 1;
             row += 1;
@@ -297,7 +297,7 @@ impl FileWindow {
     }
 }
 
-impl Window for FileWindow {
+impl Window for WindowFile {
     #[inline]
     fn to_origin(&self) -> (u16, u16) {
         self.w_coord.to_origin()

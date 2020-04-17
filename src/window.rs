@@ -1,4 +1,4 @@
-use crossterm::Command;
+use crossterm::{cursor, style::{self, Color, Attribute}, Command};
 
 use std::{fmt, result};
 
@@ -100,17 +100,38 @@ impl fmt::Display for Cursor {
     }
 }
 
-// lines and cursor point point to render within the Terminal
-pub struct Render {
-    pub lines: Option<Box<dyn Iterator<Item = Span>>>,
-    pub cursor: Option<Cursor>,
+// Span object to render on screen.
+pub struct Span{
+    text: String,
+    fg: Color,
+    bg: Color,
+    attr: Attribute,
+    cursor: Cursor,
 }
 
-pub struct Span(String);
-
 impl Span {
-    pub fn new(s: String) -> Span {
-        Span(s)
+    // Refer to https://jonasjacek.github.io/colors
+    const DEFAULT_BG: Color = Color::AnsiValue(0);   // Black
+    const DEFAULT_FG: Color = Color::AnsiValue(124); // Red3
+    const DEFAULT_ATTR: Attribute = Attribute::Bold;
+
+    pub fn new(text: String, cursor: Cursor) -> Span {
+        Span{ text, fg: Self::DEFAULT_FG, bg: Self::DEFAULT_BG, attr: Self::DEFAULT_ATTR, cursor }
+    }
+
+    pub fn set_fg(&mut self, fg: Color) -> &mut Self {
+        self.fg = fg;
+        self
+    }
+
+    pub fn set_bg(&mut self, bg: Color) -> &mut Self {
+        self.bg = bg;
+        self
+    }
+
+    pub fn set_attr(&mut self, attr: Attribute) -> &mut Self {
+        self.attr = attr;
+        self
     }
 }
 
@@ -118,6 +139,10 @@ impl Command for Span {
     type AnsiType = String;
 
     fn ansi_code(&self) -> Self::AnsiType {
-        self.0.clone()
+        let mut s = cursor::MoveTo(self.cursor.col, self.cursor.row).to_string();
+        s.push_str(
+            &style::style(&self.text).on(self.bg).with(self.fg).attribute(self.attr).to_string()
+        );
+        s
     }
 }

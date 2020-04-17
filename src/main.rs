@@ -21,7 +21,7 @@ use std::{
 
 use ted::{
     err_at,
-    file_window::FileWindow,
+    window_file::WindowFile,
     window::{Coord, Cursor},
     Buffer, Config, Error, Event, Result, Window,
 };
@@ -78,7 +78,7 @@ impl Application {
         let mut app = {
             let tm = Terminal::init()?;
             let coord = Coord::new(1, 1, tm.rows, tm.cols);
-            let w = err_at!(Fatal, FileWindow::new(coord, config.clone()))?;
+            let w = err_at!(Fatal, WindowFile::new(coord, config.clone()))?;
             Application {
                 tm,
                 window: Box::new(w),
