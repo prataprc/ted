@@ -14,7 +14,9 @@ use std::{
 
 use crate::{
     config::Config,
+    cursor,
     event::Event,
+    window::Cursor,
     {err_at, Error, Result},
 };
 

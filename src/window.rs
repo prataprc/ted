@@ -4,7 +4,7 @@ use crossterm::{
     Command,
 };
 
-use std::{fmt, result};
+use std::{fmt, ops::Add, result};
 
 use crate::{Buffer, Config, Event, Result};
 
@@ -13,7 +13,12 @@ pub trait Window {
 
     fn to_cursor(&self) -> Cursor;
 
-    fn handle_event(&mut self, ctxt: &mut Context, evnt: Event) -> Result<Option<Event>>;
+    fn handle_event(
+        //
+        &mut self,
+        ctxt: &mut Context,
+        evnt: Event,
+    ) -> Result<Option<Event>>;
 
     fn refresh(&mut self, ctxt: &mut Context) -> Result<()>;
 }
@@ -88,6 +93,11 @@ impl Coord {
     }
 
     #[inline]
+    pub fn to_top_left(&self) -> Cursor {
+        cursor!(self.col - 1, self.row - 1)
+    }
+
+    #[inline]
     pub fn to_size(&self) -> (u16, u16) {
         (self.hgt, self.wth)
     }
@@ -97,7 +107,7 @@ impl fmt::Display for Coord {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         write!(
             f,
-            "Coord<col:{} row:{} height:{} width:{}>",
+            "Coord<{},{},{},{}>",
             self.col, self.row, self.hgt, self.wth
         )
     }
@@ -110,12 +120,6 @@ pub struct Cursor {
     pub row: u16,
 }
 
-impl Cursor {
-    pub fn new(col: u16, row: u16) -> Cursor {
-        Cursor { col, row }
-    }
-}
-
 impl From<(u16, u16)> for Cursor {
     fn from((col, row): (u16, u16)) -> Cursor {
         Cursor { col, row }
@@ -124,7 +128,15 @@ impl From<(u16, u16)> for Cursor {
 
 impl fmt::Display for Cursor {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "Cursor<col:{} row:{}>", self.col, self.row)
+        write!(f, "Cursor<{},{}>", self.col, self.row)
+    }
+}
+
+impl Add for Cursor {
+    type Output = Cursor;
+
+    fn add(self, rhs: Cursor) -> Cursor {
+        cursor!(self.col + rhs.col, self.row + rhs.row)
     }
 }
 
@@ -194,6 +206,13 @@ impl Command for Span {
 
         s
     }
+}
+
+#[macro_export]
+macro_rules! cursor {
+    ($col:expr, $row:expr) => {
+        Cursor::new($col, $row)
+    };
 }
 
 #[macro_export]

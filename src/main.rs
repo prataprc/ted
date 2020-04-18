@@ -87,26 +87,20 @@ enum InnerApp {
     },
 }
 
-impl Application {
-    fn take_window(&mut self) -> Box<dyn Window> {
-        match self.inner.take() {
-            Some(InnerApp::Usual { window }) => window,
-            Some(InnerApp::OpenFiles { window, .. }) => window,
-            None => unreachable!(),
+impl InnerApp {
+    fn as_mut_window(&mut self) -> &mut Box<(dyn ted::window::Window + 'static)> {
+        match self {
+            InnerApp::Usual { window } => window,
+            InnerApp::OpenFiles { window, .. } => window,
         }
     }
+}
 
+impl Application {
     fn to_window_cursor(&self) -> Cursor {
         match self.inner.as_ref().unwrap() {
             InnerApp::Usual { window } => window.to_cursor(),
             InnerApp::OpenFiles { window, .. } => window.to_cursor(),
-        }
-    }
-
-    fn set_window(&mut self, w: Box<dyn Window>) {
-        match self.inner.as_mut().unwrap() {
-            InnerApp::Usual { window } => *window = w,
-            InnerApp::OpenFiles { window, .. } => *window = w,
         }
     }
 
@@ -223,13 +217,14 @@ impl Application {
 
                 self.context.buffers.push(buffer);
 
-                let mut window = self.take_window();
+                let mut inner = self.inner.take().unwrap();
+                let window = inner.as_mut_window();
                 window.handle_event(
                     //
                     &mut self.context,
                     Event::UseBuffer { buffer_id },
                 )?;
-                self.set_window(window);
+                self.inner = Some(inner);
                 Ok(Some(self))
             }
             Event::OpenFiles { flocs } if flocs.len() > 0 => {
@@ -320,42 +315,40 @@ impl Drop for Terminal {
 }
 
 fn init_logger(opts: &Opt) -> Result<()> {
-    if opts.log_file.is_empty() {
-        Ok(())
+    let home_dir = err_at!(
+        Fatal,
+        dirs::home_dir().ok_or(format!("can't find home-directory"))
+    )?;
+    let log_file: path::PathBuf = if opts.log_file.is_empty() {
+        [home_dir, path::Path::new(".ted.log").to_path_buf()]
     } else {
-        let log_file: path::PathBuf = [
-            err_at!(
-                Fatal,
-                dirs::home_dir().ok_or(format!("can't find home-directory"))
-            )?,
-            path::Path::new(&opts.log_file).to_path_buf(),
-        ]
-        .iter()
-        .collect();
-
-        let level_filter = if opts.trace {
-            simplelog::LevelFilter::Trace
-        } else if opts.verbose {
-            simplelog::LevelFilter::Debug
-        } else {
-            simplelog::LevelFilter::Info
-        };
-
-        let mut config = simplelog::ConfigBuilder::new();
-        config
-            .set_location_level(simplelog::LevelFilter::Error)
-            .set_target_level(simplelog::LevelFilter::Off)
-            .set_thread_mode(simplelog::ThreadLogMode::Both)
-            .set_thread_level(simplelog::LevelFilter::Error)
-            .set_time_to_local(true)
-            .set_time_format("%Y-%m-%dT%H-%M-%S%.3f".to_string());
-
-        let fs = err_at!(Fatal, fs::File::create(&log_file))?;
-        err_at!(
-            Fatal,
-            simplelog::WriteLogger::init(level_filter, config.build(), fs)
-        )?;
-
-        Ok(())
+        [home_dir, path::Path::new(&opts.log_file).to_path_buf()]
     }
+    .iter()
+    .collect();
+
+    let level_filter = if opts.trace {
+        simplelog::LevelFilter::Trace
+    } else if opts.verbose {
+        simplelog::LevelFilter::Debug
+    } else {
+        simplelog::LevelFilter::Info
+    };
+
+    let mut config = simplelog::ConfigBuilder::new();
+    config
+        .set_location_level(simplelog::LevelFilter::Error)
+        .set_target_level(simplelog::LevelFilter::Off)
+        .set_thread_mode(simplelog::ThreadLogMode::Both)
+        .set_thread_level(simplelog::LevelFilter::Error)
+        .set_time_to_local(true)
+        .set_time_format("%Y-%m-%dT%H-%M-%S%.3f".to_string());
+
+    let fs = err_at!(Fatal, fs::File::create(&log_file))?;
+    err_at!(
+        Fatal,
+        simplelog::WriteLogger::init(level_filter, config.build(), fs)
+    )?;
+
+    Ok(())
 }

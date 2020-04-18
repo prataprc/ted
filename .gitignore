@@ -2,7 +2,8 @@
 */*.swp
 */*.swo
 */out
-kavi-panic.out
+ted-panic.out
+*/ted-panic.out
 target
 Cargo.lock
 .vimsession
