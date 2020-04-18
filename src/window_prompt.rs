@@ -1,14 +1,15 @@
-use crossterm::{cursor, queue};
+use crossterm::{cursor, queue, style::Color};
 use unicode_width::UnicodeWidthChar;
 
 use std::{
+    convert::TryFrom,
     fmt,
     io::{self, Write},
     result,
 };
 
 use crate::{
-    event::Event,
+    event::{self, Event},
     window::{Context, Coord, Cursor, Span, Window},
     Error, Result,
 };
@@ -29,26 +30,61 @@ impl fmt::Display for WindowPrompt {
     }
 }
 
+impl From<Vec<Span>> for WindowPrompt {
+    fn from(spans: Vec<Span>) -> WindowPrompt {
+        WindowPrompt::new(spans).ok().unwrap()
+    }
+}
+
+impl TryFrom<event::OpenFile> for WindowPrompt {
+    type Error = Error;
+
+    fn try_from(of: event::OpenFile) -> Result<WindowPrompt> {
+        let fg = Color::AnsiValue(9);
+        let bg = Color::AnsiValue(15);
+        let spans = match of {
+            event::OpenFile::ReadOnly(_, file) => vec![
+                span!(fg: fg, bg: bg, "-- Read only file {:?}", file),
+                span!(fg: fg, bg: bg, "-- Press c or space to continue --"),
+            ],
+            event::OpenFile::NotFound(file) => vec![
+                span!(fg: fg, bg: bg, "-- File not found {:?}", file),
+                span!(fg: fg, bg: bg, "-- Press c or space to continue --"),
+            ],
+            event::OpenFile::NoPermission(file) => vec![
+                span!(fg: fg, bg: bg, "-- Permission denied {:?}", file),
+                span!(fg: fg, bg: bg, "-- Press c or space to continue --"),
+            ],
+            event::OpenFile::ReadWrite(_, file) => {
+                err_at!(FailConvert, msg: format!("{:?}", file))?;
+                unreachable!()
+            }
+        };
+        Ok(spans.into())
+    }
+}
+
 impl WindowPrompt {
     #[inline]
-    pub fn new(
-        coord: Coord,
-        prompt_lines: Vec<Span>,
-        prompt_cursor: Cursor,
-    ) -> Result<WindowPrompt> {
+    pub fn new(prompt_lines: Vec<Span>) -> Result<WindowPrompt> {
         Ok(WindowPrompt {
-            coord,
+            coord: Default::default(),
             prompt_lines,
-            prompt_cursor,
+            prompt_cursor: Default::default(),
             rendered: false,
 
             input: Default::default(),
         })
     }
 
-    pub fn set_prompt(&mut self, prompt_lines: Vec<Span>, prompt_cursor: Cursor) {
-        self.prompt_lines = prompt_lines;
-        self.prompt_cursor = prompt_cursor;
+    pub fn set_coord(&mut self, coord: Coord) -> &mut Self {
+        self.coord = coord;
+        self
+    }
+
+    pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
+        self.prompt_cursor = cursor;
+        self
     }
 }
 
@@ -72,7 +108,11 @@ impl Window for WindowPrompt {
                 err_at!(Fatal, queue!(stdout, span))?;
             }
         } else {
-            let span = Span::new(self.input.clone(), self.prompt_cursor);
+            let span = {
+                let mut span = Span::new(&self.input.clone());
+                span.set_cursor(self.prompt_cursor);
+                span
+            };
             err_at!(Fatal, queue!(stdout, span))?;
             let n: usize = self.input.chars().map(|ch| ch.width().unwrap()).sum();
             let Cursor { mut col, row } = self.prompt_cursor;
@@ -94,7 +134,7 @@ impl Window for WindowPrompt {
                 self.input.pop();
                 Ok(None)
             }
-            Event::Enter => Ok(Some(Event::PromptAns {
+            Event::Enter => Ok(Some(Event::PromptReply {
                 input: self.input.clone(),
             })),
             Event::Char(ch, _m) => {

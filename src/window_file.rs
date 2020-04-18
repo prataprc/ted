@@ -173,13 +173,14 @@ impl WindowFile {
         };
 
         if self.is_top_margin() {
-            let span = Span::new(
+            let mut span = Span::new(
                 String::from_iter(
                     std::iter::repeat(self.config.top_margin_char)
                         .take(self.w_coord.to_origin().0 as usize),
-                ),
-                Cursor::new(col, row),
+                )
+                .as_str(),
             );
+            span.set_cursor(Cursor::new(col, row));
             err_at!(Fatal, queue!(stdout, span))?;
             col += 1;
             row += 1;
@@ -199,7 +200,7 @@ impl WindowFile {
                 l.push_str(&line_no.to_string());
             }
             l.push_str(&line);
-            err_at!(Fatal, queue!(stdout, Span::new(l, Cursor::new(col, row))))?;
+            err_at!(Fatal, queue!(stdout, span!((col, row), s: l)))?;
             col += 1;
             row += 1;
         }
@@ -289,7 +290,7 @@ impl WindowFile {
                 l.push_str(&line_no.to_string());
             }
             l.push_str(&line);
-            err_at!(Fatal, queue!(stdout, Span::new(l, Cursor::new(col, row))))?;
+            err_at!(Fatal, queue!(stdout, span!((col, row), s: l)))?;
             col += 1;
             row += 1;
         }

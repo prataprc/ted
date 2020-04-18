@@ -14,13 +14,14 @@ use simplelog;
 use structopt::StructOpt;
 
 use std::{
-    ffi, fs,
+    convert::TryInto,
+    fs,
     io::{self, Write},
     path,
 };
 
 use ted::{
-    err_at,
+    err_at, event,
     window::{Context, Coord, Cursor},
     window_file::WindowFile,
     window_prompt::WindowPrompt,
@@ -78,6 +79,8 @@ enum InnerApp {
     OpenFiles {
         pw: WindowPrompt,
         window: Box<dyn Window>,
+        flocs: Vec<event::OpenFile>,
+        fds: Vec<event::OpenFile>,
     },
     Usual {
         window: Box<dyn Window>,
@@ -125,14 +128,9 @@ impl Application {
         let evnt = if opts.files.len() == 0 {
             Event::NewBuffer
         } else {
-            Event::NewBuffer
-            //Event::OpenFiles {
-            //    files: opts
-            //        .files
-            //        .iter()
-            //        .map(|f| f.as_ref().to_os_string())
-            //        .collect(),
-            //}
+            let flocs: Vec<event::OpenFile> =
+                opts.files.clone().into_iter().map(Into::into).collect();
+            Event::OpenFiles { flocs }
         };
 
         app.event_loop(Some(evnt))
@@ -183,9 +181,19 @@ impl Application {
                 evnt = window.handle_event(&mut self.context, evnt.unwrap())?;
                 Some(InnerApp::Usual { window })
             }
-            Some(InnerApp::OpenFiles { pw, mut window }) => {
+            Some(InnerApp::OpenFiles {
+                pw,
+                mut window,
+                flocs,
+                fds,
+            }) => {
                 evnt = window.handle_event(&mut self.context, evnt.unwrap())?;
-                Some(InnerApp::OpenFiles { pw, window })
+                Some(InnerApp::OpenFiles {
+                    pw,
+                    window,
+                    flocs,
+                    fds,
+                })
             }
             None => unreachable!(),
         };
@@ -224,13 +232,51 @@ impl Application {
                 self.set_window(window);
                 Ok(Some(self))
             }
-            Event::OpenFiles { .. } => Ok(Some(self)),
+            Event::OpenFiles { flocs } if flocs.len() > 0 => {
+                //
+                self.handle_open_files(flocs).map(|x| Some(x))
+            }
             Event::Char('q', m) if m.is_empty() => Ok(None),
             _ => Ok(Some(self)),
         }
     }
 
     fn handle_down(self, _evnt: Event) -> Result<Self> {
+        Ok(self)
+    }
+
+    fn handle_open_files(
+        //
+        mut self,
+        mut flocs: Vec<event::OpenFile>,
+    ) -> Result<Self> {
+        self.inner = match self.inner.take() {
+            Some(InnerApp::Usual { window }) => {
+                let mut fds = vec![];
+                loop {
+                    let floc = flocs.remove(0);
+                    let pw: Result<WindowPrompt> = floc.clone().try_into();
+                    match pw {
+                        Err(_) => {
+                            fds.push(floc);
+                            break Some(InnerApp::Usual { window });
+                        }
+                        Ok(pw) => {
+                            flocs.insert(0, floc);
+                            break Some(InnerApp::OpenFiles {
+                                pw,
+                                window,
+                                flocs,
+                                fds,
+                            });
+                        }
+                    }
+                }
+            }
+            val @ Some(InnerApp::OpenFiles { .. }) => val,
+            None => err_at!(Fatal, msg: format!("unreachable"))?,
+        };
+
         Ok(self)
     }
 }

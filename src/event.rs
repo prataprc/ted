@@ -1,6 +1,90 @@
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
-use std::ffi;
+use std::{convert::TryFrom, ffi, fs, path};
+
+use crate::{Error, Result};
+
+pub enum OpenFile {
+    ReadWrite(fs::File, ffi::OsString),
+    ReadOnly(fs::File, ffi::OsString),
+    NotFound(ffi::OsString),
+    NoPermission(ffi::OsString),
+}
+
+impl Clone for OpenFile {
+    fn clone(&self) -> Self {
+        match self {
+            OpenFile::ReadWrite(_, floc) => {
+                let mut opts = fs::OpenOptions::new();
+                let fd = opts.read(true).write(true).open(floc).unwrap();
+                OpenFile::ReadWrite(fd, floc.clone())
+            }
+            OpenFile::ReadOnly(_, floc) => {
+                let mut opts = fs::OpenOptions::new();
+                let fd = opts.read(true).open(floc).unwrap();
+                OpenFile::ReadOnly(fd, floc.clone())
+            }
+            OpenFile::NotFound(floc) => OpenFile::NotFound(floc.clone()),
+            OpenFile::NoPermission(floc) => OpenFile::NoPermission(floc.clone()),
+        }
+    }
+}
+
+impl From<ffi::OsString> for OpenFile {
+    fn from(floc: ffi::OsString) -> Self {
+        let mut opts = fs::OpenOptions::new();
+        match opts.read(true).write(true).open(&floc) {
+            Ok(fd) => OpenFile::ReadWrite(fd, floc),
+            Err(_) => match opts.read(true).open(&floc) {
+                Ok(fd) => OpenFile::ReadOnly(fd, floc),
+                Err(_) => {
+                    let p = path::Path::new(&floc);
+                    if p.is_file() {
+                        OpenFile::NoPermission(floc)
+                    } else {
+                        OpenFile::NotFound(floc)
+                    }
+                }
+            },
+        }
+    }
+}
+
+impl From<String> for OpenFile {
+    fn from(floc: String) -> Self {
+        let f: &ffi::OsStr = floc.as_ref();
+        f.to_os_string().into()
+    }
+}
+
+impl TryFrom<OpenFile> for fs::File {
+    type Error = Error;
+
+    fn try_from(of: OpenFile) -> Result<fs::File> {
+        match of {
+            OpenFile::ReadWrite(fd, _) => Ok(fd),
+            OpenFile::ReadOnly(fd, _) => Ok(fd),
+            OpenFile::NotFound(floc) => {
+                let mut opts = fs::OpenOptions::new();
+                err_at!(
+                    IOError,
+                    opts.read(true).write(true).open(&floc),
+                    format!("{:?}", floc)
+                )?;
+                unreachable!()
+            }
+            OpenFile::NoPermission(floc) => {
+                let mut opts = fs::OpenOptions::new();
+                err_at!(
+                    IOError,
+                    opts.read(true).write(true).open(&floc),
+                    format!("{:?}", floc)
+                )?;
+                unreachable!()
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
 pub enum Event {
@@ -26,9 +110,9 @@ pub enum Event {
     Insert,
     // Application events
     NewBuffer,
-    OpenFiles { files: Vec<ffi::OsString> },
+    OpenFiles { flocs: Vec<OpenFile> },
     UseBuffer { buffer_id: String },
-    PromptAns { input: String },
+    PromptReply { input: String },
 }
 
 impl From<TermEvent> for Event {

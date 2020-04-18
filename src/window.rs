@@ -132,40 +132,40 @@ impl fmt::Display for Cursor {
 #[derive(Clone)]
 pub struct Span {
     text: String,
-    fg: Color,
-    bg: Color,
-    attr: Attribute,
-    cursor: Cursor,
+    fg: Option<Color>,
+    bg: Option<Color>,
+    attr: Option<Attribute>,
+    cursor: Option<Cursor>,
 }
 
 impl Span {
-    // Refer to https://jonasjacek.github.io/colors
-    const DEFAULT_BG: Color = Color::AnsiValue(0); // Black
-    const DEFAULT_FG: Color = Color::AnsiValue(124); // Red3
-    const DEFAULT_ATTR: Attribute = Attribute::Bold;
-
-    pub fn new(text: String, cursor: Cursor) -> Span {
+    pub fn new(text: &str) -> Span {
         Span {
-            text,
-            fg: Self::DEFAULT_FG,
-            bg: Self::DEFAULT_BG,
-            attr: Self::DEFAULT_ATTR,
-            cursor,
+            text: text.to_string(),
+            fg: Default::default(),
+            bg: Default::default(),
+            attr: Default::default(),
+            cursor: Default::default(),
         }
     }
 
+    pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
     pub fn set_fg(&mut self, fg: Color) -> &mut Self {
-        self.fg = fg;
+        self.fg = Some(fg);
         self
     }
 
     pub fn set_bg(&mut self, bg: Color) -> &mut Self {
-        self.bg = bg;
+        self.bg = Some(bg);
         self
     }
 
     pub fn set_attr(&mut self, attr: Attribute) -> &mut Self {
-        self.attr = attr;
+        self.attr = Some(attr);
         self
     }
 }
@@ -174,14 +174,66 @@ impl Command for Span {
     type AnsiType = String;
 
     fn ansi_code(&self) -> Self::AnsiType {
-        let mut s = cursor::MoveTo(self.cursor.col, self.cursor.row).to_string();
-        s.push_str(
-            &style::style(&self.text)
-                .on(self.bg)
-                .with(self.fg)
-                .attribute(self.attr)
-                .to_string(),
-        );
+        let mut s = match &self.cursor {
+            Some(Cursor { col, row }) => cursor::MoveTo(*col, *row).to_string(),
+            None => Default::default(),
+        };
+        s.push_str(&{
+            let mut ss = style::style(&self.text);
+            if let Some(bg) = &self.bg {
+                ss = ss.on(*bg);
+            }
+            if let Some(fg) = &self.fg {
+                ss = ss.with(*fg);
+            }
+            if let Some(attr) = &self.attr {
+                ss = ss.attribute(*attr);
+            }
+            ss.to_string()
+        });
+
         s
     }
+}
+
+#[macro_export]
+macro_rules! span {
+    (fg:$fg:expr, bg:$bg:expr, s:$text:expr) => {{
+        let mut spn = Span::new(&$text);
+        spn.set_fg($fg).set_bg($bg);
+        spn
+    }};
+    (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), s:$text:expr) => {{
+        let mut spn = Span::new(&$text);
+        spn.set_cursor(Cursor { col: $col, row: $row });
+        spn.set_fg($fg).set_bg($bg);
+        spn
+    }};
+    (($col:expr, $row:expr), s:$text:expr) => {{
+        let mut spn = Span::new(&$text);
+        spn.set_cursor(Cursor { col: $col, row: $row });
+        spn
+    }};
+    (s:$text:expr) => {{
+        Span::new(&$text)
+    }};
+    (fg:$fg:expr, bg:$bg:expr, $($s:expr),*) => {{
+        let mut spn = Span::new(&format!($($s),*));
+        spn.set_fg($fg).set_bg($bg);
+        spn
+    }};
+    (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), $($s:expr),*) => {{
+        let mut spn = Span::new(&format!($($s),*));
+        spn.set_cursor(Cursor { col: $col, row: $row });
+        spn.set_fg($fg).set_bg($bg);
+        spn
+    }};
+    (($col:expr, $row:expr), $($s:expr),*) => {{
+        let mut spn = Span::new(&format!($($s),*));
+        spn.set_cursor(Cursor { col: $col, row: $row });
+        spn
+    }};
+    ($($s:expr),*) => {{
+        Span::new(&format!($($s),*))
+    }};
 }
