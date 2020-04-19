@@ -18,10 +18,11 @@ use std::{
     fs,
     io::{self, Write},
     path,
+    time::SystemTime,
 };
 
 use ted::{
-    err_at, event,
+    err_at, event, stats,
     window::{Context, Coord, Cursor},
     window_file::WindowFile,
     window_prompt::WindowPrompt,
@@ -38,6 +39,9 @@ pub struct Opt {
 
     #[structopt(long = "trace")]
     trace: bool,
+
+    #[structopt(long = "stats")]
+    stats: bool,
 
     files: Vec<String>,
 }
@@ -131,7 +135,11 @@ impl Application {
     }
 
     fn event_loop(mut self, mut evnt: Option<Event>) -> Result<()> {
-        loop {
+        let mut stats_a = stats::Latency::new();
+        let mut stats_z = stats::Latency::new();
+
+        let res = loop {
+            let start = SystemTime::now();
             // app-handle bubble up event.
             self = match evnt {
                 Some(evnt) => match self.handle_up(evnt)? {
@@ -148,6 +156,7 @@ impl Application {
             err_at!(Fatal, queue!(self.tm.stdout, cursor::MoveTo(col, row)))?;
             err_at!(Fatal, queue!(self.tm.stdout, cursor::Show))?;
             err_at!(Fatal, self.tm.stdout.flush())?;
+            stats_a.sample(start.elapsed().unwrap());
 
             // new event
             evnt = {
@@ -156,13 +165,20 @@ impl Application {
                 Some(tevnt.clone().into())
             };
 
+            let start = SystemTime::now();
             // hide-cursor
             err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
             // app-handle bubble down event
             self = self.handle_down(evnt.clone().unwrap())?;
             // event handling
             evnt = self.dispatch_event(evnt)?;
-        }
+            stats_z.sample(start.elapsed().unwrap());
+        };
+
+        stats_a.pretty_print("");
+        stats_z.pretty_print("");
+
+        res
     }
 
     fn dispatch_event(

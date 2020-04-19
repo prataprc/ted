@@ -5,6 +5,7 @@ pub mod util;
 pub mod buffer;
 pub mod config;
 pub mod event;
+pub mod stats;
 #[macro_use]
 pub mod window;
 pub mod window_edit;

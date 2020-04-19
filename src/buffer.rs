@@ -1,5 +1,4 @@
 use lazy_static::lazy_static;
-use log::trace;
 use ropey::{self, Rope};
 use unicode_width::UnicodeWidthChar;
 
