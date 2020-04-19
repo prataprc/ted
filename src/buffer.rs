@@ -14,9 +14,7 @@ use std::{
 
 use crate::{
     config::Config,
-    cursor,
     event::Event,
-    window::Cursor,
     {err_at, Error, Result},
 };
 
@@ -27,47 +25,6 @@ const NEW_LINE_CHAR: char = '\n';
 pub enum State {
     Normal,
     Insert,
-}
-
-// Location of buffer's content, typically a persistent medium.
-#[derive(Clone)]
-pub enum Location {
-    Anonymous(String),
-    Disk(ffi::OsString),
-}
-
-lazy_static! {
-    static ref ANONYMOUS_COUNT: Mutex<usize> = Mutex::new(0);
-}
-
-impl Location {
-    fn new_anonymous() -> Location {
-        let mut count = ANONYMOUS_COUNT.lock().unwrap();
-        *count = *count + 1;
-        Location::Anonymous(format!("anonymous-{}", count))
-    }
-
-    fn new_disk(loc: &ffi::OsStr) -> Location {
-        Location::Disk(loc.to_os_string())
-    }
-}
-
-impl Default for Location {
-    fn default() -> Location {
-        Location::new_anonymous()
-    }
-}
-
-impl fmt::Display for Location {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        match self {
-            Location::Anonymous(s) => write!(f, "{}", s),
-            Location::Disk(s) => {
-                let s = s.clone().into_string().unwrap();
-                write!(f, "{}", s)
-            }
-        }
-    }
 }
 
 // all bits and pieces of content is managed by buffer.
@@ -158,7 +115,7 @@ impl Buffer {
         self.change.as_ref().borrow_mut()
     }
 
-    pub fn iter_lines<'a>(
+    pub fn to_lines<'a>(
         &'a self,
         from: Bound<usize>,
         to: Bound<usize>,
@@ -171,12 +128,12 @@ impl Buffer {
         }
     }
 
-    pub fn change_lines<'a>(
+    pub fn to_changed_lines<'a>(
         //
         &'a self,
     ) -> impl Iterator<Item = (usize, String)> + 'a {
         let (from, to) = self.as_change().change_at;
-        self.iter_lines(from, to)
+        self.to_lines(from, to)
     }
 }
 
@@ -210,7 +167,19 @@ impl Buffer {
     }
 
     fn handle_normal_event(&mut self, evnt: Event) -> Result<Option<Event>> {
-        Ok(Some(evnt))
+        use Event::{Char, Insert};
+
+        match evnt.clone() {
+            Insert => {
+                self.state = State::Insert;
+                Ok(None)
+            }
+            Char('i', m) if m.is_empty() => {
+                self.state = State::Insert;
+                Ok(None)
+            }
+            _ => Ok(Some(evnt)),
+        }
     }
 
     fn handle_insert_event(&mut self, evnt: Event) -> Result<Option<Event>> {
@@ -338,7 +307,11 @@ impl Buffer {
                 }
                 Ok(None)
             }
-            F(_, _) | BackTab | Insert | PageUp | PageDown | Noop | Esc => {
+            Esc => {
+                self.state = State::Normal;
+                Ok(None)
+            }
+            F(_, _) | BackTab | Insert | PageUp | PageDown | Noop => {
                 //
                 Ok(Some(evnt))
             }
@@ -359,7 +332,6 @@ fn line_last_char(buf: &Rope, cursor: usize) -> usize {
         (Some('\n'), _) => 1,
         _ => 0,
     };
-    trace!("line_last_char {} {} {}", start_idx, chars.len(), n);
     start_idx + chars.len() - n
 }
 
@@ -482,22 +454,65 @@ impl<'a> Iterator for TabfixIter<'a> {
     type Item = (usize, String);
 
     fn next(&mut self) -> Option<Self::Item> {
+        use std::ops::Bound::{Included, Unbounded};
+
         let r: &Rope = self.change.as_ref();
         let n_lines = r.len_lines();
         match (self.from, self.to) {
-            (Bound::Included(from), Bound::Unbounded) if from < n_lines => {
+            (Included(from), Unbounded) if from < n_lines => {
                 // TODO: can this replace be made in-place
-                self.from = Bound::Included(from + 1);
+                self.from = Included(from + 1);
                 let l = r.line(from).to_string().replace('\t', &self.tabstop);
                 Some((from + 1, l))
             }
-            (Bound::Included(from), Bound::Included(to)) if from < n_lines && from <= to => {
-                self.from = Bound::Included(from + 1);
+            (Included(from), Included(to)) if from < n_lines && from <= to => {
+                self.from = Included(from + 1);
                 // TODO: can this replace be made in-place
                 let l = r.line(from).to_string().replace('\t', &self.tabstop);
                 Some((from + 1, l))
             }
             _ => None,
+        }
+    }
+}
+
+// Location of buffer's content, typically a persistent medium.
+#[derive(Clone)]
+pub enum Location {
+    Anonymous(String),
+    Disk(ffi::OsString),
+}
+
+lazy_static! {
+    static ref ANONYMOUS_COUNT: Mutex<usize> = Mutex::new(0);
+}
+
+impl Location {
+    fn new_anonymous() -> Location {
+        let mut count = ANONYMOUS_COUNT.lock().unwrap();
+        *count = *count + 1;
+        Location::Anonymous(format!("anonymous-{}", count))
+    }
+
+    fn new_disk(loc: &ffi::OsStr) -> Location {
+        Location::Disk(loc.to_os_string())
+    }
+}
+
+impl Default for Location {
+    fn default() -> Location {
+        Location::new_anonymous()
+    }
+}
+
+impl fmt::Display for Location {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Location::Anonymous(s) => write!(f, "{}", s),
+            Location::Disk(s) => {
+                let s = s.clone().into_string().unwrap();
+                write!(f, "{}", s)
+            }
         }
     }
 }

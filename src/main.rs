@@ -152,7 +152,7 @@ impl Application {
             // new event
             evnt = {
                 let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
-                trace!("Event-{:?}", tevnt);
+                trace!("Event-{:?} Cursor:({},{})", tevnt, col, row);
                 Some(tevnt.clone().into())
             };
 

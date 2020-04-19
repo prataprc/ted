@@ -99,6 +99,16 @@ impl Window for WindowPrompt {
         self.prompt_cursor
     }
 
+    #[inline]
+    fn move_by(&mut self, col_off: i16, row_off: i16, _: &Context) {
+        self.coord = self.coord.clone().move_by(col_off, row_off);
+    }
+
+    #[inline]
+    fn resize_to(&mut self, height: u16, width: u16, _: &Context) {
+        self.coord = self.coord.clone().resize_to(height, width);
+    }
+
     fn refresh(&mut self, _context: &mut Context) -> Result<()> {
         let mut stdout = io::stdout();
 

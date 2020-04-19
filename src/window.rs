@@ -1,5 +1,5 @@
 use crossterm::{
-    cursor,
+    cursor as term_cursor,
     style::{self, Attribute, Color},
     Command,
 };
@@ -8,10 +8,65 @@ use std::{fmt, ops::Add, result};
 
 use crate::{Buffer, Config, Event, Result};
 
+#[macro_export]
+macro_rules! cursor {
+    ($col:expr, $row:expr) => {
+        Cursor {
+            col: $col,
+            row: $row,
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! span {
+    (fg:$fg:expr, bg:$bg:expr, s:$text:expr) => {{
+        let mut spn = Span::new(&$text);
+        spn.set_fg($fg).set_bg($bg);
+        spn
+    }};
+    (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), s:$text:expr) => {{
+        let mut spn = Span::new(&$text);
+        spn.set_cursor(Cursor { col: $col, row: $row });
+        spn.set_fg($fg).set_bg($bg);
+        spn
+    }};
+    (($col:expr, $row:expr), s:$text:expr) => {{
+        let mut spn = Span::new(&$text);
+        spn.set_cursor(Cursor { col: $col, row: $row });
+        spn
+    }};
+    (s:$text:expr) => {{
+        Span::new(&$text)
+    }};
+    (fg:$fg:expr, bg:$bg:expr, $($s:expr),*) => {{
+        let mut spn = Span::new(&format!($($s),*));
+        spn.set_fg($fg).set_bg($bg);
+        spn
+    }};
+    (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), $($s:expr),*) => {{
+        let mut spn = Span::new(&format!($($s),*));
+        spn.set_cursor(Cursor { col: $col, row: $row });
+        spn.set_fg($fg).set_bg($bg);
+        spn
+    }};
+    (($col:expr, $row:expr), $($s:expr),*) => {{
+        let mut spn = Span::new(&format!($($s),*));
+        spn.set_cursor(Cursor { col: $col, row: $row });
+        spn
+    }};
+    ($($s:expr),*) => {{
+        Span::new(&format!($($s),*))
+    }};
+}
 pub trait Window {
     fn to_origin(&self) -> (u16, u16);
 
     fn to_cursor(&self) -> Cursor;
+
+    fn move_by(&mut self, col_off: i16, row_off: i16, context: &Context);
+
+    fn resize_to(&mut self, height: u16, width: u16, context: &Context);
 
     fn handle_event(
         //
@@ -37,13 +92,22 @@ impl Context {
         }
     }
 
-    pub fn as_mut_buffer(&mut self, id: &str) -> Option<&mut Buffer> {
-        for b in self.buffers.iter_mut() {
+    pub fn as_buffer(&self, id: &str) -> &Buffer {
+        for b in self.buffers.iter() {
             if b.to_id() == id {
-                return Some(b);
+                return b;
             }
         }
-        None
+        unreachable!()
+    }
+
+    pub fn as_mut_buffer(&mut self, id: &str) -> &mut Buffer {
+        for b in self.buffers.iter_mut() {
+            if b.to_id() == id {
+                return b;
+            }
+        }
+        unreachable!()
     }
 }
 
@@ -95,6 +159,15 @@ impl Coord {
     #[inline]
     pub fn to_top_left(&self) -> Cursor {
         cursor!(self.col - 1, self.row - 1)
+    }
+
+    #[inline]
+    pub fn to_trbl(&self, scroll_off: u16) -> (u16, u16, u16, u16) {
+        let t = self.row + scroll_off;
+        let r = self.col + self.wth - 1;
+        let b = self.row + self.hgt - 1 - scroll_off;
+        let l = self.col;
+        (t, r, b, l)
     }
 
     #[inline]
@@ -187,7 +260,10 @@ impl Command for Span {
 
     fn ansi_code(&self) -> Self::AnsiType {
         let mut s = match &self.cursor {
-            Some(Cursor { col, row }) => cursor::MoveTo(*col, *row).to_string(),
+            Some(Cursor { col, row }) => {
+                //
+                term_cursor::MoveTo(*col, *row).to_string()
+            }
             None => Default::default(),
         };
         s.push_str(&{
@@ -206,53 +282,4 @@ impl Command for Span {
 
         s
     }
-}
-
-#[macro_export]
-macro_rules! cursor {
-    ($col:expr, $row:expr) => {
-        Cursor::new($col, $row)
-    };
-}
-
-#[macro_export]
-macro_rules! span {
-    (fg:$fg:expr, bg:$bg:expr, s:$text:expr) => {{
-        let mut spn = Span::new(&$text);
-        spn.set_fg($fg).set_bg($bg);
-        spn
-    }};
-    (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), s:$text:expr) => {{
-        let mut spn = Span::new(&$text);
-        spn.set_cursor(Cursor { col: $col, row: $row });
-        spn.set_fg($fg).set_bg($bg);
-        spn
-    }};
-    (($col:expr, $row:expr), s:$text:expr) => {{
-        let mut spn = Span::new(&$text);
-        spn.set_cursor(Cursor { col: $col, row: $row });
-        spn
-    }};
-    (s:$text:expr) => {{
-        Span::new(&$text)
-    }};
-    (fg:$fg:expr, bg:$bg:expr, $($s:expr),*) => {{
-        let mut spn = Span::new(&format!($($s),*));
-        spn.set_fg($fg).set_bg($bg);
-        spn
-    }};
-    (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), $($s:expr),*) => {{
-        let mut spn = Span::new(&format!($($s),*));
-        spn.set_cursor(Cursor { col: $col, row: $row });
-        spn.set_fg($fg).set_bg($bg);
-        spn
-    }};
-    (($col:expr, $row:expr), $($s:expr),*) => {{
-        let mut spn = Span::new(&format!($($s),*));
-        spn.set_cursor(Cursor { col: $col, row: $row });
-        spn
-    }};
-    ($($s:expr),*) => {{
-        Span::new(&format!($($s),*))
-    }};
 }

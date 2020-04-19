@@ -2,8 +2,7 @@ use crossterm::queue;
 use log::trace;
 
 use std::{
-    convert::TryInto,
-    fmt,
+    cmp, fmt,
     io::{self, Write},
     iter::FromIterator,
     ops::Bound,
@@ -12,10 +11,9 @@ use std::{
 
 use crate::{
     config::Config,
-    cursor,
     event::Event,
     window::{Context, Coord, Cursor, Span, Window},
-    window_edit::WindowEdit;
+    window_edit::WindowEdit,
     Error, Result,
 };
 
@@ -32,8 +30,10 @@ use crate::{
 pub struct WindowFile {
     coord: Coord, // x window coord.
     we: WindowEdit,
-    nu_begin: Option<usize>,
     config: Config,
+    // cached parameters.
+    we_hgt: i16,
+    we_wth: i16,
 }
 
 impl fmt::Display for WindowFile {
@@ -45,51 +45,18 @@ impl fmt::Display for WindowFile {
 impl WindowFile {
     #[inline]
     pub fn new(coord: Coord, config: Config) -> Result<WindowFile> {
-        let we = WindowEdit::new(coord.clone, config.clone())?;
+        let we = WindowEdit::new(coord.clone(), config.clone())?;
         Ok(WindowFile {
             coord,
             we,
-            nu_begin: None,
             config,
+            we_hgt: 0,
+            we_wth: 0,
         })
-    }
-
-    #[inline]
-    fn move_by(mut self, col_off: i16, row_off: i16) -> Self {
-        self.coord = self.coord.move_by(col_off, row_off);
-        self.nu_begin = None;
-        self
-    }
-
-    #[inline]
-    fn resize_to(mut self, height: u16, width: u16) -> Self {
-        self.coord = self.coord.resize_to(height, width);
-        self.nu_begin = None;
-        self
     }
 }
 
 impl WindowFile {
-    #[inline]
-    pub fn to_top(&self) -> u16 {
-        self.coord.row
-    }
-
-    #[inline]
-    pub fn to_right(&self) -> u16 {
-        self.coord.col + self.coord.wth - 1
-    }
-
-    #[inline]
-    pub fn to_bottom(&self) -> u16 {
-        self.coord.row + self.coord.hgt - 1
-    }
-
-    #[inline]
-    pub fn to_left(&self) -> u16 {
-        self.coord.col
-    }
-
     fn is_top_margin(&self) -> bool {
         match self.to_origin() {
             (_, 1) => false,
@@ -104,49 +71,39 @@ impl WindowFile {
         }
     }
 
-    fn do_refresh(&mut self, context: &mut Context) -> Result<()> {
+    fn do_refresh(
+        &mut self,
+        line_no: usize,
+        lines: Vec<(usize, String)>,
+        _: &mut Context,
+    ) -> Result<()> {
         use std::iter::repeat;
 
-        let (_, mut line_no) = self.we.visual_cursor();
-        line_no += 1;
-
-        trace!("{}", self.coord);
-
         let mut stdout = io::stdout();
-        let (mut col, mut row) = self.coord.to_top_left();
-        let (mut height, width) = self.coord.to_size();
+
+        let Cursor { col, mut row } = self.coord.to_top_left();
+        let (height, _) = self.coord.to_size();
 
         if self.is_top_margin() {
             let ch = self.config.top_margin_char;
             let span = span!(
                 (col, row),
-                s: String::from_iter(repeat(ch).take(self.coord.wth))
+                s: String::from_iter(repeat(ch).take(self.coord.wth as usize))
             );
             err_at!(Fatal, queue!(stdout, span))?;
-            row += 1;
-            height -= 1;
-            self.we.move_by(0, 1).resize_to(height, width)
         }
 
-        let (from, to) = (
-            Bound::Included(self.line_no),
-            Bound::Included(self.line_no + (self.coord.hgt as usize) - 1),
+        let n = cmp::max(lines.len(), 1);
+        let m = (height as usize) - n;
+
+        trace!(
+            "line_no:{} n_lines:{} n:{} m:{}",
+            line_no,
+            lines.len(),
+            n,
+            m
         );
 
-        let (n, m) = {
-            let iter = self.we.iter_lines(from, to, context).take(height);
-            let lines: Vec<(usize, String)> = iter.collect();
-            (lines.len(), (height as usize) - lines.len())
-        };
-
-        {
-            let xc = (line_no + n).to_string().chars().collect::Vec<char>().len();
-            self.we.move_by(xc, 0).resize_to(col-xc-1);
-        };
-
-        self.we = WindowEdit::new(coord, 
-
-        trace!("left header {} {}", n, m);
         for _i in 0..n {
             let mut l: String = Default::default();
             if self.is_left_margin() {
@@ -169,28 +126,85 @@ impl WindowFile {
             err_at!(Fatal, queue!(stdout, span!((col, row), s: l)))?;
             row += 1;
         }
+
+        Ok(())
     }
 }
 
 impl Window for WindowFile {
     #[inline]
     fn to_origin(&self) -> (u16, u16) {
-        self.w_coord.to_origin()
+        self.coord.to_origin()
     }
 
     #[inline]
     fn to_cursor(&self) -> Cursor {
-        self.bw_coord.to_top_left() + self.bw_cursor
+        self.we.to_cursor()
+    }
+
+    #[inline]
+    fn move_by(&mut self, col_off: i16, row_off: i16, _: &Context) {
+        self.coord = self.coord.clone().move_by(col_off, row_off);
+    }
+
+    #[inline]
+    fn resize_to(&mut self, height: u16, width: u16, _: &Context) {
+        self.coord = self.coord.clone().resize_to(height, width);
     }
 
     fn refresh(&mut self, context: &mut Context) -> Result<()> {
-        let (_, mut line_no) = self.we.visual_cursor();
+        let (height, _) = self.coord.to_size();
+
+        let (_, mut line_no) = self.we.visual_cursor(context);
         line_no += 1;
 
-        match self.nu_begin {
-            Some(nu_begin) if nu_begin == line_no => Ok(()),
-            _ => self.do_refresh(context),
+        let (from, to) = (
+            Bound::Included(line_no),
+            Bound::Included(line_no + (height as usize) - 1),
+        );
+
+        let iter = self.we.to_lines(from, to, context).take(height as usize);
+        let lines: Vec<(usize, String)> = iter.collect();
+        let n_lines = lines.len();
+
+        self.do_refresh(line_no, lines, context)?;
+
+        {
+            let (we_hgt, h): (isize, isize) = if self.is_top_margin() {
+                (1, -1)
+            } else {
+                (0, 0)
+            };
+            let (mut we_wth, mut w): (isize, isize) = if self.is_left_margin() {
+                (1, -1)
+            } else {
+                (0, 0)
+            };
+            if self.config.line_number {
+                let n = format!("{} ", line_no + n_lines).len() as isize;
+                we_wth += n;
+                w -= n;
+            }
+            let (mut we_height, mut we_width) = self.coord.to_size();
+            we_height = ((we_height as isize) + h) as u16;
+            we_width = ((we_width as isize) + w) as u16;
+
+            trace!(
+                "{} move_by:({},{}), resize_to:({},{})",
+                self.coord,
+                we_wth,
+                we_hgt,
+                we_height,
+                we_width,
+            );
+
+            self.we.move_by(-self.we_wth, -self.we_hgt, context);
+            self.we.move_by(we_wth as i16, we_hgt as i16, context);
+            self.we_wth = we_wth as i16;
+            self.we_hgt = we_hgt as i16;
+            self.we.resize_to(we_height, we_width, context);
         }
+        self.we.refresh(context)
     }
 
     fn handle_event(

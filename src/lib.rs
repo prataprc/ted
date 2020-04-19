@@ -7,6 +7,7 @@ pub mod config;
 pub mod event;
 #[macro_use]
 pub mod window;
+pub mod window_edit;
 pub mod window_file;
 pub mod window_prompt;
 
