@@ -138,6 +138,8 @@ impl Application {
         let mut stats_a = stats::Latency::new();
         let mut stats_z = stats::Latency::new();
 
+        // TODO: later statistics can be moved to a different release stream
+        // and or controlled by command line option.
         let res = loop {
             let start = SystemTime::now();
             // app-handle bubble up event.

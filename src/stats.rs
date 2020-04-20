@@ -78,19 +78,4 @@ impl Latency {
             }
         }
     }
-
-    //pub fn json(&self) -> String {
-    //    let ps: Vec<String> = self
-    //        .percentiles()
-    //        .into_iter()
-    //        .map(|(d, n)| format!("{}: {}", d, n))
-    //        .collect();
-    //    let strs = [
-    //        format!("min: {}", self.min),
-    //        format!("mean: {}", self.mean()),
-    //        format!("max: {}", self.max),
-    //        format!("percentiles: {}", ps.join(", ")),
-    //    ];
-    //    ("{ ".to_string() + strs.join(", ").as_str() + " }").to_string()
-    //}
 }
