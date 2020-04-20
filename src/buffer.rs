@@ -4,7 +4,9 @@ use unicode_width::UnicodeWidthChar;
 
 use std::{
     cell::{self, RefCell},
-    cmp, ffi, fmt, io,
+    cmp,
+    convert::TryFrom,
+    ffi, fmt, io,
     ops::{Bound, RangeBounds},
     rc::{self, Rc},
     result,
@@ -19,11 +21,32 @@ use crate::{
 
 const NEW_LINE_CHAR: char = '\n';
 
-// Buffer state.
+// Buffer mode.
 #[derive(Clone)]
-pub enum State {
+pub enum Mode {
     Normal,
     Insert,
+}
+
+impl TryFrom<String> for Mode {
+    type Error = Error;
+
+    fn try_from(s: String) -> Result<Mode> {
+        match s.as_str() {
+            "normal" => Ok(Mode::Normal),
+            "insert" => Ok(Mode::Insert),
+            mode => err_at!(FailConvert, msg: format!("invalid mode {}", mode)),
+        }
+    }
+}
+
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Mode::Normal => write!(f, "normal"),
+            Mode::Insert => write!(f, "insert"),
+        }
+    }
 }
 
 // all bits and pieces of content is managed by buffer.
@@ -33,7 +56,7 @@ pub struct Buffer {
     config: Config,
     read_only: bool,
 
-    state: State,
+    mode: Mode,
     change: Rc<RefCell<Change>>,
     cursor: usize, // cursor is char_idx into buffer, where next insert happens.
 }
@@ -45,7 +68,7 @@ impl Default for Buffer {
             config: Default::default(),
             read_only: false,
 
-            state: State::Normal,
+            mode: Mode::Normal,
             change: Default::default(),
             cursor: 0,
         }
@@ -63,7 +86,7 @@ impl Buffer {
             config,
             read_only: false,
 
-            state: State::Normal,
+            mode: Mode::Normal,
             change: Change::start(buf),
             cursor: 0,
         })
@@ -159,9 +182,9 @@ impl Buffer {
     }
 
     pub fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
-        match self.state {
-            State::Normal => self.handle_normal_event(evnt),
-            State::Insert => self.handle_insert_event(evnt),
+        match self.mode {
+            Mode::Normal => self.handle_normal_event(evnt),
+            Mode::Insert => self.handle_insert_event(evnt),
         }
     }
 
@@ -170,11 +193,11 @@ impl Buffer {
 
         match evnt.clone() {
             Insert => {
-                self.state = State::Insert;
+                self.mode = Mode::Insert;
                 Ok(None)
             }
             Char('i', m) if m.is_empty() => {
-                self.state = State::Insert;
+                self.mode = Mode::Insert;
                 Ok(None)
             }
             _ => Ok(Some(evnt)),
@@ -307,7 +330,7 @@ impl Buffer {
                 Ok(None)
             }
             Esc => {
-                self.state = State::Normal;
+                self.mode = Mode::Normal;
                 Ok(None)
             }
             F(_, _) | BackTab | Insert | PageUp | PageDown | Noop => {
