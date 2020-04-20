@@ -4,10 +4,9 @@ use unicode_width::UnicodeWidthChar;
 
 use std::{
     cell::{self, RefCell},
-    cmp,
     convert::TryFrom,
     ffi, fmt, io,
-    ops::{Bound, RangeBounds},
+    ops::Bound,
     rc::{self, Rc},
     result,
     sync::Mutex,
@@ -52,13 +51,13 @@ impl fmt::Display for Mode {
 // all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
 pub struct Buffer {
+    mode: Mode,
+
     location: Location,
     config: Config,
     read_only: bool,
 
-    mode: Mode,
     change: Rc<RefCell<Change>>,
-    cursor: usize, // cursor is char_idx into buffer, where next insert happens.
 }
 
 impl Default for Buffer {
@@ -70,7 +69,6 @@ impl Default for Buffer {
 
             mode: Mode::Normal,
             change: Default::default(),
-            cursor: 0,
         }
     }
 }
@@ -88,7 +86,6 @@ impl Buffer {
 
             mode: Mode::Normal,
             change: Change::start(buf),
-            cursor: 0,
         })
     }
 
@@ -108,8 +105,16 @@ impl Buffer {
     }
 
     pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
-        self.cursor = cursor;
+        self.as_mut_change().set_cursor(cursor);
         self
+    }
+
+    fn as_change(&self) -> cell::Ref<Change> {
+        self.change.as_ref().borrow()
+    }
+
+    fn as_mut_change(&mut self) -> cell::RefMut<Change> {
+        self.change.as_ref().borrow_mut()
     }
 }
 
@@ -129,14 +134,6 @@ impl Buffer {
         }
     }
 
-    fn as_change(&self) -> cell::Ref<Change> {
-        self.change.as_ref().borrow()
-    }
-
-    fn as_mut_change(&mut self) -> cell::RefMut<Change> {
-        self.change.as_ref().borrow_mut()
-    }
-
     pub fn to_lines<'a>(
         &'a self,
         from: Bound<usize>,
@@ -149,36 +146,11 @@ impl Buffer {
             tabstop: self.config.tabstop.clone(),
         }
     }
-
-    pub fn to_changed_lines<'a>(
-        //
-        &'a self,
-    ) -> impl Iterator<Item = (usize, String)> + 'a {
-        let (from, to) = self.as_change().change_at;
-        self.to_lines(from, to)
-    }
 }
 
 impl Buffer {
     pub fn visual_cursor(&self) -> (usize, usize) {
-        let tabstop = self.config.tabstop.len(); // TODO: account for unicode
-        let row_at = self.as_change().char_to_line(self.cursor);
-        let col_at = self.cursor - self.as_change().line_to_char(row_at);
-        match self.as_change().lines_at(row_at).next() {
-            Some(line) => {
-                let a_col_at: usize = line
-                    .to_string()
-                    .chars()
-                    .take(col_at)
-                    .map(|ch| match ch {
-                        '\t' => tabstop,
-                        ch => ch.width().unwrap(),
-                    })
-                    .sum();
-                (a_col_at, row_at)
-            }
-            None => (col_at, row_at),
-        }
+        self.as_change().visual_cursor(&self.config.tabstop)
     }
 
     pub fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
@@ -209,160 +181,73 @@ impl Buffer {
         use Event::{Esc, Home, Insert, Left, Noop, PageDown, PageUp};
         use Event::{Right, Tab, Up, F};
 
-        let cursr = self.cursor;
-        let line_idx = self.as_change().char_to_line(cursr);
-        let start_idx = self.as_change().line_to_char(line_idx);
-
         match evnt.clone() {
             Char(ch, _) => {
                 self.change = Change::to_next_change(&mut self.change);
-                self.as_mut_change().insert_char(cursr, ch);
-                self.cursor = cursr + 1;
+                self.as_mut_change().insert_char(ch);
                 Ok(None)
             }
-            Backspace if cursr == 0 => Ok(None),
             Backspace => {
-                let new_cursor = cursr - 1;
                 self.change = Change::to_next_change(&mut self.change);
-                self.as_mut_change().remove(new_cursor..cursr);
-                self.cursor = new_cursor;
+                self.as_mut_change().backspace();
                 Ok(None)
             }
             Enter => {
                 self.change = Change::to_next_change(&mut self.change);
-                self.as_mut_change().insert_char(cursr, NEW_LINE_CHAR);
-                self.cursor = cursr + 1;
-                Ok(None)
-            }
-            Left if start_idx == cursr => Ok(None),
-            Left => {
-                self.cursor = cursr - 1;
-                Ok(None)
-            }
-            Right => {
-                let new_cursor = {
-                    let c = self.as_change();
-                    line_last_char(c.as_ref(), cursr)
-                };
-                self.cursor = if new_cursor == cursr {
-                    cursr
-                } else {
-                    cursr + 1
-                };
-                Ok(None)
-            }
-            Up if cursr == 0 => Ok(None),
-            Up => {
-                let (prev_line, cur_line) = {
-                    let change = self.as_change();
-                    let mut lines = change.lines_at(line_idx);
-                    (
-                        lines.prev().map(|x| x.to_string()),
-                        lines.next().map(|x| x.to_string()),
-                    )
-                };
-                match (prev_line, cur_line) {
-                    (None, _) => Ok(None),
-                    (Some(pline), Some(_)) => {
-                        let row_at = line_idx - 1;
-                        let col_at = cmp::min(
-                            pline.chars().collect::<Vec<char>>().len() - 1,
-                            cursr - start_idx,
-                        );
-                        let new_cursor = self.as_change().line_to_char(row_at);
-                        self.cursor = new_cursor + col_at;
-                        Ok(None)
-                    }
-                    _ => err_at!(Fatal, msg: format!("unreachable"))?,
-                }
-            }
-            Down => {
-                let (cur_line, next_line) = {
-                    let change = self.as_change();
-                    let mut lines = change.lines_at(line_idx);
-                    (
-                        lines.next().map(|x| x.to_string()),
-                        lines.next().map(|x| x.to_string()),
-                    )
-                };
-                match (cur_line, next_line) {
-                    (None, _) | (Some(_), None) => Ok(None),
-                    (Some(_), Some(nline)) => {
-                        let row_at = line_idx + 1;
-                        let n = nline.chars().collect::<Vec<char>>().len();
-                        let col_at = if n > 0 {
-                            cmp::min(n - 1, cursr - start_idx)
-                        } else {
-                            0
-                        };
-                        let new_cursor = self.as_change().line_to_char(row_at);
-                        self.cursor = new_cursor + col_at;
-                        Ok(None)
-                    }
-                }
-            }
-            Home => {
-                self.cursor = start_idx;
-                Ok(None)
-            }
-            End => {
-                self.cursor = {
-                    let c = self.as_change();
-                    line_last_char(c.as_ref(), cursr)
-                };
+                self.as_mut_change().insert_char(NEW_LINE_CHAR);
                 Ok(None)
             }
             Tab => {
                 self.change = Change::to_next_change(&mut self.change);
-                self.as_mut_change().insert_char(cursr, '\t');
-                self.cursor = cursr + 1;
+                self.as_mut_change().insert_char('\t');
                 Ok(None)
             }
             Delete => {
-                let new_cursor = {
-                    let c = self.as_change();
-                    line_last_char(c.as_ref(), cursr)
-                };
-                if cursr < new_cursor {
-                    self.change = Change::to_next_change(&mut self.change);
-                    self.as_mut_change().remove(cursr..(cursr + 1));
-                }
+                self.change = Change::to_next_change(&mut self.change);
+                self.as_mut_change().remove_at();
+                Ok(None)
+            }
+            Left => {
+                self.as_mut_change().move_left();
+                Ok(None)
+            }
+            Right => {
+                self.as_mut_change().move_right();
+                Ok(None)
+            }
+            Up => {
+                self.as_mut_change().move_up();
+                Ok(None)
+            }
+            Down => {
+                self.as_mut_change().move_down();
+                Ok(None)
+            }
+            Home => {
+                self.as_mut_change().home();
+                Ok(None)
+            }
+            End => {
+                self.as_mut_change().end();
                 Ok(None)
             }
             Esc => {
                 self.mode = Mode::Normal;
                 Ok(None)
             }
-            F(_, _) | BackTab | Insert | PageUp | PageDown | Noop => {
-                //
-                Ok(Some(evnt))
-            }
+            F(_, _) => Ok(Some(evnt)),
+            BackTab | Insert | PageUp | PageDown | Noop => Ok(Some(evnt)),
             _ => todo!(),
         }
     }
 }
 
-fn line_last_char(buf: &Rope, cursor: usize) -> usize {
-    let line_idx = buf.char_to_line(cursor);
-    let start_idx = buf.line_to_char(line_idx);
-    let line = buf.line(line_idx);
-    let chars: Vec<char> = line.chars().collect();
-    let mut iter = chars.iter().rev();
-    let n = match (iter.next(), iter.next()) {
-        (Some('\n'), Some('\r')) => 2,
-        (Some('\r'), Some('\n')) => 2,
-        (Some('\n'), _) => 1,
-        _ => 0,
-    };
-    start_idx + chars.len() - n
-}
-
 #[derive(Clone)]
 struct Change {
     buf: Rope,
-    change_at: (Bound<usize>, Bound<usize>),
     parent: Option<rc::Weak<RefCell<Change>>>,
     children: Vec<Rc<RefCell<Change>>>,
+    cursor: usize,
 }
 
 impl Default for Change {
@@ -371,9 +256,9 @@ impl Default for Change {
 
         Change {
             buf: Rope::from_reader(bytes.as_slice()).unwrap(),
-            change_at: (Bound::Unbounded, Bound::Unbounded),
             parent: None,
             children: Default::default(),
+            cursor: 0,
         }
     }
 }
@@ -382,9 +267,9 @@ impl From<Rope> for Change {
     fn from(buf: Rope) -> Change {
         Change {
             buf,
-            change_at: (Bound::Unbounded, Bound::Unbounded),
             parent: None,
             children: Default::default(),
+            cursor: 0,
         }
     }
 }
@@ -405,18 +290,18 @@ impl Change {
     fn start(buf: Rope) -> Rc<RefCell<Change>> {
         Rc::new(RefCell::new(Change {
             buf,
-            change_at: (Bound::Unbounded, Bound::Unbounded),
             parent: None,
             children: Default::default(),
+            cursor: 0,
         }))
     }
 
     fn to_next_change(prev: &mut Rc<RefCell<Change>>) -> Rc<RefCell<Change>> {
         let next = Rc::new(RefCell::new(Change {
             buf: prev.borrow().as_ref().clone(),
-            change_at: (Bound::Unbounded, Bound::Unbounded),
             parent: None,
             children: Default::default(),
+            cursor: prev.borrow().cursor,
         }));
 
         next.borrow_mut().children.push(Rc::clone(prev));
@@ -424,44 +309,115 @@ impl Change {
 
         next
     }
-}
 
-impl Change {
-    fn insert_char(&mut self, cursor: usize, ch: char) {
-        let line_idx = if ch == NEW_LINE_CHAR {
-            self.buf.char_to_line(cursor) + 1
-        } else {
-            self.buf.char_to_line(cursor)
-        };
-        self.change_at = (Bound::Included(line_idx), Bound::Included(line_idx));
-        self.buf.insert_char(cursor, ch)
-    }
-
-    fn remove<R>(&mut self, char_range: R)
-    where
-        R: RangeBounds<usize>,
-    {
-        let line_idx = match char_range.start_bound() {
-            Bound::Excluded(char_idx) => self.buf.char_to_line(*char_idx),
-            Bound::Included(char_idx) => self.buf.char_to_line(*char_idx + 1),
-            Bound::Unbounded => 0,
-        };
-        self.change_at = (Bound::Included(line_idx), Bound::Included(line_idx));
-        self.buf.remove(char_range)
+    fn visual_cursor(&self, tabstop: &str) -> (usize, usize) {
+        let tabstop = tabstop.len(); // TODO: account for unicode
+        let row_at = self.buf.char_to_line(self.cursor);
+        let col_at = self.cursor - self.buf.line_to_char(row_at);
+        match self.buf.lines_at(row_at).next() {
+            Some(line) => {
+                let a_col_at: usize = line
+                    .to_string()
+                    .chars()
+                    .take(col_at)
+                    .map(|ch| match ch {
+                        '\t' => tabstop,
+                        ch => ch.width().unwrap(),
+                    })
+                    .sum();
+                (a_col_at, row_at)
+            }
+            None => (col_at, row_at),
+        }
     }
 }
 
 impl Change {
-    fn char_to_line(&self, cursor: usize) -> usize {
-        self.buf.char_to_line(cursor)
+    fn set_cursor(&mut self, cursor: usize) -> &mut Self {
+        self.cursor = cursor;
+        self
     }
 
-    fn line_to_char(&self, cursor: usize) -> usize {
-        self.buf.char_to_line(cursor)
+    fn insert_char(&mut self, ch: char) {
+        self.buf.insert_char(self.cursor, ch);
+        self.cursor += 1;
     }
 
-    fn lines_at(&self, line_idx: usize) -> ropey::iter::Lines {
+    fn backspace(&mut self) {
+        if self.cursor > 0 {
+            self.buf.remove(self.cursor..=self.cursor);
+            self.cursor -= 1;
+        }
+    }
+
+    fn remove_at(&mut self) {
+        if self.cursor < self.buf.len_chars() {
+            self.buf.remove(self.cursor..=self.cursor);
+        }
+    }
+}
+
+impl Change {
+    fn move_left(&mut self) {
+        match self.buf.chars().prev() {
+            Some(_) => self.cursor -= 1,
+            None => (),
+        }
+    }
+
+    fn move_right(&mut self) {
+        match self.buf.chars().next() {
+            Some(_) => self.cursor += 1,
+            None => (),
+        }
+    }
+
+    fn move_up(&mut self) {
+        let line_idx = self.buf.char_to_line(self.cursor);
+        self.cursor = match self.to_lines().prev() {
+            Some(_) => {
+                let a_char = self.buf.line_to_char(line_idx - 1);
+                a_char + self.to_col()
+            }
+            None => self.cursor,
+        }
+    }
+
+    fn move_down(&mut self) {
+        let line_idx = self.buf.char_to_line(self.cursor);
+        self.cursor = match self.to_lines().next() {
+            Some(_) => {
+                let a_char = self.buf.line_to_char(line_idx - 1);
+                a_char + self.to_col()
+            }
+            None => self.cursor,
+        }
+    }
+
+    fn home(&mut self) {
+        self.cursor = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
+    }
+
+    fn end(&mut self) {
+        let mut iter = self.buf.chars();
+        for ch in iter.next() {
+            if ch == NEW_LINE_CHAR {
+                break;
+            }
+            self.cursor += 1;
+        }
+    }
+}
+
+impl Change {
+    fn to_lines(&self) -> ropey::iter::Lines {
+        let line_idx = self.buf.char_to_line(self.cursor);
         self.buf.lines_at(line_idx)
+    }
+
+    fn to_col(&self) -> usize {
+        let a_char = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
+        self.cursor - a_char
     }
 }
 
