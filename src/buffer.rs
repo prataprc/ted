@@ -79,7 +79,7 @@ impl Buffer {
         R: io::Read,
     {
         let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
-        trace!("first {:p}", &buf);
+        // trace!("first {:p}", &buf);
         Ok(Buffer {
             location: Default::default(),
             config,
@@ -320,7 +320,7 @@ impl Change {
     }
 
     fn insert_char(&mut self, ch: char) {
-        trace!("insert char {} {:p}", ch, &self.buf);
+        // trace!("insert char {} {:p}", ch, &self.buf);
         self.buf.insert_char(self.cursor, ch);
         self.cursor += 1;
     }

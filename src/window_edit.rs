@@ -130,12 +130,7 @@ impl WindowEdit {
         };
 
         let do_padding = |line: ropey::RopeSlice| -> Vec<char> {
-            trace!(
-                "bufline char_idx:{} {} line:{:?}",
-                new_bc.0,
-                (cursor.col as usize),
-                line.to_string()
-            );
+            // trace!("l {} {} {:?}", new_bc.0, cursor.col, line.to_string());
             line.chars_at(new_bc.0 - (cursor.col as usize))
                 .chain(repeat(' '))
                 .take((wth - nu_wth) as usize)
@@ -167,7 +162,7 @@ impl WindowEdit {
                 let iter = repeat(' ').take((wth - 2) as usize);
                 String::from_iter(iter)
             });
-            trace!("empline col:{} row:{} line:{:?}", col, row, s.len());
+            // trace!("empline col:{} row:{} line:{:?}", col, row, s.len());
             err_at!(Fatal, queue!(stdout, span!((col, row), s: s)))?;
             row += 1;
         }
