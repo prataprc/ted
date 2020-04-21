@@ -174,6 +174,11 @@ impl Coord {
     pub fn to_size(&self) -> (u16, u16) {
         (self.hgt, self.wth)
     }
+
+    #[inline]
+    pub fn empty_line(&self) -> Vec<char> {
+        std::iter::repeat(' ').take(self.wth as usize).collect()
+    }
 }
 
 impl fmt::Display for Coord {

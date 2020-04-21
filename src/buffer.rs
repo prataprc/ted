@@ -433,6 +433,10 @@ impl Change {
         self.buf.lines_at(line_idx)
     }
 
+    pub fn lines_at(&self, line_idx: usize) -> ropey::iter::Lines {
+        self.buf.lines_at(line_idx)
+    }
+
     fn to_col(&self) -> usize {
         let a_char = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
         self.cursor - a_char
