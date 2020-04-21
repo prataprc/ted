@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
+use log::trace;
 use ropey::{self, Rope};
-use unicode_width::UnicodeWidthChar;
 
 use std::{
     cell::{self, RefCell},
@@ -79,6 +79,7 @@ impl Buffer {
         R: io::Read,
     {
         let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
+        trace!("first {:p}", &buf);
         Ok(Buffer {
             location: Default::default(),
             config,
@@ -133,32 +134,15 @@ impl Buffer {
             Location::Disk(s) => s.to_str().unwrap().to_string(),
         }
     }
-
-    pub fn to_lines<'a>(
-        &'a self,
-        from: Bound<usize>,
-        to: Bound<usize>,
-    ) -> impl Iterator<Item = (usize, String)> + 'a {
-        TabfixIter {
-            change: self.as_change(),
-            from,
-            to,
-            tabstop: self.config.tabstop.clone(),
-        }
-    }
 }
 
 impl Buffer {
-    pub fn visual_cursor(&self) -> (usize, usize) {
-        self.as_change().visual_cursor(&self.config.tabstop)
-    }
-
     pub fn to_cursor(&self) -> usize {
         self.as_change().to_cursor()
     }
 
     pub fn to_xy_cursor(&self) -> (usize, usize) {
-        self.as_change().visual_cursor(&self.config.tabstop)
+        self.as_change().to_xy_cursor()
     }
 
     pub fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
@@ -318,27 +302,6 @@ impl Change {
         next
     }
 
-    fn visual_cursor(&self, tabstop: &str) -> (usize, usize) {
-        let tabstop = tabstop.len(); // TODO: account for unicode
-        let row_at = self.buf.char_to_line(self.cursor);
-        let col_at = self.cursor - self.buf.line_to_char(row_at);
-        match self.buf.lines_at(row_at).next() {
-            Some(line) => {
-                let a_col_at: usize = line
-                    .to_string()
-                    .chars()
-                    .take(col_at)
-                    .map(|ch| match ch {
-                        '\t' => tabstop,
-                        ch => ch.width().unwrap(),
-                    })
-                    .sum();
-                (a_col_at, row_at)
-            }
-            None => (col_at, row_at),
-        }
-    }
-
     pub fn to_cursor(&self) -> usize {
         self.cursor
     }
@@ -357,14 +320,15 @@ impl Change {
     }
 
     fn insert_char(&mut self, ch: char) {
+        trace!("insert char {} {:p}", ch, &self.buf);
         self.buf.insert_char(self.cursor, ch);
         self.cursor += 1;
     }
 
     fn backspace(&mut self) {
         if self.cursor > 0 {
-            self.buf.remove(self.cursor..=self.cursor);
             self.cursor -= 1;
+            self.buf.remove(self.cursor..=self.cursor);
         }
     }
 
