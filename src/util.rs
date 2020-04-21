@@ -5,6 +5,17 @@ use std::{ffi, path};
 use crate::{Error, Result};
 
 #[macro_export]
+macro_rules! if_else {
+    ($pred:expr, $if:expr, $else:expr) => {
+        if $pred {
+            $if
+        } else {
+            $else
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! err_at {
     ($v:ident, msg:$msg:expr) => {
         //

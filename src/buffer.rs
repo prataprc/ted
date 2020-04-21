@@ -109,11 +109,11 @@ impl Buffer {
         self
     }
 
-    fn as_change(&self) -> cell::Ref<Change> {
+    pub fn as_change(&self) -> cell::Ref<Change> {
         self.change.as_ref().borrow()
     }
 
-    fn as_mut_change(&mut self) -> cell::RefMut<Change> {
+    pub fn as_mut_change(&mut self) -> cell::RefMut<Change> {
         self.change.as_ref().borrow_mut()
     }
 }
@@ -150,6 +150,14 @@ impl Buffer {
 
 impl Buffer {
     pub fn visual_cursor(&self) -> (usize, usize) {
+        self.as_change().visual_cursor(&self.config.tabstop)
+    }
+
+    pub fn to_cursor(&self) -> usize {
+        self.as_change().to_cursor()
+    }
+
+    pub fn to_xy_cursor(&self) -> (usize, usize) {
         self.as_change().visual_cursor(&self.config.tabstop)
     }
 
@@ -243,7 +251,7 @@ impl Buffer {
 }
 
 #[derive(Clone)]
-struct Change {
+pub struct Change {
     buf: Rope,
     parent: Option<rc::Weak<RefCell<Change>>>,
     children: Vec<Rc<RefCell<Change>>>,
@@ -329,6 +337,16 @@ impl Change {
             }
             None => (col_at, row_at),
         }
+    }
+
+    pub fn to_cursor(&self) -> usize {
+        self.cursor
+    }
+
+    pub fn to_xy_cursor(&self) -> (usize, usize) {
+        let row_at = self.buf.char_to_line(self.cursor);
+        let col_at = self.cursor - self.buf.line_to_char(row_at);
+        (col_at, row_at)
     }
 }
 

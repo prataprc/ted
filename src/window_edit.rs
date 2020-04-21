@@ -1,5 +1,6 @@
 use crossterm::queue;
 use log::trace;
+use ropey::Rope;
 use unicode_width::UnicodeWidthChar;
 
 use std::{
@@ -73,6 +74,7 @@ pub struct WindowEdit {
     coord: Coord,
     cursor: Cursor,
     buf_origin: (usize, usize),
+    old_bc: usize,
 
     buffer_id: String,
     config: Config,
@@ -91,6 +93,7 @@ impl WindowEdit {
             coord,
             cursor: cursor!(0, 0),
             buf_origin: (0, 0),
+            old_bc: Default::default(),
 
             buffer_id: Default::default(),
             config,
@@ -117,6 +120,53 @@ impl WindowEdit {
     pub fn visual_cursor(&self, context: &Context) -> (usize, usize) {
         let buffer = context.as_buffer(&self.buffer_id);
         buffer.visual_cursor()
+    }
+
+    fn align_up(&self, context: &Context) -> u16 {
+        let buf = context.as_buffer(&self.buffer_id);
+        let change = buf.as_change();
+        let r: &Rope = change.as_ref();
+
+        let scroll_off = self.config.scroll_off;
+        let new_bc = change.to_cursor();
+        assert!(self.old_bc >= new_bc);
+
+        let limit = {
+            let (height, _) = self.coord.to_size();
+            if_else!(height < scroll_off, 0, scroll_off)
+        };
+        let Cursor { mut row, .. } = self.cursor;
+
+        let mut lines = r.lines_at(r.char_to_line(self.old_bc));
+        loop {
+            match lines.prev() {
+                Some(_) if (row + 1) < limit => break row,
+                Some(_) => row += 1,
+                None => break row,
+            }
+        }
+    }
+
+    fn align_down(&self, context: &Context) -> u16 {
+        let buf = context.as_buffer(&self.buffer_id);
+        let change = buf.as_change();
+        let r: &Rope = change.as_ref();
+
+        let scroll_off = self.config.scroll_off;
+        let new_bc = change.to_cursor();
+        assert!(new_bc >= self.old_bc);
+
+        let limit = self.coord.to_size().0.saturating_sub(scroll_off);
+        let Cursor { mut row, .. } = self.cursor;
+
+        let mut lines = r.lines_at(r.char_to_line(self.old_bc));
+        loop {
+            match lines.next() {
+                Some(_) if (row + 1) > limit => break row,
+                Some(_) => row += 1,
+                None => break row,
+            }
+        }
     }
 
     fn refresh_once(&mut self, buffer: &mut Buffer) -> Result<()> {
