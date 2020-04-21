@@ -4,6 +4,8 @@ use ropey::Rope;
 use unicode_width::UnicodeWidthChar;
 
 use std::{
+    cmp,
+    convert::TryInto,
     fmt,
     io::{self, Write},
     iter::FromIterator,
@@ -74,7 +76,7 @@ pub struct WindowEdit {
     coord: Coord,
     cursor: Cursor,
     buf_origin: (usize, usize),
-    old_bc: usize,
+    old_bc: (usize, usize),
 
     buffer_id: String,
     config: Config,
@@ -123,13 +125,15 @@ impl WindowEdit {
     }
 
     fn align_up(&self, context: &Context) -> u16 {
-        let buf = context.as_buffer(&self.buffer_id);
-        let change = buf.as_change();
+        let scroll_off = self.config.scroll_off;
+        let change = {
+            let buf = context.as_buffer(&self.buffer_id);
+            buf.as_change()
+        };
         let r: &Rope = change.as_ref();
 
-        let scroll_off = self.config.scroll_off;
-        let new_bc = change.to_cursor();
-        assert!(self.old_bc >= new_bc);
+        let new_bc = change.to_xy_cursor();
+        assert!(self.old_bc.1 >= new_bc.1);
 
         let limit = {
             let (height, _) = self.coord.to_size();
@@ -137,7 +141,7 @@ impl WindowEdit {
         };
         let Cursor { mut row, .. } = self.cursor;
 
-        let mut lines = r.lines_at(r.char_to_line(self.old_bc));
+        let mut lines = r.lines_at(self.old_bc.1);
         loop {
             match lines.prev() {
                 Some(_) if (row + 1) < limit => break row,
@@ -148,18 +152,20 @@ impl WindowEdit {
     }
 
     fn align_down(&self, context: &Context) -> u16 {
-        let buf = context.as_buffer(&self.buffer_id);
-        let change = buf.as_change();
+        let scroll_off = self.config.scroll_off;
+        let change = {
+            let buf = context.as_buffer(&self.buffer_id);
+            buf.as_change()
+        };
         let r: &Rope = change.as_ref();
 
-        let scroll_off = self.config.scroll_off;
-        let new_bc = change.to_cursor();
-        assert!(new_bc >= self.old_bc);
+        let new_bc = change.to_xy_cursor();
+        assert!(new_bc.1 >= self.old_bc.1);
 
         let limit = self.coord.to_size().0.saturating_sub(scroll_off);
         let Cursor { mut row, .. } = self.cursor;
 
-        let mut lines = r.lines_at(r.char_to_line(self.old_bc));
+        let mut lines = r.lines_at(self.old_bc.1);
         loop {
             match lines.next() {
                 Some(_) if (row + 1) > limit => break row,
@@ -167,6 +173,44 @@ impl WindowEdit {
                 None => break row,
             }
         }
+    }
+
+    fn align_left(&self, context: &Context) -> u16 {
+        let scroll_off = self.config.scroll_off;
+        let change = {
+            let buf = context.as_buffer(&self.buffer_id);
+            buf.as_change()
+        };
+
+        let new_bc = change.to_xy_cursor();
+        assert!(self.old_bc.0 >= new_bc.0);
+
+        let Cursor { mut col, .. } = self.cursor;
+        col.saturating_sub(
+            //
+            (self.old_bc.0 - new_bc.0).try_into().ok().unwrap_or(col),
+        )
+    }
+
+    fn align_right(&self, context: &Context) -> u16 {
+        let scroll_off = self.config.scroll_off;
+        let change = {
+            let buf = context.as_buffer(&self.buffer_id);
+            buf.as_change()
+        };
+
+        let new_bc = change.to_xy_cursor();
+        assert!(new_bc.0 >= self.old_bc.0);
+
+        let (_, width) = self.to_size();
+        let Cursor { mut col, .. } = self.cursor;
+        cmp::min(
+            col + (new_bc.0 - self.old_bc.0)
+                .try_into()
+                .ok()
+                .unwrap_or(u16::MAX),
+            width,
+        )
     }
 
     fn refresh_once(&mut self, buffer: &mut Buffer) -> Result<()> {
