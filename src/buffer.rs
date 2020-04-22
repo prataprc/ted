@@ -4,6 +4,7 @@ use ropey::{self, Rope};
 
 use std::{
     cell::{self, RefCell},
+    cmp,
     convert::TryFrom,
     ffi, fmt, io,
     ops::Bound,
@@ -57,17 +58,20 @@ pub struct Buffer {
     config: Config,
     read_only: bool,
 
+    partial_evnt: Option<Event>,
     change: Rc<RefCell<Change>>,
 }
 
 impl Default for Buffer {
     fn default() -> Buffer {
         Buffer {
+            mode: Mode::Normal,
+
             location: Default::default(),
             config: Default::default(),
             read_only: false,
 
-            mode: Mode::Normal,
+            partial_evnt: None,
             change: Default::default(),
         }
     }
@@ -81,11 +85,13 @@ impl Buffer {
         let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
         // trace!("first {:p}", &buf);
         Ok(Buffer {
+            mode: Mode::Normal,
+
             location: Default::default(),
             config,
             read_only: false,
 
-            mode: Mode::Normal,
+            partial_evnt: None,
             change: Change::start(buf),
         })
     }
@@ -155,16 +161,30 @@ impl Buffer {
     fn handle_normal_event(&mut self, evnt: Event) -> Result<Option<Event>> {
         use Event::{Char, Insert};
 
-        match evnt.clone() {
-            Insert => {
-                self.mode = Mode::Insert;
-                Ok(None)
-            }
-            Char('i', m) if m.is_empty() => {
-                self.mode = Mode::Insert;
-                Ok(None)
-            }
-            _ => Ok(Some(evnt)),
+        match &mut self.partial_evnt {
+            None => match evnt.clone() {
+                Insert => {
+                    self.mode = Mode::Insert;
+                    Ok(None)
+                }
+                Char('i', m) if m.is_empty() => {
+                    self.mode = Mode::Insert;
+                    Ok(None)
+                }
+                Char(ch, m) if m.is_empty() && '0' <= ch && ch <= '9' => {
+                    self.partial_evnt = Some(Event::PartialN(vec![ch]));
+                    Ok(None)
+                }
+                _ => Ok(Some(evnt)),
+            },
+            Some(Event::PartialN(xs)) => match evnt.clone() {
+                Char(ch, m) if m.is_empty() && '0' <= ch && ch <= '9' => {
+                    xs.push(ch);
+                    Ok(None)
+                }
+                _ => Ok(Some(evnt)),
+            },
+            Some(_) => Ok(Some(evnt)),
         }
     }
 
@@ -199,20 +219,20 @@ impl Buffer {
                 self.as_mut_change().remove_at();
                 Ok(None)
             }
-            Left => {
-                self.as_mut_change().move_left();
+            Left(n) => {
+                self.as_mut_change().move_left(n);
                 Ok(None)
             }
-            Right => {
-                self.as_mut_change().move_right();
+            Right(n) => {
+                self.as_mut_change().move_right(n);
                 Ok(None)
             }
-            Up => {
-                self.as_mut_change().move_up();
+            Up(n) => {
+                self.as_mut_change().move_up(n);
                 Ok(None)
             }
-            Down => {
-                self.as_mut_change().move_down();
+            Down(n) => {
+                self.as_mut_change().move_down(n);
                 Ok(None)
             }
             Home => {
@@ -340,40 +360,64 @@ impl Change {
 }
 
 impl Change {
-    fn move_left(&mut self) {
-        match self.buf.chars().prev() {
-            Some(_) => self.cursor -= 1,
-            None => (),
-        }
+    fn move_left(&mut self, n: usize) {
+        self.cursor = {
+            let line_idx = self.buf.char_to_line(self.cursor);
+            let new_cursor = self.cursor.saturating_sub(n);
+            if_else!(new_cursor > line_idx, new_cursor, line_idx)
+        };
     }
 
-    fn move_right(&mut self) {
-        match self.buf.chars().next() {
-            Some(_) => self.cursor += 1,
-            None => (),
-        }
+    fn move_right(&mut self, n: usize) {
+        let cs = self
+            .buf
+            .chars_at(self.cursor)
+            .enumerate()
+            .take_while(|(i, ch)| i < &n && *ch != NEW_LINE_CHAR)
+            .collect::<Vec<(usize, char)>>();
+        self.cursor += cs.len()
     }
 
-    fn move_up(&mut self) {
-        let line_idx = self.buf.char_to_line(self.cursor);
-        self.cursor = match self.to_lines().prev() {
-            Some(_) => {
-                let a_char = self.buf.line_to_char(line_idx - 1);
-                a_char + self.to_col()
+    fn move_up(&mut self, mut n: usize) {
+        let col = self.to_col();
+
+        let line_idx = {
+            let mut line_idx = self.buf.char_to_line(self.cursor);
+            let mut lines = self.to_lines();
+            loop {
+                match lines.prev() {
+                    Some(_) if n > 0 => {
+                        line_idx -= 1;
+                        n -= 1;
+                    }
+                    Some(_) => break line_idx,
+                    None => break line_idx,
+                }
             }
-            None => self.cursor,
-        }
+        };
+        let col = cmp::min(self.buf.line(line_idx).len_chars(), col);
+        self.cursor = self.buf.line_to_char(line_idx) + col;
     }
 
-    fn move_down(&mut self) {
-        let line_idx = self.buf.char_to_line(self.cursor);
-        self.cursor = match self.to_lines().next() {
-            Some(_) => {
-                let a_char = self.buf.line_to_char(line_idx - 1);
-                a_char + self.to_col()
+    fn move_down(&mut self, mut n: usize) {
+        let col = self.to_col();
+
+        let line_idx = {
+            let mut line_idx = self.buf.char_to_line(self.cursor);
+            let mut lines = self.to_lines();
+            loop {
+                match lines.next() {
+                    Some(_) if n > 0 => {
+                        line_idx += 1;
+                        n -= 1;
+                    }
+                    Some(_) => break line_idx,
+                    None => break line_idx,
+                }
             }
-            None => self.cursor,
-        }
+        };
+        let col = cmp::min(self.buf.line(line_idx).len_chars(), col);
+        self.cursor = self.buf.line_to_char(line_idx) + col;
     }
 
     fn home(&mut self) {
