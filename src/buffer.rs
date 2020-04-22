@@ -20,6 +20,8 @@ use crate::{
     {err_at, Error, Result},
 };
 
+// TODO: review for saturating_add and saturating_sub in all modules.
+
 const NEW_LINE_CHAR: char = '\n';
 
 #[macro_export]
@@ -170,7 +172,7 @@ impl Buffer {
     }
 
     fn handle_normal_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
-        use Event::{Backspace, Char, Left, PartialN, Right};
+        use Event::{Backspace, Char, GotoCol, Left, PartialN, Right};
 
         let m = evnt.to_modifiers();
         let (pe, e) = match self.partial_evnt.take() {
@@ -191,6 +193,7 @@ impl Buffer {
                 Char('h', _) => (None, Some(Left(parse_n!(xs), true))),
                 Char('l', _) => (None, Some(Right(parse_n!(xs), true))),
                 Char(' ', _) => (None, Some(Right(parse_n!(xs), false))),
+                Char('|', _) => (None, Some(GotoCol(parse_n!(xs)))),
                 evnt @ Char('0', _) => (None, Some(evnt)),
                 evnt @ Char('^', _) => (None, Some(evnt)),
                 evnt => (Some(PartialN(xs)), Some(evnt)),
@@ -203,7 +206,7 @@ impl Buffer {
     }
 
     fn handle_normal_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
-        use Event::{Backspace, Char, Insert, Left, Right};
+        use Event::{Backspace, Char, GotoCol, Insert, Left, Right};
 
         evnt = match self.handle_normal_prefix(evnt)? {
             Some(evnt) => evnt,
@@ -212,6 +215,10 @@ impl Buffer {
 
         let m = evnt.to_modifiers();
         match evnt {
+            Char('i', _) if m.is_empty() => {
+                self.mode = Mode::Insert;
+                Ok(None)
+            }
             Insert if m.is_empty() => {
                 self.mode = Mode::Insert;
                 Ok(None)
@@ -228,8 +235,8 @@ impl Buffer {
                 self.as_mut_change().move_left(n, true /*line_bound*/);
                 Ok(None)
             }
-            Char('i', _) if m.is_empty() => {
-                self.mode = Mode::Insert;
+            GotoCol(n) if m.is_empty() => {
+                self.as_mut_change().goto_column(n);
                 Ok(None)
             }
             Char('h', _) if m.is_empty() => {
@@ -250,6 +257,10 @@ impl Buffer {
             }
             Char('^', _) if m.is_empty() => {
                 self.as_mut_change().home_non_blank();
+                Ok(None)
+            }
+            Char('|', _) if m.is_empty() => {
+                self.as_mut_change().goto_column(1);
                 Ok(None)
             }
             evnt => Ok(Some(evnt)),
@@ -428,6 +439,53 @@ impl Change {
 }
 
 impl Change {
+    fn goto_column(&mut self, n: usize) {
+        let cs: Vec<char> = self.buf.chars_at(self.cursor).take(n).collect();
+        self.cursor += cs.len();
+    }
+
+    fn next_char_n(&mut self, ch: char, n: usize, till: bool) {
+        let cs: Vec<(usize, char)> = {
+            let iter = self.buf.chars_at(self.cursor).enumerate();
+            iter.take_while(|(_, c)| *c != NEW_LINE_CHAR).collect()
+        };
+        let mut occurences: Vec<usize> = cs
+            .into_iter()
+            .filter_map(|(i, c)| if_else!(c == ch, Some(i), None))
+            .take(n)
+            .collect();
+        let off = match occurences.pop() {
+            Some(off) if till => off.saturating_sub(1),
+            Some(off) => off,
+            None => 0,
+        };
+        let cursor = self.cursor.saturating_add(off);
+        let ln = self.buf.len_chars();
+        self.cursor = if_else!(cursor < ln, cursor, ln);
+    }
+
+    fn prev_char_n(&mut self, ch: char, n: usize, till: bool) {
+        let cs: Vec<(usize, char)> = {
+            let iter = ReverseIter {
+                iter: self.buf.chars_at(self.cursor),
+            };
+            iter.enumerate()
+                .take_while(|(_, c)| *c != NEW_LINE_CHAR)
+                .collect()
+        };
+        let mut occurences: Vec<usize> = cs
+            .into_iter()
+            .filter_map(|(i, c)| if_else!(c == ch, Some(i), None))
+            .take(n)
+            .collect();
+        let off = match occurences.pop() {
+            Some(off) if till => off.saturating_sub(1),
+            Some(off) => off,
+            None => 0,
+        };
+        self.cursor = self.cursor.saturating_sub(off);
+    }
+
     fn move_left(&mut self, n: usize, line_bound: bool) {
         self.cursor = if line_bound {
             let line_idx = self.buf.char_to_line(self.cursor);
@@ -602,5 +660,20 @@ impl fmt::Display for Location {
                 write!(f, "{}", s)
             }
         }
+    }
+}
+
+struct ReverseIter<I, T>
+where
+    I: Iterator<Item = T>,
+{
+    iter: I,
+}
+
+impl<'a> Iterator for ReverseIter<ropey::iter::Chars<'a>, char> {
+    type Item = char;
+
+    fn next(&mut self) -> Option<char> {
+        self.iter.prev()
     }
 }

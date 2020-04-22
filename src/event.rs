@@ -108,6 +108,8 @@ pub enum Event {
     BackTab,
     Delete,
     Insert,
+    // Motion Events
+    GotoCol(usize),
     // Partial events
     PartialN(Vec<char>),
     // Application events
