@@ -183,14 +183,16 @@ impl Buffer {
                 evnt => (None, Some(evnt)),
             },
             Some(PartialN(mut xs)) if m.is_empty() => match evnt {
+                Backspace(n) => (None, Some(Left(parse_n!(xs) + n, false))),
                 Char(ch, _) if '0' <= ch && ch <= '9' => {
                     xs.push(ch);
                     (Some(PartialN(xs)), None)
                 }
                 Char('h', _) => (None, Some(Left(parse_n!(xs), true))),
-                Backspace(n) => (None, Some(Left(parse_n!(xs) + n, false))),
                 Char('l', _) => (None, Some(Right(parse_n!(xs), true))),
                 Char(' ', _) => (None, Some(Right(parse_n!(xs), false))),
+                evnt @ Char('0', _) => (None, Some(evnt)),
+                evnt @ Char('^', _) => (None, Some(evnt)),
                 evnt => (Some(PartialN(xs)), Some(evnt)),
             },
             pe => (pe, Some(evnt)),
@@ -209,48 +211,48 @@ impl Buffer {
         };
 
         let m = evnt.to_modifiers();
-        match (evnt, m.is_empty()) {
-            (Insert, true) => {
+        match evnt {
+            Insert if m.is_empty() => {
                 self.mode = Mode::Insert;
                 Ok(None)
             }
-            (Left(n, lbnd), true) => {
+            Left(n, lbnd) if m.is_empty() => {
                 self.as_mut_change().move_left(n, lbnd);
                 Ok(None)
             }
-            (Right(n, lbnd), true) => {
+            Right(n, lbnd) if m.is_empty() => {
                 self.as_mut_change().move_right(n, lbnd);
                 Ok(None)
             }
-            (Backspace(n), true) => {
+            Backspace(n) if m.is_empty() => {
                 self.as_mut_change().move_left(n, true /*line_bound*/);
                 Ok(None)
             }
-            (Char('i', _), true) => {
+            Char('i', _) if m.is_empty() => {
                 self.mode = Mode::Insert;
                 Ok(None)
             }
-            (Char('h', _), true) => {
+            Char('h', _) if m.is_empty() => {
                 self.as_mut_change().move_left(1, true /*line_bound*/);
                 Ok(None)
             }
-            (Char('l', _), true) => {
+            Char('l', _) if m.is_empty() => {
                 self.as_mut_change().move_right(1, true /*line_bound*/);
                 Ok(None)
             }
-            (Char(' ', _), true) => {
+            Char(' ', _) if m.is_empty() => {
                 self.as_mut_change().move_right(1, true /*line_bound*/);
                 Ok(None)
             }
-            (Char('0', _), true) => {
+            Char('0', _) if m.is_empty() => {
                 self.as_mut_change().home();
                 Ok(None)
             }
-            (Char('^', _), true) => {
+            Char('^', _) if m.is_empty() => {
                 self.as_mut_change().home_non_blank();
                 Ok(None)
             }
-            (evnt, _) => Ok(Some(evnt)),
+            evnt => Ok(Some(evnt)),
         }
     }
 
