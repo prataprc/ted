@@ -94,10 +94,10 @@ pub enum Event {
     Char(char, KeyModifiers),
     // Processed Input events
     Esc,
-    Backspace,
+    Backspace(usize),
     Enter,
-    Left(usize),
-    Right(usize),
+    Left(usize, bool),
+    Right(usize, bool),
     Up(usize),
     Down(usize),
     Home,
@@ -124,10 +124,10 @@ impl From<TermEvent> for Event {
                 let ctrl = m.contains(KeyModifiers::CONTROL);
                 // let shift = m.contains(KeyModifiers::SHIFT);
                 match code {
-                    KeyCode::Backspace if m.is_empty() => Event::Backspace,
+                    KeyCode::Backspace if m.is_empty() => Event::Backspace(1),
                     KeyCode::Enter if m.is_empty() => Event::Enter,
-                    KeyCode::Left if m.is_empty() => Event::Left(1),
-                    KeyCode::Right if m.is_empty() => Event::Right(1),
+                    KeyCode::Left if m.is_empty() => Event::Left(1, true /*line_bound*/),
+                    KeyCode::Right if m.is_empty() => Event::Right(1, true /*line_bound*/),
                     KeyCode::Up if m.is_empty() => Event::Up(1),
                     KeyCode::Down if m.is_empty() => Event::Down(1),
                     KeyCode::Home if m.is_empty() => Event::Home,
@@ -151,8 +151,8 @@ impl From<TermEvent> for Event {
 }
 
 impl Event {
-    pub fn to_modifiers(evnt: &Event) -> KeyModifiers {
-        match evnt {
+    pub fn to_modifiers(&self) -> KeyModifiers {
+        match self {
             Event::F(_, modifiers) => modifiers.clone(),
             Event::Char(_, modifiers) => modifiers.clone(),
             _ => KeyModifiers::empty(),

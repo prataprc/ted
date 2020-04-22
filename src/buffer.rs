@@ -7,6 +7,7 @@ use std::{
     cmp,
     convert::TryFrom,
     ffi, fmt, io,
+    iter::FromIterator,
     ops::Bound,
     rc::{self, Rc},
     result,
@@ -20,6 +21,16 @@ use crate::{
 };
 
 const NEW_LINE_CHAR: char = '\n';
+
+#[macro_export]
+macro_rules! parse_n {
+    ($xs:expr) => {
+        err_at!(
+            FailConvert,
+            String::from_iter($xs.drain(..)).parse::<usize>()
+        )?
+    };
+}
 
 // Buffer mode.
 #[derive(Clone)]
@@ -158,33 +169,88 @@ impl Buffer {
         }
     }
 
-    fn handle_normal_event(&mut self, evnt: Event) -> Result<Option<Event>> {
-        use Event::{Char, Insert};
+    fn handle_normal_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
+        use Event::{Backspace, Char, Left, PartialN, Right};
 
-        match &mut self.partial_evnt {
-            None => match evnt.clone() {
-                Insert => {
-                    self.mode = Mode::Insert;
-                    Ok(None)
-                }
-                Char('i', m) if m.is_empty() => {
-                    self.mode = Mode::Insert;
-                    Ok(None)
-                }
-                Char(ch, m) if m.is_empty() && '0' <= ch && ch <= '9' => {
-                    self.partial_evnt = Some(Event::PartialN(vec![ch]));
-                    Ok(None)
-                }
-                _ => Ok(Some(evnt)),
+        let m = evnt.to_modifiers();
+        let (pe, e) = match self.partial_evnt.take() {
+            None if m.is_empty() => match evnt {
+                Char(ch, _) if '0' <= ch && ch <= '9' => (
+                    //
+                    Some(PartialN(vec![ch])),
+                    None,
+                ),
+                evnt => (None, Some(evnt)),
             },
-            Some(Event::PartialN(xs)) => match evnt.clone() {
-                Char(ch, m) if m.is_empty() && '0' <= ch && ch <= '9' => {
+            Some(PartialN(mut xs)) if m.is_empty() => match evnt {
+                Char(ch, _) if '0' <= ch && ch <= '9' => {
                     xs.push(ch);
-                    Ok(None)
+                    (Some(PartialN(xs)), None)
                 }
-                _ => Ok(Some(evnt)),
+                Char('h', _) => (None, Some(Left(parse_n!(xs), true))),
+                Backspace(n) => (None, Some(Left(parse_n!(xs) + n, false))),
+                Char('l', _) => (None, Some(Right(parse_n!(xs), true))),
+                Char(' ', _) => (None, Some(Right(parse_n!(xs), false))),
+                evnt => (Some(PartialN(xs)), Some(evnt)),
             },
-            Some(_) => Ok(Some(evnt)),
+            pe => (pe, Some(evnt)),
+        };
+
+        self.partial_evnt = pe;
+        Ok(e)
+    }
+
+    fn handle_normal_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
+        use Event::{Backspace, Char, Insert, Left, Right};
+
+        evnt = match self.handle_normal_prefix(evnt)? {
+            Some(evnt) => evnt,
+            None => return Ok(None),
+        };
+
+        let m = evnt.to_modifiers();
+        match (evnt, m.is_empty()) {
+            (Insert, true) => {
+                self.mode = Mode::Insert;
+                Ok(None)
+            }
+            (Left(n, lbnd), true) => {
+                self.as_mut_change().move_left(n, lbnd);
+                Ok(None)
+            }
+            (Right(n, lbnd), true) => {
+                self.as_mut_change().move_right(n, lbnd);
+                Ok(None)
+            }
+            (Backspace(n), true) => {
+                self.as_mut_change().move_left(n, true /*line_bound*/);
+                Ok(None)
+            }
+            (Char('i', _), true) => {
+                self.mode = Mode::Insert;
+                Ok(None)
+            }
+            (Char('h', _), true) => {
+                self.as_mut_change().move_left(1, true /*line_bound*/);
+                Ok(None)
+            }
+            (Char('l', _), true) => {
+                self.as_mut_change().move_right(1, true /*line_bound*/);
+                Ok(None)
+            }
+            (Char(' ', _), true) => {
+                self.as_mut_change().move_right(1, true /*line_bound*/);
+                Ok(None)
+            }
+            (Char('0', _), true) => {
+                self.as_mut_change().home();
+                Ok(None)
+            }
+            (Char('^', _), true) => {
+                self.as_mut_change().home_non_blank();
+                Ok(None)
+            }
+            (evnt, _) => Ok(Some(evnt)),
         }
     }
 
@@ -199,9 +265,9 @@ impl Buffer {
                 self.as_mut_change().insert_char(ch);
                 Ok(None)
             }
-            Backspace => {
+            Backspace(n) => {
                 self.change = Change::to_next_change(&mut self.change);
-                self.as_mut_change().backspace();
+                self.as_mut_change().backspace(n);
                 Ok(None)
             }
             Enter => {
@@ -219,12 +285,12 @@ impl Buffer {
                 self.as_mut_change().remove_at();
                 Ok(None)
             }
-            Left(n) => {
-                self.as_mut_change().move_left(n);
+            Left(n, lbnd) => {
+                self.as_mut_change().move_left(n, lbnd);
                 Ok(None)
             }
-            Right(n) => {
-                self.as_mut_change().move_right(n);
+            Right(n, lbnd) => {
+                self.as_mut_change().move_right(n, lbnd);
                 Ok(None)
             }
             Up(n) => {
@@ -345,10 +411,10 @@ impl Change {
         self.cursor += 1;
     }
 
-    fn backspace(&mut self) {
+    fn backspace(&mut self, n: usize) {
         if self.cursor > 0 {
-            self.cursor -= 1;
-            self.buf.remove(self.cursor..=self.cursor);
+            let cursor = self.cursor.saturating_sub(n);
+            self.buf.remove(cursor..self.cursor);
         }
     }
 
@@ -360,21 +426,23 @@ impl Change {
 }
 
 impl Change {
-    fn move_left(&mut self, n: usize) {
-        self.cursor = {
+    fn move_left(&mut self, n: usize, line_bound: bool) {
+        self.cursor = if line_bound {
             let line_idx = self.buf.char_to_line(self.cursor);
             let new_cursor = self.cursor.saturating_sub(n);
             if_else!(new_cursor > line_idx, new_cursor, line_idx)
+        } else {
+            self.cursor.saturating_sub(n)
         };
     }
 
-    fn move_right(&mut self, n: usize) {
-        let cs = self
-            .buf
-            .chars_at(self.cursor)
-            .enumerate()
-            .take_while(|(i, ch)| i < &n && *ch != NEW_LINE_CHAR)
-            .collect::<Vec<(usize, char)>>();
+    fn move_right(&mut self, n: usize, line_bound: bool) {
+        let iter = self.buf.chars_at(self.cursor).take(n);
+        let cs: Vec<char> = if line_bound {
+            iter.take_while(|ch| *ch != NEW_LINE_CHAR).collect()
+        } else {
+            iter.collect()
+        };
         self.cursor += cs.len()
     }
 
@@ -422,6 +490,16 @@ impl Change {
 
     fn home(&mut self) {
         self.cursor = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
+    }
+
+    fn home_non_blank(&mut self) {
+        self.home();
+        let n = self
+            .buf
+            .chars_at(self.cursor)
+            .take_while(|ch| ch.is_whitespace())
+            .fold(0, |n, _| n + 1);
+        self.cursor = self.cursor + n;
     }
 
     fn end(&mut self) {
