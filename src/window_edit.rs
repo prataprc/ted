@@ -56,7 +56,7 @@ impl WindowEdit {
         let row: u16 = {
             let soff = context.config.scroll_off * 2;
             let nx = if_else!(hgt < soff, (0, hgt - 1), (soff, hgt - soff - 1));
-            bounded_num_op!(
+            limit!(
                 (row as isize) + (new_bc.1 as isize) - (self.old_bc.1 as isize),
                 nx.0 as isize,
                 nx.1 as isize
@@ -85,7 +85,7 @@ impl WindowEdit {
         let (_, wth) = self.coord.to_size();
         let Cursor { col, .. } = self.cursor;
 
-        let col = bounded_num_op!(
+        let col = limit!(
             (col as isize) + (new_bc.0 as isize) - (self.old_bc.0 as isize),
             0,
             (wth - nu_wth - 1) as isize

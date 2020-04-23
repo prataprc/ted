@@ -16,7 +16,7 @@ macro_rules! if_else {
 }
 
 #[macro_export]
-macro_rules! bounded_num_op {
+macro_rules! limit {
     ($op:expr, $min:expr, $max:expr) => {{
         let res = $op;
         if_else!(res < $min, $min, if_else!(res < $max, res, $max))
