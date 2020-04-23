@@ -110,6 +110,8 @@ pub enum Event {
     Insert,
     // Motion Events
     GotoCol(usize),
+    FChar(usize, Option<char>, bool /*direction*/),
+    TChar(usize, Option<char>, bool /*direction*/),
     // Partial events
     PartialN(Vec<char>),
     // Application events

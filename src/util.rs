@@ -21,6 +21,10 @@ macro_rules! bounded_num_op {
         let res = $op;
         if_else!(res < $min, $min, if_else!(res < $max, res, $max))
     }};
+    ($op:expr, $max:expr) => {{
+        let res = $op;
+        if_else!(res < $max, res, $max)
+    }};
 }
 
 #[macro_export]

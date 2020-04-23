@@ -8,7 +8,6 @@ use std::{
     convert::TryFrom,
     ffi, fmt, io,
     iter::FromIterator,
-    ops::Bound,
     rc::{self, Rc},
     result,
     sync::Mutex,
@@ -30,7 +29,7 @@ macro_rules! parse_n {
         err_at!(
             FailConvert,
             String::from_iter($xs.drain(..)).parse::<usize>()
-        )?
+        )
     };
 }
 
@@ -72,6 +71,7 @@ pub struct Buffer {
     read_only: bool,
 
     partial_evnt: Option<Event>,
+    find_char: Option<Event>,
     change: Rc<RefCell<Change>>,
 }
 
@@ -85,6 +85,7 @@ impl Default for Buffer {
             read_only: false,
 
             partial_evnt: None,
+            find_char: None,
             change: Default::default(),
         }
     }
@@ -105,6 +106,7 @@ impl Buffer {
             read_only: false,
 
             partial_evnt: None,
+            find_char: None,
             change: Change::start(buf),
         })
     }
@@ -173,6 +175,7 @@ impl Buffer {
 
     fn handle_normal_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, GotoCol, Left, PartialN, Right};
+        use Event::{FChar, TChar};
 
         let m = evnt.to_modifiers();
         let (pe, e) = match self.partial_evnt.take() {
@@ -184,16 +187,52 @@ impl Buffer {
                 ),
                 evnt => (None, Some(evnt)),
             },
+            Some(FChar(n, _, d)) if m.is_empty() => match evnt {
+                Char(ch, _) => (None, Some(FChar(n, Some(ch), d))),
+                _ => (None, None),
+            },
+            Some(TChar(n, _, d)) if m.is_empty() => match evnt {
+                Char(ch, _) => (None, Some(TChar(n, Some(ch), d))),
+                _ => (None, None),
+            },
             Some(PartialN(mut xs)) if m.is_empty() => match evnt {
-                Backspace(n) => (None, Some(Left(parse_n!(xs) + n, false))),
+                Backspace(n) => (None, Some(Left(parse_n!(xs)? + n, false))),
                 Char(ch, _) if '0' <= ch && ch <= '9' => {
                     xs.push(ch);
                     (Some(PartialN(xs)), None)
                 }
-                Char('h', _) => (None, Some(Left(parse_n!(xs), true))),
-                Char('l', _) => (None, Some(Right(parse_n!(xs), true))),
-                Char(' ', _) => (None, Some(Right(parse_n!(xs), false))),
-                Char('|', _) => (None, Some(GotoCol(parse_n!(xs)))),
+                Char('h', _) => (None, Some(Left(parse_n!(xs)?, true))),
+                Char('l', _) => (None, Some(Right(parse_n!(xs)?, true))),
+                Char(' ', _) => (None, Some(Right(parse_n!(xs)?, false))),
+                Char('|', _) => (None, Some(GotoCol(parse_n!(xs)?))),
+                Char('f', _) => (Some(FChar(parse_n!(xs)?, None, true)), None),
+                Char('F', _) => (Some(FChar(parse_n!(xs)?, None, false)), None),
+                Char('t', _) => (Some(TChar(parse_n!(xs)?, None, true)), None),
+                Char('T', _) => (Some(TChar(parse_n!(xs)?, None, false)), None),
+                Char(';', _) if self.find_char.is_some() => {
+                    let m = parse_n!(xs)?;
+                    let e = match self.find_char.clone().unwrap() {
+                        FChar(_, None, _) => None,
+                        FChar(_, Some(ch), d) => Some(FChar(m, Some(ch), d)),
+                        TChar(_, None, _) => None,
+                        TChar(_, Some(ch), d) => Some(FChar(m, Some(ch), d)),
+                        _ => err_at!(Fatal, msg: format!("unreachable"))?,
+                    };
+                    (None, e)
+                }
+                Char(';', _) => (None, None),
+                Char(',', _) if self.find_char.is_some() => {
+                    let m = parse_n!(xs)?;
+                    let e = match self.find_char.clone().unwrap() {
+                        FChar(_, None, _) => None,
+                        FChar(_, Some(ch), d) => Some(FChar(m, Some(ch), !d)),
+                        TChar(_, None, _) => None,
+                        TChar(_, Some(ch), d) => Some(FChar(m, Some(ch), !d)),
+                        _ => err_at!(Fatal, msg: format!("unreachable"))?,
+                    };
+                    (None, e)
+                }
+                Char(',', _) => (None, None),
                 evnt @ Char('0', _) => (None, Some(evnt)),
                 evnt @ Char('^', _) => (None, Some(evnt)),
                 evnt => (Some(PartialN(xs)), Some(evnt)),
@@ -206,7 +245,7 @@ impl Buffer {
     }
 
     fn handle_normal_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
-        use Event::{Backspace, Char, GotoCol, Insert, Left, Right};
+        use Event::{Backspace, Char, FChar, GotoCol, Insert, Left, Right, TChar};
 
         evnt = match self.handle_normal_prefix(evnt)? {
             Some(evnt) => evnt,
@@ -239,6 +278,24 @@ impl Buffer {
                 self.as_mut_change().goto_column(n);
                 Ok(None)
             }
+            FChar(n, Some(ch), d) if d => {
+                self.as_mut_change().next_char_n(n, ch, false /*till*/);
+                Ok(None)
+            }
+            FChar(n, Some(ch), _) => {
+                self.as_mut_change().prev_char_n(n, ch, false /*till*/);
+                Ok(None)
+            }
+            FChar(_, _, _) => Ok(None),
+            TChar(n, Some(ch), d) if d => {
+                self.as_mut_change().next_char_n(n, ch, true /*till*/);
+                Ok(None)
+            }
+            TChar(n, Some(ch), _) => {
+                self.as_mut_change().prev_char_n(n, ch, true /*till*/);
+                Ok(None)
+            }
+            TChar(_, _, _) => Ok(None),
             Char('h', _) if m.is_empty() => {
                 self.as_mut_change().move_left(1, true /*line_bound*/);
                 Ok(None)
@@ -444,7 +501,7 @@ impl Change {
         self.cursor += cs.len();
     }
 
-    fn next_char_n(&mut self, ch: char, n: usize, till: bool) {
+    fn next_char_n(&mut self, n: usize, ch: char, till: bool) {
         let cs: Vec<(usize, char)> = {
             let iter = self.buf.chars_at(self.cursor).enumerate();
             iter.take_while(|(_, c)| *c != NEW_LINE_CHAR).collect()
@@ -464,7 +521,7 @@ impl Change {
         self.cursor = if_else!(cursor < ln, cursor, ln);
     }
 
-    fn prev_char_n(&mut self, ch: char, n: usize, till: bool) {
+    fn prev_char_n(&mut self, n: usize, ch: char, till: bool) {
         let cs: Vec<(usize, char)> = {
             let iter = ReverseIter {
                 iter: self.buf.chars_at(self.cursor),
@@ -523,8 +580,11 @@ impl Change {
                 }
             }
         };
-        let col = cmp::min(self.buf.line(line_idx).len_chars(), col);
-        self.cursor = self.buf.line_to_char(line_idx) + col;
+        self.cursor = {
+            let col = cmp::min(self.buf.line(line_idx).len_chars(), col);
+            let ln = self.buf.len_chars();
+            bounded_num_op!(self.buf.line_to_char(line_idx) + col, ln)
+        };
     }
 
     fn move_down(&mut self, mut n: usize) {
@@ -544,8 +604,11 @@ impl Change {
                 }
             }
         };
-        let col = cmp::min(self.buf.line(line_idx).len_chars(), col);
-        self.cursor = self.buf.line_to_char(line_idx) + col;
+        self.cursor = {
+            let col = cmp::min(self.buf.line(line_idx).len_chars(), col);
+            let ln = self.buf.len_chars();
+            bounded_num_op!(self.buf.line_to_char(line_idx) + col, ln)
+        };
     }
 
     fn home(&mut self) {
@@ -559,7 +622,7 @@ impl Change {
             .chars_at(self.cursor)
             .take_while(|ch| ch.is_whitespace())
             .fold(0, |n, _| n + 1);
-        self.cursor = self.cursor + n;
+        self.cursor = bounded_num_op!(self.cursor + n, self.buf.len_chars());
     }
 
     fn end(&mut self) {
@@ -586,39 +649,6 @@ impl Change {
     fn to_col(&self) -> usize {
         let a_char = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
         self.cursor - a_char
-    }
-}
-
-struct TabfixIter<'a> {
-    change: cell::Ref<'a, Change>,
-    from: Bound<usize>,
-    to: Bound<usize>,
-    tabstop: String,
-}
-
-impl<'a> Iterator for TabfixIter<'a> {
-    type Item = (usize, String);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        use std::ops::Bound::{Included, Unbounded};
-
-        let r: &Rope = self.change.as_ref();
-        let n_lines = r.len_lines();
-        match (self.from, self.to) {
-            (Included(from), Unbounded) if from < n_lines => {
-                // TODO: can this replace be made in-place
-                self.from = Included(from + 1);
-                let l = r.line(from).to_string().replace('\t', &self.tabstop);
-                Some((from + 1, l))
-            }
-            (Included(from), Included(to)) if from < n_lines && from <= to => {
-                self.from = Included(from + 1);
-                // TODO: can this replace be made in-place
-                let l = r.line(from).to_string().replace('\t', &self.tabstop);
-                Some((from + 1, l))
-            }
-            _ => None,
-        }
     }
 }
 
