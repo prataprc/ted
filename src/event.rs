@@ -95,14 +95,15 @@ pub enum Event {
     // Processed Input events
     Esc,
     Enter,
-    Backspace(usize),        // (n,)
-    Left(usize, bool),       // (n, line-bound)
-    Right(usize, bool),      // (n, line-bound)
-    Up(usize),               // (n,)
-    Down(usize),             // (n,)
-    UpA(usize),              // (n,)
-    DownA(usize),            // (n,)
-    Word(usize, bool, bool), // (n, fwd, tail)
+    Backspace(usize),         // (n,)
+    Left(usize, bool),        // (n, line-bound)
+    Right(usize, bool),       // (n, line-bound)
+    Up(usize),                // (n,)
+    Down(usize),              // (n,)
+    UpA(usize),               // (n,)
+    DownA(usize),             // (n,)
+    Word(usize, bool, bool),  // (n, fwd, tail)
+    WWord(usize, bool, bool), // (n, fwd, tail)
     Delete,
     Home,
     End,

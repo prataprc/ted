@@ -32,19 +32,6 @@ macro_rules! parse_n {
     };
 }
 
-macro_rules! skip_while {
-    ($iter:expr, $forward:expr, $method:ident) => {{
-        let mut n = 0;
-        loop {
-            match $iter.next() {
-                Some(item) if item.$method() => n += 1,
-                Some(_) => break n,
-                None => break n,
-            }
-        }
-    }};
-}
-
 // Buffer mode.
 #[derive(Clone)]
 pub enum Mode {
@@ -188,7 +175,7 @@ impl Buffer {
     fn handle_normal_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, GotoCol, Left, PartialN, Right};
         use Event::{Down, DownA, FChar, GotoRowA, PartialG, TChar, Up, UpA};
-        use Event::{GotoPercent, Word};
+        use Event::{GotoPercent, WWord, Word};
 
         let m = evnt.to_modifiers();
         let (pe, e) = match self.partial_evnt.take() {
@@ -259,6 +246,9 @@ impl Buffer {
                 Char('w', _) => (None, Some(Word(parse_n!(xs)?, false, false))),
                 Char('e', _) => (None, Some(Word(parse_n!(xs)?, false, true))),
                 Char('b', _) => (None, Some(Word(parse_n!(xs)?, true, false))),
+                Char('W', _) => (None, Some(WWord(parse_n!(xs)?, false, false))),
+                Char('E', _) => (None, Some(WWord(parse_n!(xs)?, false, true))),
+                Char('B', _) => (None, Some(WWord(parse_n!(xs)?, true, false))),
                 evnt @ Char('0', _) => (None, Some(evnt)),
                 evnt @ Char('^', _) => (None, Some(evnt)),
                 evnt => (Some(PartialN(xs)), Some(evnt)),
@@ -266,6 +256,7 @@ impl Buffer {
             Some(PartialG(n)) if m.is_empty() => match evnt {
                 Char('g', _) => (None, Some(GotoRowA(n))),
                 Char('e', _) => (None, Some(Word(n, true, true))),
+                Char('E', _) => (None, Some(WWord(n, true, true))),
                 _ => (None, Some(evnt)),
             },
             pe => (pe, Some(evnt)),
@@ -277,7 +268,7 @@ impl Buffer {
 
     fn handle_normal_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, FChar, GotoCol, Insert, Left, Right, TChar};
-        use Event::{Down, DownA, GotoPercent, GotoRowA, Up, UpA, Word};
+        use Event::{Down, DownA, GotoPercent, GotoRowA, Up, UpA, WWord, Word};
 
         evnt = match self.handle_normal_prefix(evnt)? {
             Some(evnt) => evnt,
@@ -367,6 +358,14 @@ impl Buffer {
             }
             Word(n, _, tail) if m.is_empty() => {
                 self.as_mut_change().prev_words(n, tail);
+                Ok(None)
+            }
+            WWord(n, fwd, tail) if m.is_empty() && fwd => {
+                self.as_mut_change().next_wwords(n, tail);
+                Ok(None)
+            }
+            WWord(n, _, tail) if m.is_empty() => {
+                self.as_mut_change().prev_wwords(n, tail);
                 Ok(None)
             }
             Char('h', _) if m.is_empty() => {
@@ -719,13 +718,40 @@ impl Change {
     }
 
     fn skip_whitespace(&mut self, fwd: bool) -> usize {
-        let n = skip_while!(self.iter(fwd), fwd, is_whitespace);
+        let mut n = 0;
+        let n = loop {
+            match self.iter(fwd).next() {
+                Some(ch) if ch.is_whitespace() => n += 1,
+                Some(_) => break n,
+                None => break n,
+            }
+        };
+        self.cursor = if_else!(fwd, self.cursor + n, self.cursor - n);
+        n
+    }
+
+    fn skip_non_whitespace(&mut self, fwd: bool) -> usize {
+        let mut n = 0;
+        let n = loop {
+            match self.iter(fwd).next() {
+                Some(ch) if ch.is_whitespace() => n += 1,
+                Some(_) => break n,
+                None => break n,
+            }
+        };
         self.cursor = if_else!(fwd, self.cursor + n, self.cursor - n);
         n
     }
 
     fn skip_alphanumeric(&mut self, fwd: bool) -> usize {
-        let n = skip_while!(self.iter(fwd), fwd, is_alphanumeric);
+        let mut n = 0;
+        let n = loop {
+            match self.iter(fwd).next() {
+                Some(ch) if ch.is_alphanumeric() => n += 1,
+                Some(_) => break n,
+                None => break n,
+            }
+        };
         self.cursor = if_else!(fwd, self.cursor + n, self.cursor - n);
         n
     }
@@ -767,6 +793,50 @@ impl Change {
                 }
                 false if n == 0 => {
                     self.skip_alphanumeric(fwd);
+                    self.skip_whitespace(fwd);
+                }
+                false => (),
+            }
+        }
+    }
+
+    fn prev_wwords(&mut self, n: usize, tail: bool) {
+        let (fwd, line_bound) = (false, false);
+        for _ in 0..n {
+            let n = self.skip_whitespace(fwd);
+            match tail {
+                false if n == 0 => {
+                    self.skip_non_whitespace(fwd);
+                    self.move_right(1, line_bound);
+                }
+                false => {
+                    self.skip_non_whitespace(fwd);
+                    self.move_right(1, line_bound);
+                }
+                true if n == 0 => {
+                    self.skip_non_whitespace(fwd);
+                    self.skip_whitespace(fwd);
+                }
+                true => (),
+            }
+        }
+    }
+
+    fn next_wwords(&mut self, n: usize, tail: bool) {
+        let (fwd, line_bound) = (true, false);
+        for _ in 0..n {
+            let n = self.skip_whitespace(fwd);
+            match tail {
+                true if n == 0 => {
+                    self.skip_non_whitespace(fwd);
+                    self.move_left(1, line_bound);
+                }
+                true => {
+                    self.skip_non_whitespace(fwd);
+                    self.move_left(1, line_bound);
+                }
+                false if n == 0 => {
+                    self.skip_non_whitespace(fwd);
                     self.skip_whitespace(fwd);
                 }
                 false => (),
