@@ -174,8 +174,9 @@ impl Buffer {
     }
 
     fn handle_normal_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
+        use Event::GotoPercent;
         use Event::{Backspace, Char, GotoCol, Left, PartialN, Right};
-        use Event::{FChar, TChar};
+        use Event::{Down, DownA, FChar, GotoRowA, PartialG, TChar, Up, UpA};
 
         let m = evnt.to_modifiers();
         let (pe, e) = match self.partial_evnt.take() {
@@ -196,13 +197,20 @@ impl Buffer {
                 _ => (None, None),
             },
             Some(PartialN(mut xs)) if m.is_empty() => match evnt {
-                Backspace(n) => (None, Some(Left(parse_n!(xs)? + n, false))),
+                Backspace(n) => {
+                    let n = parse_n!(xs)?.saturating_add(n);
+                    (None, Some(Left(n, false)))
+                }
                 Char(ch, _) if '0' <= ch && ch <= '9' => {
                     xs.push(ch);
                     (Some(PartialN(xs)), None)
                 }
                 Char('h', _) => (None, Some(Left(parse_n!(xs)?, true))),
                 Char('l', _) => (None, Some(Right(parse_n!(xs)?, true))),
+                Char('k', _) => (None, Some(Up(parse_n!(xs)?))),
+                Char('j', _) => (None, Some(Down(parse_n!(xs)?))),
+                Char('-', _) => (None, Some(UpA(parse_n!(xs)?))),
+                Char('+', _) => (None, Some(DownA(parse_n!(xs)?))),
                 Char(' ', _) => (None, Some(Right(parse_n!(xs)?, false))),
                 Char('|', _) => (None, Some(GotoCol(parse_n!(xs)?))),
                 Char('f', _) => (Some(FChar(parse_n!(xs)?, None, true)), None),
@@ -233,9 +241,16 @@ impl Buffer {
                     (None, e)
                 }
                 Char(',', _) => (None, None),
+                Char('G', _) => (None, Some(GotoRowA(parse_n!(xs)?))),
+                Char('g', _) => (Some(PartialG(parse_n!(xs)?)), None),
+                Char('%', _) => (Some(GotoPercent(parse_n!(xs)?)), None),
                 evnt @ Char('0', _) => (None, Some(evnt)),
                 evnt @ Char('^', _) => (None, Some(evnt)),
                 evnt => (Some(PartialN(xs)), Some(evnt)),
+            },
+            Some(PartialG(n)) if m.is_empty() => match evnt {
+                Char('g', _) => (None, Some(GotoRowA(n))),
+                _ => (None, Some(evnt)),
             },
             pe => (pe, Some(evnt)),
         };
@@ -246,6 +261,7 @@ impl Buffer {
 
     fn handle_normal_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, FChar, GotoCol, Insert, Left, Right, TChar};
+        use Event::{Down, DownA, GotoPercent, GotoRowA, Up, UpA};
 
         evnt = match self.handle_normal_prefix(evnt)? {
             Some(evnt) => evnt,
@@ -296,12 +312,51 @@ impl Buffer {
                 Ok(None)
             }
             TChar(_, _, _) => Ok(None),
+            Up(n) => {
+                self.as_mut_change().move_up(n);
+                Ok(None)
+            }
+            Down(n) => {
+                self.as_mut_change().move_down(n);
+                Ok(None)
+            }
+            UpA(n) => {
+                if self.as_mut_change().move_up(n) {
+                    self.as_mut_change().home_a();
+                }
+                Ok(None)
+            }
+            DownA(n) => {
+                if self.as_mut_change().move_down(n) {
+                    self.as_mut_change().home_a();
+                }
+                Ok(None)
+            }
+            GotoRowA(n) => {
+                if self.as_mut_change().goto_row(n) {
+                    self.as_mut_change().home_a();
+                }
+                Ok(None)
+            }
+            GotoPercent(n) if n <= 100 => {
+                self.as_mut_change().goto_percentage(n);
+                Ok(None)
+            }
+            GotoPercent(_) => Ok(None),
             Char('h', _) if m.is_empty() => {
                 self.as_mut_change().move_left(1, true /*line_bound*/);
                 Ok(None)
             }
             Char('l', _) if m.is_empty() => {
                 self.as_mut_change().move_right(1, true /*line_bound*/);
+                Ok(None)
+            }
+            Char('j', _) if m.is_empty() => {
+                self.as_mut_change().move_up(1);
+                Ok(None)
+            }
+            Char('k', _) if m.is_empty() => {
+                self.as_mut_change().move_down(1);
                 Ok(None)
             }
             Char(' ', _) if m.is_empty() => {
@@ -313,7 +368,7 @@ impl Buffer {
                 Ok(None)
             }
             Char('^', _) if m.is_empty() => {
-                self.as_mut_change().home_non_blank();
+                self.as_mut_change().home_a();
                 Ok(None)
             }
             Char('|', _) if m.is_empty() => {
@@ -501,6 +556,40 @@ impl Change {
         self.cursor += cs.len();
     }
 
+    fn goto_row(&mut self, n: usize) -> bool {
+        let line_idx = self.buf.char_to_line(self.cursor);
+        match (n, self.buf.len_lines()) {
+            (_, 0) => false,
+            (n, _) if n < line_idx => {
+                self.move_up(line_idx - n);
+                true
+            }
+            (n, n_lines) if n < n_lines => {
+                self.move_down(n - line_idx);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn goto_percentage(&mut self, n: usize) -> bool {
+        assert!(n <= 100);
+
+        let line_idx = self.buf.char_to_line(self.cursor);
+        match (n, self.buf.len_lines()) {
+            (_, 0) => false,
+            (n, mut n_lines) => {
+                n_lines -= 1;
+                let n = (((n_lines as f64) * (n as f64)) / (100 as f64)) as usize;
+                if n < line_idx {
+                    self.move_up(line_idx - n)
+                } else {
+                    self.move_down(n - line_idx)
+                }
+            }
+        }
+    }
+
     fn next_char_n(&mut self, n: usize, ch: char, till: bool) {
         let cs: Vec<(usize, char)> = {
             let iter = self.buf.chars_at(self.cursor).enumerate();
@@ -563,59 +652,59 @@ impl Change {
         self.cursor += cs.len()
     }
 
-    fn move_up(&mut self, mut n: usize) {
-        let col = self.to_col();
-
-        let line_idx = {
-            let mut line_idx = self.buf.char_to_line(self.cursor);
-            let mut lines = self.to_lines();
-            loop {
-                match lines.prev() {
-                    Some(_) if n > 0 => {
-                        line_idx -= 1;
-                        n -= 1;
-                    }
-                    Some(_) => break line_idx,
-                    None => break line_idx,
-                }
+    fn move_up(&mut self, n: usize) -> bool {
+        match self.buf.char_to_line(self.cursor) {
+            0 => false,
+            line_idx => {
+                let line_idx = line_idx.saturating_sub(n);
+                self.cursor = {
+                    let col = cmp::min(
+                        self.buf.line(line_idx).len_chars().saturating_sub(1),
+                        self.to_col(),
+                    );
+                    bounded_num_op!(
+                        self.buf.line_to_char(line_idx) + col,
+                        self.buf.len_chars().saturating_sub(1)
+                    )
+                };
+                true
             }
-        };
-        self.cursor = {
-            let col = cmp::min(self.buf.line(line_idx).len_chars(), col);
-            let ln = self.buf.len_chars();
-            bounded_num_op!(self.buf.line_to_char(line_idx) + col, ln)
-        };
+        }
     }
 
-    fn move_down(&mut self, mut n: usize) {
+    fn move_down(&mut self, n: usize) -> bool {
         let col = self.to_col();
 
-        let line_idx = {
-            let mut line_idx = self.buf.char_to_line(self.cursor);
-            let mut lines = self.to_lines();
-            loop {
-                match lines.next() {
-                    Some(_) if n > 0 => {
-                        line_idx += 1;
-                        n -= 1;
-                    }
-                    Some(_) => break line_idx,
-                    None => break line_idx,
-                }
+        match (self.buf.char_to_line(self.cursor), self.buf.len_lines()) {
+            (_, 0) => false,
+            (line_idx, n_lines) if line_idx == n_lines => false,
+            (line_idx, n_lines) => {
+                let line_idx = bounded_num_op!(
+                    //
+                    line_idx.saturating_add(n),
+                    n_lines - 1
+                );
+                self.cursor = {
+                    let col = cmp::min(
+                        //
+                        self.buf.line(line_idx).len_chars().saturating_sub(1),
+                        col,
+                    );
+                    bounded_num_op!(
+                        self.buf.line_to_char(line_idx) + col,
+                        self.buf.len_chars().saturating_sub(1)
+                    )
+                };
+                true
             }
-        };
-        self.cursor = {
-            let col = cmp::min(self.buf.line(line_idx).len_chars(), col);
-            let ln = self.buf.len_chars();
-            bounded_num_op!(self.buf.line_to_char(line_idx) + col, ln)
-        };
+        }
     }
 
     fn home(&mut self) {
         self.cursor = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
     }
 
-    fn home_non_blank(&mut self) {
+    fn home_a(&mut self) {
         self.home();
         let n = self
             .buf
@@ -637,11 +726,6 @@ impl Change {
 }
 
 impl Change {
-    fn to_lines(&self) -> ropey::iter::Lines {
-        let line_idx = self.buf.char_to_line(self.cursor);
-        self.buf.lines_at(line_idx)
-    }
-
     pub fn lines_at(&self, line_idx: usize) -> ropey::iter::Lines {
         self.buf.lines_at(line_idx)
     }

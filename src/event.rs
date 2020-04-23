@@ -94,12 +94,14 @@ pub enum Event {
     Char(char, KeyModifiers),
     // Processed Input events
     Esc,
-    Backspace(usize),
     Enter,
-    Left(usize, bool),
-    Right(usize, bool),
-    Up(usize),
-    Down(usize),
+    Backspace(usize),   // (n,)
+    Left(usize, bool),  // (n, line-bound)
+    Right(usize, bool), // (n, line-bound)
+    Up(usize),          // (n,)
+    Down(usize),        // (n,)
+    UpA(usize),         // (n,)
+    DownA(usize),       // (n,)
     Home,
     End,
     PageUp,
@@ -110,10 +112,13 @@ pub enum Event {
     Insert,
     // Motion Events
     GotoCol(usize),
-    FChar(usize, Option<char>, bool /*direction*/),
-    TChar(usize, Option<char>, bool /*direction*/),
+    GotoRowA(usize),
+    GotoPercent(usize),
+    FChar(usize, Option<char>, bool), // (n, ch, direction)
+    TChar(usize, Option<char>, bool), // (n, ch, direction)
     // Partial events
     PartialN(Vec<char>),
+    PartialG(usize),
     // Application events
     NewBuffer,
     OpenFiles { flocs: Vec<OpenFile> },
