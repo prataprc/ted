@@ -95,17 +95,18 @@ pub enum Event {
     // Processed Input events
     Esc,
     Enter,
-    Backspace(usize),         // (n,)
-    Left(usize, bool),        // (n, line-bound)
-    Right(usize, bool),       // (n, line-bound)
-    Up(usize),                // (n,)
-    Down(usize),              // (n,)
-    UpA(usize),               // (n,)
-    DownA(usize),             // (n,)
-    Word(usize, bool, bool),  // (n, fwd, tail)
-    WWord(usize, bool, bool), // (n, fwd, tail)
-    Sentence(usize, bool),    // (n, fwd)
-    Paragraph(usize, bool),   // (n, fwd)
+    Backspace(usize),                 // (n,)
+    Left(usize, bool),                // (n, line-bound)
+    Right(usize, bool),               // (n, line-bound)
+    Up(usize),                        // (n,)
+    Down(usize),                      // (n,)
+    UpA(usize),                       // (n,)
+    DownA(usize),                     // (n,)
+    Word(usize, bool, bool),          // (n, fwd, tail)
+    WWord(usize, bool, bool),         // (n, fwd, tail)
+    Sentence(usize, bool),            // (n, fwd)
+    Paragraph(usize, bool),           // (n, fwd)
+    Bracket(usize, char, char, bool), // (n, yin, yan, fwd)
     Delete,
     Home,
     End,
@@ -123,6 +124,8 @@ pub enum Event {
     // Partial events
     PartialN(Vec<char>),
     PartialG(usize),
+    PartialFB(usize), // ]
+    PartialBB(usize), // [
     // Application events
     NewBuffer,
     OpenFiles { flocs: Vec<OpenFile> },

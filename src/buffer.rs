@@ -174,6 +174,7 @@ impl Buffer {
 
     fn handle_normal_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, GotoCol, Left, PartialN, Right};
+        use Event::{Bracket, PartialBB, PartialFB};
         use Event::{Down, DownA, FChar, GotoRowA, PartialG, TChar, Up, UpA};
         use Event::{GotoPercent, Paragraph, Sentence, WWord, Word};
 
@@ -253,6 +254,8 @@ impl Buffer {
                 Char('(', _) => (None, Some(Sentence(parse_n!(xs)?, false))),
                 Char('}', _) => (None, Some(Paragraph(parse_n!(xs)?, true))),
                 Char('{', _) => (None, Some(Paragraph(parse_n!(xs)?, false))),
+                Char('[', _) => (Some(PartialBB(parse_n!(xs)?)), None),
+                Char(']', _) => (Some(PartialFB(parse_n!(xs)?)), None),
                 evnt @ Char('0', _) => (None, Some(evnt)),
                 evnt @ Char('^', _) => (None, Some(evnt)),
                 evnt => (Some(PartialN(xs)), Some(evnt)),
@@ -261,6 +264,16 @@ impl Buffer {
                 Char('g', _) => (None, Some(GotoRowA(n))),
                 Char('e', _) => (None, Some(Word(n, true, true))),
                 Char('E', _) => (None, Some(WWord(n, true, true))),
+                _ => (None, Some(evnt)),
+            },
+            Some(PartialBB(n)) if m.is_empty() => match evnt {
+                Char('(', _) => (None, Some(Bracket(n, '(', ')', false))),
+                Char('{', _) => (None, Some(Bracket(n, '{', '}', false))),
+                _ => (None, Some(evnt)),
+            },
+            Some(PartialFB(n)) if m.is_empty() => match evnt {
+                Char(')', _) => (None, Some(Bracket(n, ')', '(', true))),
+                Char('}', _) => (None, Some(Bracket(n, '}', '{', true))),
                 _ => (None, Some(evnt)),
             },
             pe => (pe, Some(evnt)),
@@ -272,8 +285,8 @@ impl Buffer {
 
     fn handle_normal_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, FChar, GotoCol, Insert, Left, Right, TChar};
+        use Event::{Bracket, Paragraph, Sentence};
         use Event::{Down, DownA, GotoPercent, GotoRowA, Up, UpA, WWord, Word};
-        use Event::{Paragraph, Sentence};
 
         evnt = match self.handle_normal_prefix(evnt)? {
             Some(evnt) => evnt,
@@ -387,6 +400,14 @@ impl Buffer {
             }
             Paragraph(n, _) if m.is_empty() => {
                 self.as_mut_change().prev_para(n);
+                Ok(None)
+            }
+            Bracket(n, yin, yan, true) if m.is_empty() => {
+                self.as_mut_change().fwd_bracket(yin, yan, n);
+                Ok(None)
+            }
+            Bracket(n, yin, yan, _) if m.is_empty() => {
+                self.as_mut_change().rev_bracket(yin, yan, n);
                 Ok(None)
             }
             Char('h', _) if m.is_empty() => {
@@ -968,6 +989,40 @@ impl Change {
                         None => break self.buf.line_to_char(row + i),
                     },
                     None => break self.buf.len_chars().saturating_sub(1),
+                }
+            }
+        };
+    }
+
+    fn fwd_bracket(&mut self, yin: char, yan: char, mut n: usize) {
+        self.cursor += {
+            let mut iter = self.iter(true /*forward*/).enumerate();
+            let mut m = 0;
+            loop {
+                match iter.next() {
+                    Some((_, ch)) if ch == yin && m > 0 => m -= 1,
+                    Some((i, ch)) if ch == yin && n == 0 => break i,
+                    Some((_, ch)) if ch == yin => n -= 1,
+                    Some((_, ch)) if ch == yan => m += 1,
+                    Some(_) => (),
+                    None => break 0,
+                }
+            }
+        };
+    }
+
+    fn rev_bracket(&mut self, yin: char, yan: char, mut n: usize) {
+        self.cursor -= {
+            let mut iter = self.iter(false /*forward*/).enumerate();
+            let mut m = 0;
+            loop {
+                match iter.next() {
+                    Some((_, ch)) if ch == yin && m > 0 => m -= 1,
+                    Some((i, ch)) if ch == yin && n == 0 => break i + 1,
+                    Some((_, ch)) if ch == yin => n -= 1,
+                    Some((_, ch)) if ch == yan => m += 1,
+                    Some(_) => (),
+                    None => break 0,
                 }
             }
         };
