@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
 use log::trace;
-use ropey::{self, Rope};
+use ropey::{self, Rope, RopeSlice};
 
 use std::{
     cell::{self, RefCell},
@@ -175,7 +175,7 @@ impl Buffer {
     fn handle_normal_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, GotoCol, Left, PartialN, Right};
         use Event::{Down, DownA, FChar, GotoRowA, PartialG, TChar, Up, UpA};
-        use Event::{GotoPercent, WWord, Word};
+        use Event::{GotoPercent, Paragraph, Sentence, WWord, Word};
 
         let m = evnt.to_modifiers();
         let (pe, e) = match self.partial_evnt.take() {
@@ -249,6 +249,10 @@ impl Buffer {
                 Char('W', _) => (None, Some(WWord(parse_n!(xs)?, false, false))),
                 Char('E', _) => (None, Some(WWord(parse_n!(xs)?, false, true))),
                 Char('B', _) => (None, Some(WWord(parse_n!(xs)?, true, false))),
+                Char(')', _) => (None, Some(Sentence(parse_n!(xs)?, true))),
+                Char('(', _) => (None, Some(Sentence(parse_n!(xs)?, false))),
+                Char('}', _) => (None, Some(Paragraph(parse_n!(xs)?, true))),
+                Char('{', _) => (None, Some(Paragraph(parse_n!(xs)?, false))),
                 evnt @ Char('0', _) => (None, Some(evnt)),
                 evnt @ Char('^', _) => (None, Some(evnt)),
                 evnt => (Some(PartialN(xs)), Some(evnt)),
@@ -269,6 +273,7 @@ impl Buffer {
     fn handle_normal_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, FChar, GotoCol, Insert, Left, Right, TChar};
         use Event::{Down, DownA, GotoPercent, GotoRowA, Up, UpA, WWord, Word};
+        use Event::{Paragraph, Sentence};
 
         evnt = match self.handle_normal_prefix(evnt)? {
             Some(evnt) => evnt,
@@ -352,7 +357,7 @@ impl Buffer {
                 Ok(None)
             }
             GotoPercent(_) => Ok(None),
-            Word(n, fwd, tail) if m.is_empty() && fwd => {
+            Word(n, true, tail) if m.is_empty() => {
                 self.as_mut_change().next_words(n, tail);
                 Ok(None)
             }
@@ -360,12 +365,28 @@ impl Buffer {
                 self.as_mut_change().prev_words(n, tail);
                 Ok(None)
             }
-            WWord(n, fwd, tail) if m.is_empty() && fwd => {
+            WWord(n, true, tail) if m.is_empty() => {
                 self.as_mut_change().next_wwords(n, tail);
                 Ok(None)
             }
             WWord(n, _, tail) if m.is_empty() => {
                 self.as_mut_change().prev_wwords(n, tail);
+                Ok(None)
+            }
+            Sentence(n, true) if m.is_empty() => {
+                self.as_mut_change().next_sentence(n);
+                Ok(None)
+            }
+            Sentence(n, _) if m.is_empty() => {
+                self.as_mut_change().prev_sentence(n);
+                Ok(None)
+            }
+            Paragraph(n, true) if m.is_empty() => {
+                self.as_mut_change().next_para(n);
+                Ok(None)
+            }
+            Paragraph(n, _) if m.is_empty() => {
+                self.as_mut_change().prev_para(n);
                 Ok(None)
             }
             Char('h', _) if m.is_empty() => {
@@ -843,6 +864,114 @@ impl Change {
             }
         }
     }
+
+    fn prev_sentence(&mut self, mut n: usize) {
+        let (cursor, nw) = {
+            let mut iter = self.iter(false /*forward*/).enumerate();
+            let mut prev_ch: Option<char> = None;
+            loop {
+                prev_ch = match (iter.next(), prev_ch) {
+                    (Some((i, '.')), None) if n == 0 => {
+                        break (self.cursor.saturating_sub(i + 1), true);
+                    }
+                    (Some((_, '.')), None) => {
+                        n -= 1;
+                        Some('.')
+                    }
+                    (Some((i, NEW_LINE_CHAR)), Some(NEW_LINE_CHAR)) => {
+                        if n == 0 {
+                            break (self.cursor.saturating_sub(i + 1), false);
+                        } else {
+                            n -= 1;
+                            Some(NEW_LINE_CHAR)
+                        }
+                    }
+                    (Some((_, ch)), _) => Some(ch),
+                    (None, _) => {
+                        break (0, false);
+                    }
+                };
+            }
+        };
+        self.cursor = cursor;
+        if nw {
+            self.next_words(1, false /*tail*/);
+        }
+    }
+
+    fn next_sentence(&mut self, mut n: usize) {
+        let (cursor, nw) = {
+            let mut iter = self.iter(true /*forward*/).enumerate();
+            let mut prev_ch: Option<char> = None;
+            loop {
+                prev_ch = match (iter.next(), prev_ch) {
+                    (Some((i, '.')), None) if n == 0 => {
+                        break (self.cursor + i, true);
+                    }
+                    (Some((_, '.')), None) => {
+                        n -= 1;
+                        Some('.')
+                    }
+                    (Some((i, NEW_LINE_CHAR)), Some(NEW_LINE_CHAR)) => {
+                        if n == 0 {
+                            break (self.cursor + i, false);
+                        } else {
+                            n -= 1;
+                            Some(NEW_LINE_CHAR)
+                        }
+                    }
+                    (Some((_, ch)), _) => Some(ch),
+                    (None, _) => {
+                        break (self.buf.len_chars().saturating_sub(1), false);
+                    }
+                }
+            }
+        };
+        self.cursor = cursor;
+        if nw {
+            self.next_words(1, false /*tail*/);
+        }
+    }
+
+    fn prev_para(&mut self, mut n: usize) {
+        self.cursor = {
+            let row = self.buf.char_to_line(self.cursor);
+            let mut iter = self.iter_line(false).enumerate();
+            loop {
+                match iter.next() {
+                    Some((i, line)) => match line.chars().next() {
+                        Some(NEW_LINE_CHAR) if n == 0 => {
+                            break self.buf.line_to_char(row - (i + 1));
+                        }
+                        Some(NEW_LINE_CHAR) => n -= 1,
+                        Some(_) => (),
+                        None => break self.buf.line_to_char(row - (i + 1)),
+                    },
+                    None => break 0,
+                }
+            }
+        }
+    }
+
+    fn next_para(&mut self, mut n: usize) {
+        self.cursor = {
+            let row = self.buf.char_to_line(self.cursor);
+            let mut iter = self.iter_line(true /*forward*/).enumerate();
+            loop {
+                match iter.next() {
+                    Some((i, line)) => match line.chars().next() {
+                        Some(NEW_LINE_CHAR) if n == 0 => {
+                            break self.buf.line_to_char(row + i);
+                        }
+                        Some(NEW_LINE_CHAR) => n -= 1,
+                        Some(_) => (),
+                        None => break self.buf.line_to_char(row + i),
+                    },
+                    None => break self.buf.len_chars().saturating_sub(1),
+                }
+            }
+        };
+    }
 }
 
 impl Change {
@@ -850,11 +979,24 @@ impl Change {
         self.buf.lines_at(line_idx)
     }
 
-    fn iter<'a>(&'a self, forward: bool) -> Box<dyn Iterator<Item = char> + 'a> {
-        if forward {
+    fn iter<'a>(&'a self, fwd: bool) -> Box<dyn Iterator<Item = char> + 'a> {
+        if fwd {
             Box::new(self.buf.chars_at(self.cursor))
         } else {
             Box::new(ReverseIter::new(self.buf.chars_at(self.cursor)))
+        }
+    }
+
+    fn iter_line<'a>(
+        //
+        &'a self,
+        fwd: bool,
+    ) -> Box<dyn Iterator<Item = RopeSlice> + 'a> {
+        let row = self.buf.char_to_line(self.cursor);
+        if fwd {
+            Box::new(self.buf.lines_at(row))
+        } else {
+            Box::new(ReverseIter::new(self.buf.lines_at(row)))
         }
     }
 
@@ -924,7 +1066,15 @@ where
 impl<'a> Iterator for ReverseIter<ropey::iter::Chars<'a>, char> {
     type Item = char;
 
-    fn next(&mut self) -> Option<char> {
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.prev()
+    }
+}
+
+impl<'a> Iterator for ReverseIter<ropey::iter::Lines<'a>, RopeSlice<'a>> {
+    type Item = RopeSlice<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
         self.iter.prev()
     }
 }

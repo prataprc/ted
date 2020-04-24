@@ -104,6 +104,8 @@ pub enum Event {
     DownA(usize),             // (n,)
     Word(usize, bool, bool),  // (n, fwd, tail)
     WWord(usize, bool, bool), // (n, fwd, tail)
+    Sentence(usize, bool),    // (n, fwd)
+    Paragraph(usize, bool),   // (n, fwd)
     Delete,
     Home,
     End,
