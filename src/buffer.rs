@@ -14,7 +14,6 @@ use std::{
 };
 
 use crate::{
-    config::Config,
     event::Event,
     {err_at, Error, Result},
 };
@@ -66,10 +65,10 @@ pub struct Buffer {
     mode: Mode,
 
     location: Location,
-    config: Config,
     read_only: bool,
+    insert_only: bool,
 
-    partial_evnt: Option<Event>,
+    evnt_prefix: Option<Event>,
     find_char: Option<Event>,
     change: Rc<RefCell<Change>>,
 }
@@ -80,10 +79,10 @@ impl Default for Buffer {
             mode: Mode::Normal,
 
             location: Default::default(),
-            config: Default::default(),
             read_only: false,
+            insert_only: false,
 
-            partial_evnt: None,
+            evnt_prefix: None,
             find_char: None,
             change: Default::default(),
         }
@@ -91,7 +90,7 @@ impl Default for Buffer {
 }
 
 impl Buffer {
-    pub fn from_reader<R>(data: R, config: Config) -> Result<Buffer>
+    pub fn from_reader<R>(data: R) -> Result<Buffer>
     where
         R: io::Read,
     {
@@ -101,22 +100,27 @@ impl Buffer {
             mode: Mode::Normal,
 
             location: Default::default(),
-            config,
             read_only: false,
+            insert_only: false,
 
-            partial_evnt: None,
+            evnt_prefix: None,
             find_char: None,
             change: Change::start(buf),
         })
     }
 
-    pub fn empty(config: Config) -> Result<Buffer> {
+    pub fn empty() -> Result<Buffer> {
         let buf = vec![];
-        Self::from_reader(buf.as_slice(), config)
+        Self::from_reader(buf.as_slice())
     }
 
     pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
         self.read_only = read_only;
+        self
+    }
+
+    pub fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
+        self.insert_only = insert_only;
         self
     }
 
@@ -173,17 +177,17 @@ impl Buffer {
     }
 
     fn handle_normal_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
-        use Event::{Backspace, Char, GotoCol, Left, PartialN, Right};
-        use Event::{Bracket, PartialBB, PartialFB};
-        use Event::{Down, DownA, FChar, GotoRowA, PartialG, TChar, Up, UpA};
+        use Event::{Backspace, Char, GotoCol, Left, PrefixN, Right};
+        use Event::{Bracket, PrefixBB, PrefixFB};
+        use Event::{Down, DownA, FChar, GotoRowA, PrefixG, TChar, Up, UpA};
         use Event::{GotoPercent, Paragraph, Sentence, WWord, Word};
 
         let m = evnt.to_modifiers();
-        let (pe, e) = match self.partial_evnt.take() {
+        let (pe, e) = match self.evnt_prefix.take() {
             None if m.is_empty() => match evnt {
                 Char(ch, _) if '0' <= ch && ch <= '9' => (
                     //
-                    Some(PartialN(vec![ch])),
+                    Some(PrefixN(vec![ch])),
                     None,
                 ),
                 evnt => (None, Some(evnt)),
@@ -196,14 +200,14 @@ impl Buffer {
                 Char(ch, _) => (None, Some(TChar(n, Some(ch), d))),
                 _ => (None, None),
             },
-            Some(PartialN(mut xs)) if m.is_empty() => match evnt {
+            Some(PrefixN(mut xs)) if m.is_empty() => match evnt {
                 Backspace(n) => {
                     let n = parse_n!(xs)?.saturating_add(n);
                     (None, Some(Left(n, false)))
                 }
                 Char(ch, _) if '0' <= ch && ch <= '9' => {
                     xs.push(ch);
-                    (Some(PartialN(xs)), None)
+                    (Some(PrefixN(xs)), None)
                 }
                 Char('h', _) => (None, Some(Left(parse_n!(xs)?, true))),
                 Char('l', _) => (None, Some(Right(parse_n!(xs)?, true))),
@@ -242,7 +246,7 @@ impl Buffer {
                 }
                 Char(',', _) => (None, None),
                 Char('G', _) => (None, Some(GotoRowA(parse_n!(xs)?))),
-                Char('g', _) => (Some(PartialG(parse_n!(xs)?)), None),
+                Char('g', _) => (Some(PrefixG(parse_n!(xs)?)), None),
                 Char('%', _) => (Some(GotoPercent(parse_n!(xs)?)), None),
                 Char('w', _) => (None, Some(Word(parse_n!(xs)?, false, false))),
                 Char('e', _) => (None, Some(Word(parse_n!(xs)?, false, true))),
@@ -254,24 +258,24 @@ impl Buffer {
                 Char('(', _) => (None, Some(Sentence(parse_n!(xs)?, false))),
                 Char('}', _) => (None, Some(Paragraph(parse_n!(xs)?, true))),
                 Char('{', _) => (None, Some(Paragraph(parse_n!(xs)?, false))),
-                Char('[', _) => (Some(PartialBB(parse_n!(xs)?)), None),
-                Char(']', _) => (Some(PartialFB(parse_n!(xs)?)), None),
+                Char('[', _) => (Some(PrefixBB(parse_n!(xs)?)), None),
+                Char(']', _) => (Some(PrefixFB(parse_n!(xs)?)), None),
                 evnt @ Char('0', _) => (None, Some(evnt)),
                 evnt @ Char('^', _) => (None, Some(evnt)),
-                evnt => (Some(PartialN(xs)), Some(evnt)),
+                evnt => (Some(PrefixN(xs)), Some(evnt)),
             },
-            Some(PartialG(n)) if m.is_empty() => match evnt {
+            Some(PrefixG(n)) if m.is_empty() => match evnt {
                 Char('g', _) => (None, Some(GotoRowA(n))),
                 Char('e', _) => (None, Some(Word(n, true, true))),
                 Char('E', _) => (None, Some(WWord(n, true, true))),
                 _ => (None, Some(evnt)),
             },
-            Some(PartialBB(n)) if m.is_empty() => match evnt {
+            Some(PrefixBB(n)) if m.is_empty() => match evnt {
                 Char('(', _) => (None, Some(Bracket(n, '(', ')', false))),
                 Char('{', _) => (None, Some(Bracket(n, '{', '}', false))),
                 _ => (None, Some(evnt)),
             },
-            Some(PartialFB(n)) if m.is_empty() => match evnt {
+            Some(PrefixFB(n)) if m.is_empty() => match evnt {
                 Char(')', _) => (None, Some(Bracket(n, ')', '(', true))),
                 Char('}', _) => (None, Some(Bracket(n, '}', '{', true))),
                 _ => (None, Some(evnt)),
@@ -279,7 +283,7 @@ impl Buffer {
             pe => (pe, Some(evnt)),
         };
 
-        self.partial_evnt = pe;
+        self.evnt_prefix = pe;
         Ok(e)
     }
 
@@ -503,7 +507,9 @@ impl Buffer {
                 Ok(None)
             }
             Esc => {
-                self.mode = Mode::Normal;
+                if !self.insert_only {
+                    self.mode = Mode::Normal;
+                }
                 Ok(None)
             }
             F(_, _) => Ok(Some(evnt)),

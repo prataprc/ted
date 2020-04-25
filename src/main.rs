@@ -228,7 +228,7 @@ impl Application {
         match evnt {
             Event::NewBuffer => {
                 let (buffer_id, buffer) = {
-                    let mut b = Buffer::empty(self.context.config.clone())?;
+                    let mut b = Buffer::empty()?;
                     b.set_location(Default::default());
                     (b.to_id(), b)
                 };

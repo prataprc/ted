@@ -121,11 +121,11 @@ pub enum Event {
     GotoPercent(usize),
     FChar(usize, Option<char>, bool), // (n, ch, direction)
     TChar(usize, Option<char>, bool), // (n, ch, direction)
-    // Partial events
-    PartialN(Vec<char>),
-    PartialG(usize),
-    PartialFB(usize), // ]
-    PartialBB(usize), // [
+    // Prefix events
+    PrefixN(Vec<char>),
+    PrefixG(usize),
+    PrefixFB(usize), // ]
+    PrefixBB(usize), // [
     // Application events
     NewBuffer,
     OpenFiles { flocs: Vec<OpenFile> },
