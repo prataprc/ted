@@ -15,6 +15,7 @@ use std::{
 
 use crate::{
     event::Event,
+    search::Search,
     {err_at, Error, Result},
 };
 
@@ -70,6 +71,7 @@ pub struct Buffer {
 
     evnt_prefix: Option<Event>,
     find_char: Option<Event>,
+    search: Option<Search>,
     change: Rc<RefCell<Change>>,
 }
 
@@ -84,6 +86,7 @@ impl Default for Buffer {
 
             evnt_prefix: None,
             find_char: None,
+            search: None,
             change: Default::default(),
         }
     }
@@ -105,6 +108,7 @@ impl Buffer {
 
             evnt_prefix: None,
             find_char: None,
+            search: None,
             change: Change::start(buf),
         })
     }
@@ -178,7 +182,7 @@ impl Buffer {
 
     fn handle_normal_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, GotoCol, Left, PrefixN, Right};
-        use Event::{Bracket, PrefixBB, PrefixFB};
+        use Event::{Bracket, PrefixBB, PrefixFB, Search};
         use Event::{Down, DownA, FChar, GotoRowA, PrefixG, TChar, Up, UpA};
         use Event::{GotoPercent, Paragraph, Sentence, WWord, Word};
 
@@ -204,6 +208,10 @@ impl Buffer {
                 Backspace(n) => {
                     let n = parse_n!(xs)?.saturating_add(n);
                     (None, Some(Left(n, false)))
+                }
+                Search(_, pattern, fwd) => {
+                    //
+                    (None, Some(Search(parse_n!(xs)?, pattern, fwd)))
                 }
                 Char(ch, _) if '0' <= ch && ch <= '9' => {
                     xs.push(ch);
@@ -260,6 +268,8 @@ impl Buffer {
                 Char('{', _) => (None, Some(Paragraph(parse_n!(xs)?, false))),
                 Char('[', _) => (Some(PrefixBB(parse_n!(xs)?)), None),
                 Char(']', _) => (Some(PrefixFB(parse_n!(xs)?)), None),
+                Char('n', _) => (None, Some(Search(parse_n!(xs)?, None, true))),
+                Char('N', _) => (None, Some(Search(parse_n!(xs)?, None, false))),
                 evnt @ Char('0', _) => (None, Some(evnt)),
                 evnt @ Char('^', _) => (None, Some(evnt)),
                 evnt => (Some(PrefixN(xs)), Some(evnt)),
@@ -289,7 +299,7 @@ impl Buffer {
 
     fn handle_normal_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, FChar, GotoCol, Insert, Left, Right, TChar};
-        use Event::{Bracket, Paragraph, Sentence};
+        use Event::{Bracket, Paragraph, Search, Sentence};
         use Event::{Down, DownA, GotoPercent, GotoRowA, Up, UpA, WWord, Word};
 
         evnt = match self.handle_normal_prefix(evnt)? {
@@ -324,20 +334,20 @@ impl Buffer {
                 Ok(None)
             }
             FChar(n, Some(ch), d) if d => {
-                self.as_mut_change().next_char_n(n, ch, false /*till*/);
+                self.as_mut_change().fwd_char_n(n, ch, false /*till*/);
                 Ok(None)
             }
             FChar(n, Some(ch), _) => {
-                self.as_mut_change().prev_char_n(n, ch, false /*till*/);
+                self.as_mut_change().rev_char_n(n, ch, false /*till*/);
                 Ok(None)
             }
             FChar(_, _, _) => Ok(None),
             TChar(n, Some(ch), d) if d => {
-                self.as_mut_change().next_char_n(n, ch, true /*till*/);
+                self.as_mut_change().fwd_char_n(n, ch, true /*till*/);
                 Ok(None)
             }
             TChar(n, Some(ch), _) => {
-                self.as_mut_change().prev_char_n(n, ch, true /*till*/);
+                self.as_mut_change().rev_char_n(n, ch, true /*till*/);
                 Ok(None)
             }
             TChar(_, _, _) => Ok(None),
@@ -375,35 +385,35 @@ impl Buffer {
             }
             GotoPercent(_) => Ok(None),
             Word(n, true, tail) if m.is_empty() => {
-                self.as_mut_change().next_words(n, tail);
+                self.as_mut_change().fwd_words(n, tail);
                 Ok(None)
             }
             Word(n, _, tail) if m.is_empty() => {
-                self.as_mut_change().prev_words(n, tail);
+                self.as_mut_change().rev_words(n, tail);
                 Ok(None)
             }
             WWord(n, true, tail) if m.is_empty() => {
-                self.as_mut_change().next_wwords(n, tail);
+                self.as_mut_change().fwd_wwords(n, tail);
                 Ok(None)
             }
             WWord(n, _, tail) if m.is_empty() => {
-                self.as_mut_change().prev_wwords(n, tail);
+                self.as_mut_change().rev_wwords(n, tail);
                 Ok(None)
             }
             Sentence(n, true) if m.is_empty() => {
-                self.as_mut_change().next_sentence(n);
+                self.as_mut_change().fwd_sentence(n);
                 Ok(None)
             }
             Sentence(n, _) if m.is_empty() => {
-                self.as_mut_change().prev_sentence(n);
+                self.as_mut_change().rev_sentence(n);
                 Ok(None)
             }
             Paragraph(n, true) if m.is_empty() => {
-                self.as_mut_change().next_para(n);
+                self.as_mut_change().fwd_para(n);
                 Ok(None)
             }
             Paragraph(n, _) if m.is_empty() => {
-                self.as_mut_change().prev_para(n);
+                self.as_mut_change().rev_para(n);
                 Ok(None)
             }
             Bracket(n, yin, yan, true) if m.is_empty() => {
@@ -412,6 +422,27 @@ impl Buffer {
             }
             Bracket(n, yin, yan, _) if m.is_empty() => {
                 self.as_mut_change().rev_bracket(yin, yan, n);
+                Ok(None)
+            }
+            Search(n, pattern, fwd) => {
+                self.search = match pattern {
+                    Some(pattern) => Some(
+                        //
+                        self.as_mut_change().start_search(n, &pattern, fwd)?,
+                    ),
+                    None => match self.search.take() {
+                        Some(search) => {
+                            let fwd = if fwd {
+                                search.is_forward()
+                            } else {
+                                !search.is_forward()
+                            };
+                            self.as_mut_change().contn_search(n, &search, fwd);
+                            Some(search)
+                        }
+                        None => None,
+                    },
+                };
                 Ok(None)
             }
             Char('h', _) if m.is_empty() => {
@@ -525,6 +556,7 @@ pub struct Change {
     parent: Option<rc::Weak<RefCell<Change>>>,
     children: Vec<Rc<RefCell<Change>>>,
     cursor: usize,
+    // search: Option<Search>,
 }
 
 impl Default for Change {
@@ -666,7 +698,7 @@ impl Change {
             (_, 0) => false,
             (row, n_lines) if row == n_lines => false,
             (row, n_lines) => {
-                let row = limit!(row.saturating_add(n), n_lines - 1);
+                let row = limite!(row.saturating_add(n), n_lines);
                 self.cursor = {
                     let col = cmp::min(
                         self.buf.line(row).len_chars().saturating_sub(2),
@@ -735,7 +767,7 @@ impl Change {
         }
     }
 
-    fn prev_char_n(&mut self, mut n: usize, ch: char, till: bool) {
+    fn rev_char_n(&mut self, mut n: usize, ch: char, till: bool) {
         self.cursor -= {
             let mut iter = self.iter(false /*foward*/).enumerate();
             loop {
@@ -750,7 +782,7 @@ impl Change {
         };
     }
 
-    fn next_char_n(&mut self, mut n: usize, ch: char, till: bool) {
+    fn fwd_char_n(&mut self, mut n: usize, ch: char, till: bool) {
         self.cursor += {
             let mut iter = self.iter(false /*forward*/).enumerate();
             loop {
@@ -804,7 +836,7 @@ impl Change {
         n
     }
 
-    fn prev_words(&mut self, n: usize, tail: bool) {
+    fn rev_words(&mut self, n: usize, tail: bool) {
         let (fwd, line_bound) = (false, false);
         for _ in 0..n {
             let n = self.skip_whitespace(fwd);
@@ -826,7 +858,7 @@ impl Change {
         }
     }
 
-    fn next_words(&mut self, n: usize, tail: bool) {
+    fn fwd_words(&mut self, n: usize, tail: bool) {
         let (fwd, line_bound) = (true, false);
         for _ in 0..n {
             let n = self.skip_whitespace(fwd);
@@ -848,7 +880,7 @@ impl Change {
         }
     }
 
-    fn prev_wwords(&mut self, n: usize, tail: bool) {
+    fn rev_wwords(&mut self, n: usize, tail: bool) {
         let (fwd, line_bound) = (false, false);
         for _ in 0..n {
             let n = self.skip_whitespace(fwd);
@@ -870,7 +902,7 @@ impl Change {
         }
     }
 
-    fn next_wwords(&mut self, n: usize, tail: bool) {
+    fn fwd_wwords(&mut self, n: usize, tail: bool) {
         let (fwd, line_bound) = (true, false);
         for _ in 0..n {
             let n = self.skip_whitespace(fwd);
@@ -892,7 +924,7 @@ impl Change {
         }
     }
 
-    fn prev_sentence(&mut self, mut n: usize) {
+    fn rev_sentence(&mut self, mut n: usize) {
         let (cursor, nw) = {
             let mut iter = self.iter(false /*forward*/).enumerate();
             let mut prev_ch: Option<char> = None;
@@ -922,11 +954,11 @@ impl Change {
         };
         self.cursor = cursor;
         if nw {
-            self.next_words(1, false /*tail*/);
+            self.fwd_words(1, false /*tail*/);
         }
     }
 
-    fn next_sentence(&mut self, mut n: usize) {
+    fn fwd_sentence(&mut self, mut n: usize) {
         let (cursor, nw) = {
             let mut iter = self.iter(true /*forward*/).enumerate();
             let mut prev_ch: Option<char> = None;
@@ -956,11 +988,11 @@ impl Change {
         };
         self.cursor = cursor;
         if nw {
-            self.next_words(1, false /*tail*/);
+            self.fwd_words(1, false /*tail*/);
         }
     }
 
-    fn prev_para(&mut self, mut n: usize) {
+    fn rev_para(&mut self, mut n: usize) {
         self.cursor = {
             let row = self.buf.char_to_line(self.cursor);
             let mut iter = self.iter_line(false).enumerate();
@@ -980,7 +1012,7 @@ impl Change {
         }
     }
 
-    fn next_para(&mut self, mut n: usize) {
+    fn fwd_para(&mut self, mut n: usize) {
         self.cursor = {
             let row = self.buf.char_to_line(self.cursor);
             let mut iter = self.iter_line(true /*forward*/).enumerate();
@@ -1032,6 +1064,41 @@ impl Change {
                 }
             }
         };
+    }
+
+    fn start_search(&mut self, n: usize, p: &str, fwd: bool) -> Result<Search> {
+        let text = self.buf.to_string();
+        let search = Search::new(p, &text, fwd)?;
+        let byte_off = self.buf.char_to_byte(self.cursor);
+
+        let n = n.saturating_sub(1);
+        match fwd {
+            true => match search.iter(byte_off).skip(n).next() {
+                Some((s, _)) => self.cursor = s,
+                None => (),
+            },
+            false => match search.rev(byte_off).skip(n).next() {
+                Some((s, _)) => self.cursor = s,
+                None => (),
+            },
+        }
+
+        Ok(search)
+    }
+
+    fn contn_search(&mut self, n: usize, search: &Search, forward: bool) {
+        let byte_off = self.buf.char_to_byte(self.cursor);
+        let n = n.saturating_sub(1);
+        match forward {
+            true => match search.iter(byte_off).skip(n).next() {
+                Some((s, _)) => self.cursor = s,
+                None => (),
+            },
+            false => match search.rev(byte_off).skip(n).next() {
+                Some((s, _)) => self.cursor = s,
+                None => (),
+            },
+        }
     }
 }
 

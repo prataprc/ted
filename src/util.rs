@@ -28,6 +28,19 @@ macro_rules! limit {
 }
 
 #[macro_export]
+macro_rules! limite {
+    ($op:expr, $min:expr, $max:expr) => {{
+        let res = $op;
+        let max = $max.saturated_sub(1);
+        if_else!(res < $min, $min, if_else!(res < $max, res, max))
+    }};
+    ($op:expr, $max:expr) => {{
+        let res = $op;
+        if_else!(res < $max, res, $max)
+    }};
+}
+
+#[macro_export]
 macro_rules! err_at {
     ($v:ident, msg:$msg:expr) => {
         //

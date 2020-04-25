@@ -119,8 +119,9 @@ pub enum Event {
     GotoCol(usize),
     GotoRowA(usize),
     GotoPercent(usize),
-    FChar(usize, Option<char>, bool), // (n, ch, direction)
-    TChar(usize, Option<char>, bool), // (n, ch, direction)
+    FChar(usize, Option<char>, bool),    // (n, ch, direction)
+    TChar(usize, Option<char>, bool),    // (n, ch, direction)
+    Search(usize, Option<String>, bool), // (n, pattern, direction)
     // Prefix events
     PrefixN(Vec<char>),
     PrefixG(usize),
