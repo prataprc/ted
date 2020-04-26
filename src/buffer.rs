@@ -4,9 +4,7 @@ use ropey::{self, Rope, RopeSlice};
 
 use std::{
     cell::{self, RefCell},
-    cmp,
-    convert::TryFrom,
-    ffi, fmt, io,
+    cmp, ffi, fmt, io,
     iter::FromIterator,
     rc::{self, Rc},
     result,
@@ -19,8 +17,6 @@ use crate::{
     {err_at, Error, Result},
 };
 
-// TODO: review for saturating_add and saturating_sub in all modules.
-
 const NEW_LINE_CHAR: char = '\n';
 
 macro_rules! parse_n {
@@ -32,63 +28,25 @@ macro_rules! parse_n {
     };
 }
 
-// Buffer mode.
 #[derive(Clone)]
-pub enum Mode {
-    Normal,
-    Insert,
-}
-
-impl TryFrom<String> for Mode {
-    type Error = Error;
-
-    fn try_from(s: String) -> Result<Mode> {
-        match s.as_str() {
-            "normal" => Ok(Mode::Normal),
-            "insert" => Ok(Mode::Insert),
-            mode => err_at!(FailConvert, msg: format!("invalid mode {}", mode)),
-        }
-    }
-}
-
-impl fmt::Display for Mode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        match self {
-            Mode::Normal => write!(f, "normal"),
-            Mode::Insert => write!(f, "insert"),
-        }
-    }
+pub struct Context {
+    location: Location,
+    read_only: bool,
+    insert_only: bool,
+    evnt_find_char: Option<Event>,
+    evnt_search: Option<Event>,
 }
 
 // all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
-pub struct Buffer {
-    mode: Mode,
-
-    location: Location,
-    read_only: bool,
-    insert_only: bool,
-
-    evnt_prefix: Option<Event>,
-    find_char: Option<Event>,
-    search: Option<Search>,
-    change: Rc<RefCell<Change>>,
+pub enum Buffer {
+    InsertBuffer(InsertBuffer),
+    NormalBuffer(NormalBuffer),
 }
 
 impl Default for Buffer {
     fn default() -> Buffer {
-        Buffer {
-            mode: Mode::Normal,
-
-            location: Default::default(),
-            read_only: false,
-            insert_only: false,
-
-            evnt_prefix: None,
-            find_char: None,
-            search: None,
-            change: Default::default(),
-        }
+        Buffer::NormalBuffer(Default::default())
     }
 }
 
@@ -99,18 +57,7 @@ impl Buffer {
     {
         let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
         // trace!("first {:p}", &buf);
-        Ok(Buffer {
-            mode: Mode::Normal,
-
-            location: Default::default(),
-            read_only: false,
-            insert_only: false,
-
-            evnt_prefix: None,
-            find_char: None,
-            search: None,
-            change: Change::start(buf),
-        })
+        Ok(Buffer::NormalBuffer(NormalBuffer::new(buf)))
     }
 
     pub fn empty() -> Result<Buffer> {
@@ -118,47 +65,87 @@ impl Buffer {
         Self::from_reader(buf.as_slice())
     }
 
+    pub fn set_location(&mut self, loc: Location) -> &mut Self {
+        match self {
+            Buffer::NormalBuffer(val) => {
+                val.set_location(loc);
+            }
+            Buffer::InsertBuffer(val) => {
+                val.set_location(loc);
+            }
+        }
+        self
+    }
+
     pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
-        self.read_only = read_only;
+        match self {
+            Buffer::NormalBuffer(val) => {
+                val.set_read_only(read_only);
+            }
+            Buffer::InsertBuffer(val) => {
+                val.set_read_only(read_only);
+            }
+        }
         self
     }
 
     pub fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
-        self.insert_only = insert_only;
-        self
-    }
-
-    pub fn set_location(&mut self, loc: Location) -> &mut Self {
-        self.location = loc;
+        match self {
+            Buffer::NormalBuffer(val) => {
+                val.set_insert_only(insert_only);
+            }
+            Buffer::InsertBuffer(val) => {
+                val.set_insert_only(insert_only);
+            }
+        }
         self
     }
 
     pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
-        self.as_mut_change().set_cursor(cursor);
+        match self {
+            Buffer::NormalBuffer(val) => {
+                val.set_cursor(cursor);
+            }
+            Buffer::InsertBuffer(val) => {
+                val.set_cursor(cursor);
+            }
+        }
         self
     }
 
     pub fn as_change(&self) -> cell::Ref<Change> {
-        self.change.as_ref().borrow()
+        match self {
+            Buffer::NormalBuffer(val) => val.as_change(),
+            Buffer::InsertBuffer(val) => val.as_change(),
+        }
     }
 
     pub fn as_mut_change(&mut self) -> cell::RefMut<Change> {
-        self.change.as_ref().borrow_mut()
+        match self {
+            Buffer::NormalBuffer(val) => val.as_mut_change(),
+            Buffer::InsertBuffer(val) => val.as_mut_change(),
+        }
     }
 }
 
 impl Buffer {
     pub fn to_string(&self) -> String {
-        self.as_change().as_ref().to_string()
+        match self {
+            Buffer::NormalBuffer(val) => val.as_change().as_ref().to_string(),
+            Buffer::InsertBuffer(val) => val.as_change().as_ref().to_string(),
+        }
     }
 
     pub fn to_location(&self) -> Location {
-        self.location.clone()
+        match self {
+            Buffer::NormalBuffer(val) => val.as_context().location.clone(),
+            Buffer::InsertBuffer(val) => val.as_context().location.clone(),
+        }
     }
 
     pub fn to_id(&self) -> String {
-        match &self.location {
-            Location::Anonymous(s) => s.clone(),
+        match self.to_location() {
+            Location::Anonymous(s) => s,
             Location::Disk(s) => s.to_str().unwrap().to_string(),
         }
     }
@@ -166,21 +153,124 @@ impl Buffer {
 
 impl Buffer {
     pub fn to_cursor(&self) -> usize {
-        self.as_change().to_cursor()
-    }
-
-    pub fn to_xy_cursor(&self) -> (usize, usize) {
-        self.as_change().to_xy_cursor()
-    }
-
-    pub fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
-        match self.mode {
-            Mode::Normal => self.handle_normal_event(evnt),
-            Mode::Insert => self.handle_insert_event(evnt),
+        match self {
+            Buffer::NormalBuffer(val) => val.as_change().to_cursor(),
+            Buffer::InsertBuffer(val) => val.as_change().to_cursor(),
         }
     }
 
-    fn handle_normal_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
+    pub fn to_xy_cursor(&self) -> (usize, usize) {
+        match self {
+            Buffer::NormalBuffer(val) => val.as_change().to_xy_cursor(),
+            Buffer::InsertBuffer(val) => val.as_change().to_xy_cursor(),
+        }
+    }
+
+    pub fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
+        use Event::{Char, Esc, Insert};
+
+        match self {
+            Buffer::NormalBuffer(val) => match evnt {
+                Insert => {
+                    *self = Buffer::InsertBuffer(val.clone().into());
+                    Ok(None)
+                }
+                Char('i', m) if m.is_empty() => {
+                    *self = Buffer::InsertBuffer(val.clone().into());
+                    Ok(None)
+                }
+                evnt => val.handle_event(evnt),
+            },
+            Buffer::InsertBuffer(val) => match evnt {
+                Esc if !val.c.insert_only => {
+                    *self = Buffer::NormalBuffer(val.clone().into());
+                    Ok(None)
+                }
+                evnt => val.handle_event(evnt),
+            },
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct NormalBuffer {
+    c: Context,
+    evnt_prefix: Option<Event>,
+    change: Rc<RefCell<Change>>,
+}
+
+impl From<InsertBuffer> for NormalBuffer {
+    fn from(ib: InsertBuffer) -> NormalBuffer {
+        NormalBuffer {
+            c: ib.c,
+            evnt_prefix: None,
+            change: ib.change,
+        }
+    }
+}
+
+impl Default for NormalBuffer {
+    fn default() -> NormalBuffer {
+        let c = Context {
+            location: Default::default(),
+            read_only: false,
+            insert_only: false,
+            evnt_find_char: None,
+            evnt_search: None,
+        };
+
+        NormalBuffer {
+            c,
+            evnt_prefix: None,
+            change: Default::default(),
+        }
+    }
+}
+
+impl NormalBuffer {
+    fn new(buf: Rope) -> NormalBuffer {
+        let mut nb: NormalBuffer = Default::default();
+        nb.change = Change::start(buf);
+        nb
+    }
+
+    fn set_location(&mut self, loc: Location) -> &mut Self {
+        self.c.location = loc;
+        self
+    }
+
+    fn set_read_only(&mut self, read_only: bool) -> &mut Self {
+        self.c.read_only = read_only;
+        self
+    }
+
+    fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
+        self.c.insert_only = insert_only;
+        self
+    }
+
+    fn set_cursor(&mut self, cursor: usize) -> &mut Self {
+        self.as_mut_change().set_cursor(cursor);
+        self
+    }
+
+    fn as_change(&self) -> cell::Ref<Change> {
+        self.change.as_ref().borrow()
+    }
+
+    fn as_mut_change(&mut self) -> cell::RefMut<Change> {
+        self.change.as_ref().borrow_mut()
+    }
+
+    fn as_context(&self) -> &Context {
+        &self.c
+    }
+
+    pub fn as_mut_context(&mut self) -> &mut Context {
+        &mut self.c
+    }
+
+    fn handle_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, GotoCol, Left, PrefixN, Right};
         use Event::{Bracket, PrefixBB, PrefixFB, Search};
         use Event::{Down, DownA, FChar, GotoRowA, PrefixG, TChar, Up, UpA};
@@ -229,9 +319,10 @@ impl Buffer {
                 Char('F', _) => (Some(FChar(parse_n!(xs)?, None, false)), None),
                 Char('t', _) => (Some(TChar(parse_n!(xs)?, None, true)), None),
                 Char('T', _) => (Some(TChar(parse_n!(xs)?, None, false)), None),
-                Char(';', _) if self.find_char.is_some() => {
+                Char(';', _) if self.c.evnt_find_char.is_some() => {
                     let m = parse_n!(xs)?;
-                    let e = match self.find_char.clone().unwrap() {
+                    let evnt_fc = self.c.evnt_find_char.clone().unwrap();
+                    let e = match evnt_fc {
                         FChar(_, None, _) => None,
                         FChar(_, Some(ch), d) => Some(FChar(m, Some(ch), d)),
                         TChar(_, None, _) => None,
@@ -241,9 +332,9 @@ impl Buffer {
                     (None, e)
                 }
                 Char(';', _) => (None, None),
-                Char(',', _) if self.find_char.is_some() => {
+                Char(',', _) if self.c.evnt_find_char.is_some() => {
                     let m = parse_n!(xs)?;
-                    let e = match self.find_char.clone().unwrap() {
+                    let e = match self.c.evnt_find_char.clone().unwrap() {
                         FChar(_, None, _) => None,
                         FChar(_, Some(ch), d) => Some(FChar(m, Some(ch), !d)),
                         TChar(_, None, _) => None,
@@ -298,26 +389,18 @@ impl Buffer {
         Ok(e)
     }
 
-    fn handle_normal_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
-        use Event::{Backspace, Char, FChar, GotoCol, Insert, Left, Right, TChar};
+    fn handle_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
+        use Event::{Backspace, Char, FChar, GotoCol, Left, Right, TChar};
         use Event::{Bracket, GotoN, Paragraph, Search, Sentence};
         use Event::{Down, DownA, GotoPercent, GotoRowA, Up, UpA, WWord, Word};
 
-        evnt = match self.handle_normal_prefix(evnt)? {
+        evnt = match self.handle_prefix(evnt)? {
             Some(evnt) => evnt,
             None => return Ok(None),
         };
 
         let m = evnt.to_modifiers();
         match evnt {
-            Char('i', _) if m.is_empty() => {
-                self.mode = Mode::Insert;
-                Ok(None)
-            }
-            Insert if m.is_empty() => {
-                self.mode = Mode::Insert;
-                Ok(None)
-            }
             Left(n, lbnd) if m.is_empty() => {
                 self.as_mut_change().move_left(n, lbnd);
                 Ok(None)
@@ -429,25 +512,17 @@ impl Buffer {
                 self.as_mut_change().rev_bracket(yin, yan, n);
                 Ok(None)
             }
-            Search(n, pattern, fwd) => {
-                self.search = match pattern {
-                    Some(pattern) => Some(
-                        //
-                        self.as_mut_change().start_search(n, &pattern, fwd)?,
-                    ),
-                    None => match self.search.take() {
-                        Some(search) => {
-                            let fwd = if fwd {
-                                search.is_forward()
-                            } else {
-                                !search.is_forward()
-                            };
-                            self.as_mut_change().contn_search(n, &search, fwd);
-                            Some(search)
-                        }
-                        None => None,
-                    },
-                };
+            Search(n, None, fwd) => match self.c.evnt_search.clone() {
+                Some(Search(_, Some(patt), fwdo)) => {
+                    let fwd = if fwd { fwdo } else { !fwdo };
+                    self.as_mut_change().start_search(n, &patt, fwd)?;
+                    Ok(None)
+                }
+                Some(_) | None => Ok(None),
+            },
+            Search(n, Some(pattern), fwd) => {
+                self.as_mut_change().start_search(n, &pattern, fwd)?;
+                self.c.evnt_search = Some(Search(n, Some(pattern), fwd));
                 Ok(None)
             }
             Char('h', _) if m.is_empty() => {
@@ -490,10 +565,86 @@ impl Buffer {
             evnt => Ok(Some(evnt)),
         }
     }
+}
 
-    fn handle_insert_event(&mut self, evnt: Event) -> Result<Option<Event>> {
+#[derive(Clone)]
+pub struct InsertBuffer {
+    c: Context,
+    change: Rc<RefCell<Change>>,
+}
+
+impl From<NormalBuffer> for InsertBuffer {
+    fn from(nb: NormalBuffer) -> InsertBuffer {
+        InsertBuffer {
+            c: nb.c,
+            change: nb.change,
+        }
+    }
+}
+
+impl Default for InsertBuffer {
+    fn default() -> InsertBuffer {
+        let c = Context {
+            location: Default::default(),
+            read_only: false,
+            insert_only: false,
+            evnt_find_char: None,
+            evnt_search: None,
+        };
+
+        InsertBuffer {
+            c,
+            change: Default::default(),
+        }
+    }
+}
+
+impl InsertBuffer {
+    fn new(buf: Rope) -> InsertBuffer {
+        let mut ib: InsertBuffer = Default::default();
+        ib.change = Change::start(buf);
+        ib
+    }
+
+    fn set_location(&mut self, loc: Location) -> &mut Self {
+        self.c.location = loc;
+        self
+    }
+
+    fn set_read_only(&mut self, read_only: bool) -> &mut Self {
+        self.c.read_only = read_only;
+        self
+    }
+
+    fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
+        self.c.insert_only = insert_only;
+        self
+    }
+
+    fn set_cursor(&mut self, cursor: usize) -> &mut Self {
+        self.as_mut_change().set_cursor(cursor);
+        self
+    }
+
+    fn as_change(&self) -> cell::Ref<Change> {
+        self.change.as_ref().borrow()
+    }
+
+    pub fn as_mut_change(&mut self) -> cell::RefMut<Change> {
+        self.change.as_ref().borrow_mut()
+    }
+
+    fn as_context(&self) -> &Context {
+        &self.c
+    }
+
+    pub fn as_mut_context(&mut self) -> &mut Context {
+        &mut self.c
+    }
+
+    fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
         use Event::{BackTab, Backspace, Char, Delete, Down, End, Enter};
-        use Event::{Esc, Home, Insert, Left, Noop, PageDown, PageUp};
+        use Event::{Home, Insert, Left, Noop, PageDown, PageUp};
         use Event::{Right, Tab, Up, F};
 
         match evnt.clone() {
@@ -544,12 +695,6 @@ impl Buffer {
             }
             End => {
                 self.as_mut_change().end();
-                Ok(None)
-            }
-            Esc => {
-                if !self.insert_only {
-                    self.mode = Mode::Normal;
-                }
                 Ok(None)
             }
             F(_, _) => Ok(Some(evnt)),

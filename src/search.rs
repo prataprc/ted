@@ -20,10 +20,6 @@ impl Search {
         })
     }
 
-    pub fn is_forward(&self) -> bool {
-        self.forward
-    }
-
     pub fn iter(&self, byte_off: usize) -> impl Iterator<Item = (usize, usize)> {
         match self.find(byte_off, &self.matches[..]) {
             Some(i) => {
