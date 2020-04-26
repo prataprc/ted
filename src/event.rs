@@ -119,6 +119,7 @@ pub enum Event {
     GotoCol(usize),
     GotoRowA(usize),
     GotoPercent(usize),
+    GotoN(usize),
     FChar(usize, Option<char>, bool),    // (n, ch, direction)
     TChar(usize, Option<char>, bool),    // (n, ch, direction)
     Search(usize, Option<String>, bool), // (n, pattern, direction)
@@ -143,8 +144,8 @@ impl From<TermEvent> for Event {
                 match code {
                     KeyCode::Backspace if m.is_empty() => Event::Backspace(1),
                     KeyCode::Enter if m.is_empty() => Event::Enter,
-                    KeyCode::Left if m.is_empty() => Event::Left(1, true /*line_bound*/),
-                    KeyCode::Right if m.is_empty() => Event::Right(1, true /*line_bound*/),
+                    KeyCode::Left if m.is_empty() => Event::Left(1, true),
+                    KeyCode::Right if m.is_empty() => Event::Right(1, true),
                     KeyCode::Up if m.is_empty() => Event::Up(1),
                     KeyCode::Down if m.is_empty() => Event::Down(1),
                     KeyCode::Home if m.is_empty() => Event::Home,

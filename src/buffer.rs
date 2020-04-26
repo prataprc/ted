@@ -184,7 +184,7 @@ impl Buffer {
         use Event::{Backspace, Char, GotoCol, Left, PrefixN, Right};
         use Event::{Bracket, PrefixBB, PrefixFB, Search};
         use Event::{Down, DownA, FChar, GotoRowA, PrefixG, TChar, Up, UpA};
-        use Event::{GotoPercent, Paragraph, Sentence, WWord, Word};
+        use Event::{GotoN, GotoPercent, Paragraph, Sentence, WWord, Word};
 
         let m = evnt.to_modifiers();
         let (pe, e) = match self.evnt_prefix.take() {
@@ -278,6 +278,7 @@ impl Buffer {
                 Char('g', _) => (None, Some(GotoRowA(n))),
                 Char('e', _) => (None, Some(Word(n, true, true))),
                 Char('E', _) => (None, Some(WWord(n, true, true))),
+                Char('o', _) => (None, Some(GotoN(n))),
                 _ => (None, Some(evnt)),
             },
             Some(PrefixBB(n)) if m.is_empty() => match evnt {
@@ -299,7 +300,7 @@ impl Buffer {
 
     fn handle_normal_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
         use Event::{Backspace, Char, FChar, GotoCol, Insert, Left, Right, TChar};
-        use Event::{Bracket, Paragraph, Search, Sentence};
+        use Event::{Bracket, GotoN, Paragraph, Search, Sentence};
         use Event::{Down, DownA, GotoPercent, GotoRowA, Up, UpA, WWord, Word};
 
         evnt = match self.handle_normal_prefix(evnt)? {
@@ -334,20 +335,20 @@ impl Buffer {
                 Ok(None)
             }
             FChar(n, Some(ch), d) if d => {
-                self.as_mut_change().fwd_char_n(n, ch, false /*till*/);
+                self.as_mut_change().fwd_char(n, ch, false /*till*/);
                 Ok(None)
             }
             FChar(n, Some(ch), _) => {
-                self.as_mut_change().rev_char_n(n, ch, false /*till*/);
+                self.as_mut_change().rev_char(n, ch, false /*till*/);
                 Ok(None)
             }
             FChar(_, _, _) => Ok(None),
             TChar(n, Some(ch), d) if d => {
-                self.as_mut_change().fwd_char_n(n, ch, true /*till*/);
+                self.as_mut_change().fwd_char(n, ch, true /*till*/);
                 Ok(None)
             }
             TChar(n, Some(ch), _) => {
-                self.as_mut_change().rev_char_n(n, ch, true /*till*/);
+                self.as_mut_change().rev_char(n, ch, true /*till*/);
                 Ok(None)
             }
             TChar(_, _, _) => Ok(None),
@@ -384,6 +385,10 @@ impl Buffer {
                 Ok(None)
             }
             GotoPercent(_) => Ok(None),
+            GotoN(n) => {
+                self.as_mut_change().goto_cursor(n);
+                Ok(None)
+            }
             Word(n, true, tail) if m.is_empty() => {
                 self.as_mut_change().fwd_words(n, tail);
                 Ok(None)
@@ -476,6 +481,10 @@ impl Buffer {
             }
             Char('|', _) if m.is_empty() => {
                 self.as_mut_change().goto_column(1);
+                Ok(None)
+            }
+            Char('%', _) if m.is_empty() => {
+                self.as_mut_change().fwd_match_group();
                 Ok(None)
             }
             evnt => Ok(Some(evnt)),
@@ -767,22 +776,7 @@ impl Change {
         }
     }
 
-    fn rev_char_n(&mut self, mut n: usize, ch: char, till: bool) {
-        self.cursor -= {
-            let mut iter = self.iter(false /*foward*/).enumerate();
-            loop {
-                match iter.next() {
-                    Some((_, NEW_LINE_CHAR)) => break 0,
-                    Some((i, c)) if c == ch && n == 0 && till => break i,
-                    Some((i, c)) if c == ch && n == 0 => break i + 1,
-                    Some((_, c)) if c == ch => n -= 1,
-                    _ => (),
-                }
-            }
-        };
-    }
-
-    fn fwd_char_n(&mut self, mut n: usize, ch: char, till: bool) {
+    fn fwd_char(&mut self, mut n: usize, ch: char, till: bool) {
         self.cursor += {
             let mut iter = self.iter(false /*forward*/).enumerate();
             loop {
@@ -790,6 +784,21 @@ impl Change {
                     Some((_, NEW_LINE_CHAR)) => break 0,
                     Some((i, c)) if c == ch && n == 0 && till => break i,
                     Some((i, c)) if c == ch && n == 0 => break i - 1,
+                    Some((_, c)) if c == ch => n -= 1,
+                    _ => (),
+                }
+            }
+        };
+    }
+
+    fn rev_char(&mut self, mut n: usize, ch: char, till: bool) {
+        self.cursor -= {
+            let mut iter = self.iter(false /*foward*/).enumerate();
+            loop {
+                match iter.next() {
+                    Some((_, NEW_LINE_CHAR)) => break 0,
+                    Some((i, c)) if c == ch && n == 0 && till => break i,
+                    Some((i, c)) if c == ch && n == 0 => break i + 1,
                     Some((_, c)) if c == ch => n -= 1,
                     _ => (),
                 }
@@ -1100,6 +1109,49 @@ impl Change {
             },
         }
     }
+
+    fn fwd_match_group(&mut self) {
+        self.cursor = {
+            let mut iter = self.iter(true /*fwd*/).enumerate();
+            let res = loop {
+                match iter.next() {
+                    Some((i, '(')) => break Some((')', i + 1, true)),
+                    Some((i, ')')) => break Some(('(', i, false)),
+                    Some((i, '{')) => break Some(('}', i + 1, true)),
+                    Some((i, '}')) => break Some(('{', i, false)),
+                    Some((i, '<')) => break Some(('>', i + 1, true)),
+                    Some((i, '>')) => break Some(('<', i, false)),
+                    Some((i, '[')) => break Some(('[', i + 1, true)),
+                    Some((i, ']')) => break Some(('[', i, false)),
+                    Some((_, NEW_LINE_CHAR)) => break None,
+                    Some(_) => (),
+                    None => break None,
+                };
+            };
+            if let Some((nch, noff, fwd)) = res {
+                let cursor = self.cursor + noff;
+                let mut iter = self.iter_at(fwd, cursor).enumerate();
+                loop {
+                    match iter.next() {
+                        Some((i, ch)) if ch == nch && fwd => {
+                            break cursor + i;
+                        }
+                        Some((i, ch)) if ch == nch => {
+                            break cursor - i - 1;
+                        }
+                        Some(_) => (),
+                        None => break cursor,
+                    }
+                }
+            } else {
+                self.cursor
+            }
+        };
+    }
+
+    fn goto_cursor(&mut self, n: usize) {
+        self.cursor = limite!(self.cursor + n, self.buf.len_chars())
+    }
 }
 
 impl Change {
@@ -1112,6 +1164,19 @@ impl Change {
             Box::new(self.buf.chars_at(self.cursor))
         } else {
             Box::new(ReverseIter::new(self.buf.chars_at(self.cursor)))
+        }
+    }
+
+    fn iter_at<'a>(
+        //
+        &'a self,
+        fwd: bool,
+        cursor: usize,
+    ) -> Box<dyn Iterator<Item = char> + 'a> {
+        if fwd {
+            Box::new(self.buf.chars_at(cursor))
+        } else {
+            Box::new(ReverseIter::new(self.buf.chars_at(cursor)))
         }
     }
 

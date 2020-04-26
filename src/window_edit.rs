@@ -85,10 +85,10 @@ impl WindowEdit {
         let (_, wth) = self.coord.to_size();
         let Cursor { col, .. } = self.cursor;
 
-        let col = limit!(
+        let col = limite!(
             (col as isize) + (new_bc.0 as isize) - (self.old_bc.0 as isize),
             0,
-            (wth - nu_wth - 1) as isize
+            (wth - nu_wth) as isize
         );
         // trace!("atc {} {} {} {} {}", col, self.old_bc.0, new_bc.0,);
         col.try_into().unwrap()
