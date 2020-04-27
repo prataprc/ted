@@ -1,3 +1,4 @@
+use crossterm::event::KeyModifiers;
 use lazy_static::lazy_static;
 use log::trace;
 use ropey::{self, Rope, RopeSlice};
@@ -35,6 +36,7 @@ pub struct Context {
     insert_only: bool,
     evnt_find_char: Option<Event>,
     evnt_search: Option<Event>,
+    last_inserts: Vec<Event>,
 }
 
 // all bits and pieces of content is managed by buffer.
@@ -167,26 +169,29 @@ impl Buffer {
     }
 
     pub fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
-        use Event::{Char, Esc, Insert};
+        use Event::{Append, Esc, Insert};
 
         match self {
-            Buffer::NormalBuffer(val) => match evnt {
-                Insert => {
-                    *self = Buffer::InsertBuffer(val.clone().into());
+            Buffer::NormalBuffer(nb) => match nb.handle_event(evnt)? {
+                Some(evnt @ Insert(_)) | Some(evnt @ Append(_)) => {
+                    *self = {
+                        let mut ib: InsertBuffer = nb.clone().into();
+                        ib.handle_event(evnt, false /*repeat*/)?;
+                        Buffer::InsertBuffer(ib)
+                    };
                     Ok(None)
                 }
-                Char('i', m) if m.is_empty() => {
-                    *self = Buffer::InsertBuffer(val.clone().into());
-                    Ok(None)
-                }
-                evnt => val.handle_event(evnt),
+                Some(evnt) => Ok(Some(evnt)),
+                None => Ok(None),
             },
-            Buffer::InsertBuffer(val) => match evnt {
-                Esc if !val.c.insert_only => {
-                    *self = Buffer::NormalBuffer(val.clone().into());
+            Buffer::InsertBuffer(ib) => match ib.handle_event(evnt, false)? {
+                Some(Esc) if !ib.c.insert_only => {
+                    ib.c.last_inserts = ib.repeat()?;
+                    *self = Buffer::NormalBuffer(ib.clone().into());
                     Ok(None)
                 }
-                evnt => val.handle_event(evnt),
+                Some(evnt) => Ok(Some(evnt)),
+                None => Ok(None),
             },
         }
     }
@@ -217,6 +222,7 @@ impl Default for NormalBuffer {
             insert_only: false,
             evnt_find_char: None,
             evnt_search: None,
+            last_inserts: Default::default(),
         };
 
         NormalBuffer {
@@ -271,8 +277,9 @@ impl NormalBuffer {
     }
 
     fn handle_prefix(&mut self, evnt: Event) -> Result<Option<Event>> {
-        use Event::{Backspace, Char, GotoCol, Left, PrefixN, Right};
-        use Event::{Bracket, PrefixBB, PrefixFB, Search};
+        use Event::Search;
+        use Event::{Append, Backspace, Char, GotoCol, Left, PrefixN, Right};
+        use Event::{Bracket, Insert, OpenDown, OpenUp, PrefixBB, PrefixFB};
         use Event::{Down, DownA, FChar, GotoRowA, PrefixG, TChar, Up, UpA};
         use Event::{GotoN, GotoPercent, Paragraph, Sentence, WWord, Word};
 
@@ -303,10 +310,24 @@ impl NormalBuffer {
                     //
                     (None, Some(Search(parse_n!(xs)?, pattern, fwd)))
                 }
+                Insert(n) => (None, Some(Insert(parse_n!(xs)? * n))),
                 Char(ch, _) if '0' <= ch && ch <= '9' => {
                     xs.push(ch);
                     (Some(PrefixN(xs)), None)
                 }
+                Char('a', _) => (None, Some(Append(parse_n!(xs)?))),
+                Char('A', _) => {
+                    self.as_mut_change().end();
+                    (None, Some(Append(parse_n!(xs)?)))
+                }
+                Char('i', _) => (None, Some(Insert(parse_n!(xs)?))),
+                Char('I', _) => {
+                    self.as_mut_change().home();
+                    self.as_mut_change().skip_whitespace(true /*forward*/);
+                    (None, Some(Insert(parse_n!(xs)?)))
+                }
+                Char('o', _) => (None, Some(OpenUp(parse_n!(xs)?))),
+                Char('O', _) => (None, Some(OpenDown(parse_n!(xs)?))),
                 Char('h', _) => (None, Some(Left(parse_n!(xs)?, true))),
                 Char('l', _) => (None, Some(Right(parse_n!(xs)?, true))),
                 Char('k', _) => (None, Some(Up(parse_n!(xs)?))),
@@ -361,15 +382,17 @@ impl NormalBuffer {
                 Char(']', _) => (Some(PrefixFB(parse_n!(xs)?)), None),
                 Char('n', _) => (None, Some(Search(parse_n!(xs)?, None, true))),
                 Char('N', _) => (None, Some(Search(parse_n!(xs)?, None, false))),
-                evnt @ Char('0', _) => (None, Some(evnt)),
-                evnt @ Char('^', _) => (None, Some(evnt)),
-                evnt => (Some(PrefixN(xs)), Some(evnt)),
+                evnt => (None, Some(evnt)),
             },
             Some(PrefixG(n)) if m.is_empty() => match evnt {
                 Char('g', _) => (None, Some(GotoRowA(n))),
                 Char('e', _) => (None, Some(Word(n, true, true))),
                 Char('E', _) => (None, Some(WWord(n, true, true))),
                 Char('o', _) => (None, Some(GotoN(n))),
+                Char('I', _) => {
+                    self.as_mut_change().home();
+                    (None, Some(Insert(n)))
+                }
                 _ => (None, Some(evnt)),
             },
             Some(PrefixBB(n)) if m.is_empty() => match evnt {
@@ -571,6 +594,7 @@ impl NormalBuffer {
 pub struct InsertBuffer {
     c: Context,
     change: Rc<RefCell<Change>>,
+    last_inserts: Vec<Event>,
 }
 
 impl From<NormalBuffer> for InsertBuffer {
@@ -578,6 +602,7 @@ impl From<NormalBuffer> for InsertBuffer {
         InsertBuffer {
             c: nb.c,
             change: nb.change,
+            last_inserts: Default::default(),
         }
     }
 }
@@ -590,11 +615,13 @@ impl Default for InsertBuffer {
             insert_only: false,
             evnt_find_char: None,
             evnt_search: None,
+            last_inserts: Default::default(),
         };
 
         InsertBuffer {
             c,
             change: Default::default(),
+            last_inserts: Default::default(),
         }
     }
 }
@@ -642,12 +669,84 @@ impl InsertBuffer {
         &mut self.c
     }
 
-    fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
-        use Event::{BackTab, Backspace, Char, Delete, Down, End, Enter};
-        use Event::{Home, Insert, Left, Noop, PageDown, PageUp};
-        use Event::{Right, Tab, Up, F};
+    fn to_repeat_evnts(&mut self) -> Vec<Event> {
+        use Event::{Backspace, Char, Delete, Enter, Tab};
 
-        match evnt.clone() {
+        let evnts: Vec<Event> = self.last_inserts.drain(..).collect();
+        let valid = evnts.iter().all(|evnt| match evnt {
+            Char(_, _) | Backspace(_) | Enter | Tab | Delete => true,
+            _ => false,
+        });
+
+        if valid {
+            evnts
+        } else {
+            vec![]
+        }
+    }
+
+    fn repeat(&mut self) -> Result<Vec<Event>> {
+        use Event::{Append, Insert, OpenDown, OpenUp};
+
+        let last_inserts: Vec<Event> = self.to_repeat_evnts();
+        let mut first = last_inserts.first().map(Clone::clone);
+        loop {
+            first = match first {
+                Some(Insert(n)) if n > 1 => Ok(Some(Insert(n - 1))),
+                Some(Insert(_)) => Ok(None),
+                Some(Append(n)) if n > 1 => Ok(Some(Append(n - 1))),
+                Some(Append(_)) => Ok(None),
+                Some(OpenUp(n)) if n > 1 => Ok(Some(OpenUp(n - 1))),
+                Some(OpenUp(_)) => Ok(None),
+                Some(OpenDown(n)) if n > 1 => Ok(Some(OpenDown(n - 1))),
+                Some(OpenDown(_)) => Ok(None),
+                Some(_) => err_at!(Fatal, msg: format!("unreachable")),
+                None => break Ok(last_inserts),
+            }?;
+            match first {
+                Some(_) => {
+                    for evnt in last_inserts.iter() {
+                        self.handle_event(evnt.clone(), true)?;
+                    }
+                }
+                None => break Ok(last_inserts),
+            }
+        }
+    }
+
+    fn handle_event(
+        //
+        &mut self,
+        evnt: Event,
+        repeat: bool,
+    ) -> Result<Option<Event>> {
+        use Event::{Append, Esc, Home, Insert, Left, OpenDown, OpenUp, Right};
+        use Event::{Backspace, Char, Delete, Down, End, Enter, Tab, Up};
+
+        if !repeat {
+            self.last_inserts.push(evnt.clone());
+        }
+
+        match evnt {
+            // Begin insert.
+            Insert(_) => Ok(None),
+            Append(_) => {
+                self.as_mut_change().move_right(1, false /*line_bound*/);
+                Ok(None)
+            }
+            OpenUp(_) => {
+                self.as_mut_change().home();
+                self.as_mut_change().insert_char(NEW_LINE_CHAR);
+                self.as_mut_change().move_left(1, false /*line_bound*/);
+                Ok(None)
+            }
+            OpenDown(_) => {
+                self.as_mut_change().end();
+                self.as_mut_change().move_right(1, false /*line_bound*/);
+                self.as_mut_change().insert_char(NEW_LINE_CHAR);
+                Ok(None)
+            }
+            // insert
             Char(ch, _) => {
                 self.change = Change::to_next_change(&mut self.change);
                 self.as_mut_change().insert_char(ch);
@@ -673,6 +772,7 @@ impl InsertBuffer {
                 self.as_mut_change().remove_at();
                 Ok(None)
             }
+            // movement
             Left(n, lbnd) => {
                 self.as_mut_change().move_left(n, lbnd);
                 Ok(None)
@@ -697,9 +797,12 @@ impl InsertBuffer {
                 self.as_mut_change().end();
                 Ok(None)
             }
-            F(_, _) => Ok(Some(evnt)),
-            BackTab | Insert | PageUp | PageDown | Noop => Ok(Some(evnt)),
-            _ => todo!(),
+            // leave insert, special case, return the escape.
+            Esc => {
+                self.as_mut_change().move_left(1, true /*line_bound*/);
+                Ok(Some(evnt))
+            }
+            evnt => Ok(Some(evnt)),
         }
     }
 }
@@ -909,9 +1012,9 @@ impl Change {
         let row = self.buf.char_to_line(self.cursor);
         match (n, self.buf.len_lines()) {
             (_, 0) => false,
-            (n, mut n_lines) => {
-                n_lines -= 1;
-                let n = (((n_lines as f64) * (n as f64)) / (100 as f64)) as usize;
+            (n, mut n_lns) => {
+                n_lns -= 1;
+                let n = (((n_lns as f64) * (n as f64)) / (100 as f64)) as usize;
                 if n < row {
                     self.move_up(row - n)
                 } else {

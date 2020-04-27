@@ -114,7 +114,10 @@ pub enum Event {
     PageDown,
     Tab,
     BackTab,
-    Insert,
+    Insert(usize),   // (n,)
+    Append(usize),   // (n,)
+    OpenUp(usize),   // (n,)
+    OpenDown(usize), // (n,)
     // Motion Events
     GotoCol(usize),
     GotoRowA(usize),
@@ -133,6 +136,12 @@ pub enum Event {
     OpenFiles { flocs: Vec<OpenFile> },
     UseBuffer { buffer_id: String },
     PromptReply { input: String },
+}
+
+impl Default for Event {
+    fn default() -> Event {
+        Event::Noop
+    }
 }
 
 impl From<TermEvent> for Event {
@@ -159,7 +168,8 @@ impl From<TermEvent> for Event {
                     KeyCode::Char('[') if ctrl => Event::Esc,
                     KeyCode::Char(ch) if m.is_empty() => Event::Char(ch, m),
                     KeyCode::Esc if m.is_empty() => Event::Esc,
-                    KeyCode::Insert | KeyCode::Null => Event::Noop,
+                    KeyCode::Insert => Event::Insert(1),
+                    KeyCode::Null => Event::Noop,
                     _ => Event::Noop,
                 }
             }
