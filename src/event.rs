@@ -86,51 +86,62 @@ impl TryFrom<OpenFile> for fs::File {
     }
 }
 
+enum Dir {
+    Left,
+    Right,
+    Find,
+    Till,
+    Start,
+    End,
+    LineBound,
+    Unbound,
+    Caret,
+    None,
+}
+
 #[derive(Clone)]
 pub enum Event {
     Noop,
     // Input events
     F(u8, KeyModifiers),
-    Char(char, KeyModifiers),
-    // Processed Input events
-    Esc,
-    Enter,
-    Backspace(usize),                 // (n,)
-    Left(usize, bool),                // (n, line-bound)
-    Right(usize, bool),               // (n, line-bound)
-    Up(usize),                        // (n,)
-    Down(usize),                      // (n,)
-    UpA(usize),                       // (n,)
-    DownA(usize),                     // (n,)
-    Word(usize, bool, bool),          // (n, fwd, tail)
-    WWord(usize, bool, bool),         // (n, fwd, tail)
-    Sentence(usize, bool),            // (n, fwd)
-    Paragraph(usize, bool),           // (n, fwd)
-    Bracket(usize, char, char, bool), // (n, yin, yan, fwd)
-    Delete,
-    Home,
-    End,
-    PageUp,
-    PageDown,
-    Tab,
-    BackTab,
-    Insert(usize),   // (n,)
-    Append(usize),   // (n,)
-    OpenUp(usize),   // (n,)
-    OpenDown(usize), // (n,)
-    // Motion Events
-    GotoCol(usize),
-    GotoRowA(usize),
-    GotoPercent(usize),
-    GotoN(usize),
-    FChar(usize, Option<char>, bool),    // (n, ch, direction)
-    TChar(usize, Option<char>, bool),    // (n, ch, direction)
-    Search(usize, Option<String>, bool), // (n, pattern, direction)
-    // Prefix events
-    PrefixN(Vec<char>),
+    // Modal events
+    ModeEsc,
+    ModeInsert(usize),      // (n,)
+    ModeAppend(usize, Dir), // (n, Right/End)
+    ModeOpen(usize, Dir),   // (n, Right/End)
+    // Command events
+    Dec(Vec<char>),
+    N(Vec<char>),
     PrefixG(usize),
     PrefixFB(usize), // ]
     PrefixBB(usize), // [
+    // Motion events
+    MtoLeft(usize, Dir),  // (n, LineBound/Unbound)
+    MtoRight(usize, Dir), // (n, LineBound/Unbound)
+    MtoUp(usize, Dir),    // (n, Caret/None)
+    MtoDown(usize, Dir),  // (n, Caret/None)
+    MtoCol(usize),        // (n,)
+    MtoRow(usize, Dir),   // (n, Caret/None)
+    MtoPercent(usize),    // (n,)
+    MtoHome(Dir),         // (Caret/None,)
+    MtoEnd,
+    MtoCursor(usize),                       // (n,)
+    MtoCharF(Option<char>, Dir, usize),     // (ch, Left/Right, n)
+    MtoCharT(Option<char>, Dir, usize),     // (ch, Left/Right, n)
+    MtoWords(usize, Dir, Dir),              // (n, Left/Right, Start/End)
+    MtoPattern(usize, Option<String>, Dir), // (n, pattern, Left/Right)
+    MtoWWord(usize, Dir, Dir),              // (n, Left/Right, Start/End)
+    MtoSentence(usize, Dir),                // (n, Left/Right)
+    MtoPara(usize, Dir),                    // (n, Left/Right)
+    MtoBracket(usize, char, char, Dir),     // (n, yin, yan, Left/Right)
+    MtoChar(char),
+    // Insert events
+    Backspace(usize), // (n,)
+    Char(char, KeyModifiers),
+    Delete,
+    Enter,
+    Tab,
+    Esc,
     // Application events
     NewBuffer,
     OpenFiles { flocs: Vec<OpenFile> },
@@ -153,7 +164,7 @@ impl From<TermEvent> for Event {
                 match code {
                     KeyCode::Backspace if m.is_empty() => Event::Backspace(1),
                     KeyCode::Enter if m.is_empty() => Event::Enter,
-                    KeyCode::Left if m.is_empty() => Event::Left(1, true),
+                    KeyCode::Left if m.is_empty() => Event::MtoLeft(1, true),
                     KeyCode::Right if m.is_empty() => Event::Right(1, true),
                     KeyCode::Up if m.is_empty() => Event::Up(1),
                     KeyCode::Down if m.is_empty() => Event::Down(1),
@@ -168,7 +179,7 @@ impl From<TermEvent> for Event {
                     KeyCode::Char('[') if ctrl => Event::Esc,
                     KeyCode::Char(ch) if m.is_empty() => Event::Char(ch, m),
                     KeyCode::Esc if m.is_empty() => Event::Esc,
-                    KeyCode::Insert => Event::Insert(1),
+                    KeyCode::Insert => Event::ModeInsert(1),
                     KeyCode::Null => Event::Noop,
                     _ => Event::Noop,
                 }
