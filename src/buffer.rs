@@ -130,6 +130,15 @@ macro_rules! normal_event {
     }};
 }
 
+macro_rules! change {
+    ($self:ident,$method:ident) => {
+        $self.as_mut_change().$method()
+    };
+    ($self:ident,$method:ident, $($s:expr),*) => {
+        $self.as_mut_change().$method($($s),*)
+    };
+}
+
 #[derive(Clone)]
 pub struct Context {
     location: Location,
@@ -387,14 +396,12 @@ impl NormalBuffer {
     fn fold_event(&mut self, evnt: Event) -> Result<Option<Event>> {
         use crate::event::Event::*;
 
-        let m = evnt.to_modifiers();
         let fc = self.c.evnt_mto_char.clone();
         let pn = self.c.evnt_mto_patt.clone();
         let (pe, e) = match (self.evnt_prefix.take(), evnt) {
             // Simple Move Prefix
             (None, e @ MtoCharF(_, _)) => (Some(e), None),
             (None, e @ MtoCharT(_, _)) => (Some(e), None),
-            (None, e) => (None, Some(N(1, Box::new(e)))),
             // N prefix
             (None, Dec(ns)) => (Some(Dec(ns)), None),
             (Some(Dec(mut ns)), Dec(ms)) => {
@@ -402,16 +409,6 @@ impl NormalBuffer {
                 (Some(Dec(ns)), None)
             }
             // N-Char prefix
-            (Some(N(n, box e)), MtoChar(ch)) => match e {
-                MtoCharF(None, dp) => {
-                    let f_prefix = Box::new(MtoCharF(Some(ch), dp));
-                    (Some(N(n, f_prefix)), None)
-                }
-                MtoCharT(None, dp) => {
-                    let f_prefix = Box::new(MtoCharT(Some(ch), dp));
-                    (Some(N(n, f_prefix)), None)
-                }
-            },
             // N-G-prefix
             (Some(N(n, box G(_))), MtoRow(dp)) => {
                 //
@@ -434,24 +431,37 @@ impl NormalBuffer {
                 (None, Some(N(n, Box::new(ModeInsert(dp)))))
             }
             // N-B-prefix
-            (Some(N(n, box B(dp))), e @ MtoChar(ch)) => match ch {
+            (Some(N(n, box B(dp))), MtoChar(ch)) => match ch {
                 '(' => (None, Some(N(n, Box::new(MtoBracket('(', ')', dp))))),
                 ')' => (None, Some(N(n, Box::new(MtoBracket(')', '(', dp))))),
                 '{' => (None, Some(N(n, Box::new(MtoBracket('{', '}', dp))))),
                 '}' => (None, Some(N(n, Box::new(MtoBracket('}', '{', dp))))),
+                _ => unreachable!(),
+            },
+            (Some(N(n, box e)), MtoChar(ch)) => match e {
+                MtoCharF(None, dp) => {
+                    let f_prefix = Box::new(MtoCharF(Some(ch), dp));
+                    (Some(N(n, f_prefix)), None)
+                }
+                MtoCharT(None, dp) => {
+                    let f_prefix = Box::new(MtoCharT(Some(ch), dp));
+                    (Some(N(n, f_prefix)), None)
+                }
+                _ => err_at!(Fatal, msg: format!("unreachable"))?,
             },
             // Commands
-            (Some(Dec(ns)), e) => (Some(N(parse_n!(ns)?, Box::new(e))), None),
-            (Some(Dec(ns)), MtoCharR(_)) if fc.is_none() => (None, None),
-            (Some(Dec(ns)), MtoCharR(dp)) if fc.is_none() => {
+            (Some(Dec(_)), MtoCharR(_)) if fc.is_none() => (None, None),
+            (Some(Dec(mut ns)), MtoCharR(dp)) if fc.is_none() => {
                 let e = fc.unwrap().transform(dp)?;
                 (Some(N(parse_n!(ns)?, Box::new(e))), None)
             }
-            (Some(Dec(ns)), MtoPattern(_, _)) if pn.is_none() => (None, None),
-            (Some(Dec(ns)), MtoPattern(None, dp)) => {
+            (Some(Dec(_)), MtoPattern(_, _)) if pn.is_none() => (None, None),
+            (Some(Dec(mut ns)), MtoPattern(None, dp)) => {
                 let e = pn.unwrap().transform(dp)?;
                 (Some(N(parse_n!(ns)?, Box::new(e))), None)
             }
+            (Some(Dec(mut ns)), e) => (Some(N(parse_n!(ns)?, Box::new(e))), None),
+            (None, e) => (None, Some(N(1, Box::new(e)))),
             (pe, e) => (pe, Some(e)),
         };
 
@@ -467,7 +477,7 @@ impl NormalBuffer {
             Some(evnt) => evnt,
             None => return Ok(None),
         };
-        let change = self.as_mut_change();
+        let mut change = self.as_mut_change();
         match evnt {
             // execute motion command.
             N(n, box MtoLeft(dp)) => change.mto_left(n, dp),
@@ -477,23 +487,24 @@ impl NormalBuffer {
             N(n, box MtoCol) => change.mto_column(n),
             N(n, box MtoRow(dp)) => change.mto_row(n, dp),
             N(n, box MtoPercent) => change.mto_percent(n),
-            N(n, box MtoHome(dp)) => change.mto_home(dp),
-            N(n, box MtoEnd) => change.mto_end(), // TODO: make this sticky.
+            N(_, box MtoHome(dp)) => change.mto_home(dp),
+            N(_, box MtoEnd) => change.mto_end(), // TODO: make this sticky.
             N(n, box MtoCursor) => change.mto_cursor(n),
             N(n, e @ box MtoCharF(_, _)) => change.mto_char(n, *e),
             N(n, e @ box MtoCharT(_, _)) => change.mto_char(n, *e),
             N(n, e @ box MtoWord(_, _)) => change.mto_words(n, *e),
             N(n, e @ box MtoWWord(_, _)) => change.mto_wwords(n, *e),
-            N(n, e @ box MtoSentence(_)) => change.mto_sentence(n, *e),
+            // TODO
+            // N(n, e @ box MtoSentence(_)) => change.mto_sentence(n, *e),
             N(n, e @ box MtoPara(_)) => change.mto_para(n, *e),
             N(n, e @ box MtoBracket(_, _, _)) => change.mto_bracket(n, *e),
             N(n, e @ box MtoPattern(Some(_), _)) => change.mto_pattern(n, *e),
             // execute mode switching commands
-            N(n, e @ box ModeInsert(Caret)) => {
+            N(n, box ModeInsert(Caret)) => {
                 change.mto_home(Caret);
-                Ok(Some(*e))
+                Ok(Some(N(n, Box::new(ModeInsert(Caret)))))
             }
-            N(n, e @ box ModeInsert(_)) => Ok(Some(*e)),
+            N(n, e @ box ModeInsert(_)) => Ok(Some(N(n, Box::new(*e)))),
             //Char('%', _) if m.is_empty() => {
             //    self.as_mut_change().fwd_match_group();
             //    Ok(None)
@@ -624,63 +635,62 @@ impl InsertBuffer {
             self.last_inserts.push(evnt.clone());
         }
 
-        let change = self.as_mut_change();
         match evnt {
             // Start mode.
             ModeInsert(_) => Ok(None),
-            ModeAppend(Right) => change.mto_right(1, Nobound),
+            ModeAppend(Right) => change!(self, mto_right, 1, Nobound),
             ModeAppend(End) => {
-                change.mto_end();
-                change.mto_right(1, LineBound)
+                change!(self, mto_end);
+                change!(self, mto_right, 1, LineBound)
             }
             ModeOpen(Left) => {
-                change.mto_home(Nope);
-                change.insert_char(NL);
-                change.mto_left(1, Nobound)
+                change!(self, mto_home, Nope);
+                change!(self, insert_char, NL);
+                change!(self, mto_left, 1, Nobound)
             }
             ModeOpen(Right) => {
-                change.mto_end();
-                change.mto_right(1, Nobound);
-                change.insert_char(NL);
+                change!(self, mto_end);
+                change!(self, mto_right, 1, Nobound);
+                change!(self, insert_char, NL);
                 Ok(None)
+            }
+            // movement
+            MtoLeft(dp) => change!(self, mto_left, 1, dp),
+            MtoRight(dp) => change!(self, mto_right, 1, dp),
+            MtoUp(dp) => change!(self, mto_up, 1, dp),
+            MtoDown(dp) => change!(self, mto_down, 1, dp),
+            MtoHome(dp) => change!(self, mto_home, dp),
+            MtoEnd => change!(self, mto_end),
+            // Handle mode events.
+            Esc => {
+                change!(self, mto_left, 1, LineBound);
+                Ok(Some(ModeEsc))
             }
             // on going insert
             Char(ch, _) => {
                 self.change = Change::to_next_change(&mut self.change);
-                self.as_mut_change().insert_char(ch);
+                change!(self, insert_char, ch);
                 Ok(None)
             }
             Backspace => {
                 self.change = Change::to_next_change(&mut self.change);
-                self.as_mut_change().backspace(1);
+                change!(self, backspace, 1);
                 Ok(None)
             }
             Enter => {
                 self.change = Change::to_next_change(&mut self.change);
-                self.as_mut_change().insert_char(NL);
+                change!(self, insert_char, NL);
                 Ok(None)
             }
             Tab => {
                 self.change = Change::to_next_change(&mut self.change);
-                self.as_mut_change().insert_char('\t');
+                change!(self, insert_char, '\t');
                 Ok(None)
             }
             Delete => {
                 self.change = Change::to_next_change(&mut self.change);
-                self.as_mut_change().remove_at();
+                change!(self, remove_at);
                 Ok(None)
-            }
-            // movement
-            MtoLeft(dp) => change.mto_left(1, dp),
-            MtoRight(dp) => change.mto_right(1, dp),
-            MtoUp(dp) => change.mto_up(1, dp),
-            MtoDown(dp) => change.mto_down(1, dp),
-            MtoHome(dp) => change.mto_home(dp),
-            MtoEnd => change.mto_end(),
-            // Handle mode events.
-            Esc => {
-                change.mto_left(1, LineBound);
-                Ok(Some(ModeEsc))
             }
             evnt => Ok(Some(evnt)),
         }
@@ -915,19 +925,24 @@ impl Change {
         use crate::event::DP::*;
 
         self.cursor = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
-        self.skip_whitespace(Right);
+        if pos == Caret {
+            self.skip_whitespace(Right);
+        }
         Ok(None)
     }
 
     fn mto_end(&mut self) -> Result<Option<Event>> {
-        let iter = self.buf.chars_at(self.cursor);
+        let mut iter = self.buf.chars_at(self.cursor);
+        let mut cursor = self.cursor;
         loop {
             match iter.next() {
-                Some(NL) => break Ok(None),
-                Some(_) => self.cursor += 1,
-                None => break Ok(None),
+                Some(NL) => break (),
+                Some(_) => cursor += 1,
+                None => break (),
             }
         }
+        self.cursor = cursor;
+        Ok(None)
     }
 
     fn mto_char(&mut self, mut n: usize, evnt: Event) -> Result<Option<Event>> {
@@ -936,36 +951,43 @@ impl Change {
         let (ch, dp, pos) = match evnt {
             Event::MtoCharF(Some(ch), dp) => (ch, dp, Find),
             Event::MtoCharT(Some(ch), dp) => (ch, dp, Till),
+            _ => unreachable!(),
         };
-        let mut iter = self.iter(dp).enumerate();
 
         self.cursor = match dp {
-            Right => loop {
-                match iter.next() {
-                    Some((_, NL)) => break self.cursor,
-                    Some((i, c)) if c == ch && n == 0 && pos == Till => {
-                        break self.cursor + i;
+            Right => {
+                let mut iter = self.iter(dp).enumerate();
+                loop {
+                    match iter.next() {
+                        Some((_, NL)) => break self.cursor,
+                        Some((i, c)) if c == ch && n == 0 && pos == Till => {
+                            break self.cursor.saturating_add(i);
+                        }
+                        Some((i, c)) if c == ch && n == 0 => {
+                            break self.cursor.saturating_add(i - 1);
+                        }
+                        Some((_, c)) if c == ch => n -= 1,
+                        _ => (),
                     }
-                    Some((i, c)) if c == ch && n == 0 => {
-                        break self.cursor + (i - 1);
-                    }
-                    Some((_, c)) if c == ch => n -= 1,
-                    _ => (),
                 }
-            },
-            Left => loop {
-                match iter.next() {
-                    Some((_, NL)) => break self.cursor,
-                    Some((i, c)) if c == ch && n == 0 && pos == Till => {
-                        break self.cursor + i;
+            }
+            Left => {
+                let mut iter = self.iter(dp).enumerate();
+                loop {
+                    match iter.next() {
+                        Some((_, NL)) => break self.cursor,
+                        Some((i, c)) if c == ch && n == 0 && pos == Till => {
+                            break self.cursor.saturating_add(i);
+                        }
+                        Some((i, c)) if c == ch && n == 0 => {
+                            break self.cursor.saturating_add(i + 1);
+                        }
+                        Some((_, c)) if c == ch => n -= 1,
+                        _ => (),
                     }
-                    Some((i, c)) if c == ch && n == 0 => {
-                        break self.cursor + i + 1;
-                    }
-                    Some((_, c)) if c == ch => n -= 1,
-                    _ => (),
                 }
-            },
+            }
+            _ => unreachable!(),
         };
 
         Ok(None)
@@ -992,6 +1014,7 @@ impl Change {
                             self.skip_whitespace(Left);
                         }
                         Start => (),
+                        _ => unreachable!(),
                     }
                 }
                 Ok(None)
@@ -1013,6 +1036,7 @@ impl Change {
                             self.skip_whitespace(Right);
                         }
                         Start => (),
+                        _ => unreachable!(),
                     }
                 }
                 Ok(None)
@@ -1042,6 +1066,7 @@ impl Change {
                             self.skip_whitespace(Left);
                         }
                         End => (),
+                        _ => unreachable!(),
                     }
                 }
                 Ok(None)
@@ -1063,6 +1088,7 @@ impl Change {
                             self.skip_whitespace(Right);
                         }
                         Start => (),
+                        _ => unreachable!(),
                     }
                 }
                 Ok(None)
@@ -1071,91 +1097,91 @@ impl Change {
         }
     }
 
-    fn mto_sentence(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
-        use crate::event::{Event::*, DP::*};
+    //fn mto_sentence(&mut self, mut n: usize, e: Event) -> Result<Option<Event>> {
+    //    use crate::event::{Event::*, DP::*};
 
-        let is_ws = |ch: char| ch.is_whitespace();
+    //    let is_ws = |ch: char| ch.is_whitespace();
 
-        let mut pch: Option<char> = None;
-        self.cursor = match evnt {
-            MtoSentence(Left) => {
-                let mut iter = self.iter(Left).enumerate();
-                let cursor = loop {
-                    pch = match (iter.next(), pch) {
-                        (Some((i, '.')), Some(pch)) if is_ws(pch) && n > 1 => {
-                            n -= 1;
-                            Some('.')
-                        }
-                        (Some((i, '.')), None) if n > 1 => {
-                            n -= 1;
-                            Some('.')
-                        }
-                        (Some((i, '.')), Some(pch)) if is_ws(pch) => {
-                            break self.cursor.saturating_sub(i + 1);
-                        }
-                        (Some((i, '.')), None) => {
-                            break self.cursor.saturating_sub(i + 1);
-                        }
-                        (Some((i, NL)), Some(NL)) if n > 1 => {
-                            n -= 1;
-                            Some(NL)
-                        }
-                        (Some((i, NL)), Some(NL)) => {
-                            break self.cursor.saturating_sub(i + 1);
-                        }
-                        (Some((i, NL)), None) if n > 1 => {
-                            n -= 1;
-                            Some(NL)
-                        }
-                        (Some((i, NL)), None) => {
-                            break self.cursor.saturating_sub(i + 1);
-                        }
-                        (None, _) => break 0,
-                    };
-                };
-                Ok(cursor)
-            }
-            MtoSentence(Right) => {
-                let mut iter = self.iter(Right).enumerate();
-                let cursor = loop {
-                    pch = match (iter.next(), pch) {
-                        (Some((i, ch)), Some('.')) if is_ws(ch) && n > 1 => {
-                            n -= 1;
-                            Some('.')
-                        }
-                        (Some((i, ch)), Some('.')) if is_ws(ch) => {
-                            break self.cursor.saturating_add(i);
-                        }
-                        (Some((i, NL)), Some(NL)) if n > 1 => {
-                            n -= 1;
-                            Some(NL)
-                        }
-                        (Some((i, NL)), None) if n > 1 => {
-                            n -= 1;
-                            Some(NL)
-                        }
-                        (Some((i, NL)), Some(NL)) => {
-                            break self.cursor.saturating_add(i);
-                        }
-                        (Some((i, NL)), None) => {
-                            break self.cursor.saturating_add(i);
-                        }
-                        (None, _) => {
-                            break self.buf.len_chars().saturating_sub(1);
-                        }
-                    };
-                };
-                Ok(cursor)
-            }
-            _ => err_at!(Fatal, msg: format!("unreachable")),
-        }?;
+    //    let mut pch: Option<char> = None;
+    //    self.cursor = match e {
+    //        MtoSentence(Left) => {
+    //            let mut iter = self.iter(Left).enumerate();
+    //            let cursor = loop {
+    //                pch = match (iter.next(), pch) {
+    //                    (Some((_, '.')), Some(pch)) if is_ws(pch) && n > 1 => {
+    //                        n -= 1;
+    //                        Some('.')
+    //                    }
+    //                    (Some((_, '.')), None) if n > 1 => {
+    //                        n -= 1;
+    //                        Some('.')
+    //                    }
+    //                    (Some((i, '.')), Some(pch)) if is_ws(pch) => {
+    //                        break self.cursor.saturating_sub(i + 1);
+    //                    }
+    //                    (Some((i, '.')), None) => {
+    //                        break self.cursor.saturating_sub(i + 1);
+    //                    }
+    //                    (Some((_, NL)), Some(NL)) if n > 1 => {
+    //                        n -= 1;
+    //                        Some(NL)
+    //                    }
+    //                    (Some((i, NL)), Some(NL)) => {
+    //                        break self.cursor.saturating_sub(i + 1);
+    //                    }
+    //                    (Some((_, NL)), None) if n > 1 => {
+    //                        n -= 1;
+    //                        Some(NL)
+    //                    }
+    //                    (Some((i, NL)), None) => {
+    //                        break self.cursor.saturating_sub(i + 1);
+    //                    }
+    //                    (None, _) => break 0,
+    //                };
+    //            };
+    //            Ok(cursor)
+    //        }
+    //        MtoSentence(Right) => {
+    //            let mut iter = self.iter(Right).enumerate();
+    //            let cursor = loop {
+    //                pch = match (iter.next(), pch) {
+    //                    (Some((_, ch)), Some('.')) if is_ws(ch) && n > 1 => {
+    //                        n -= 1;
+    //                        Some('.')
+    //                    }
+    //                    (Some((i, ch)), Some('.')) if is_ws(ch) => {
+    //                        break self.cursor.saturating_add(i);
+    //                    }
+    //                    (Some((_, NL)), Some(NL)) if n > 1 => {
+    //                        n -= 1;
+    //                        Some(NL)
+    //                    }
+    //                    (Some((_, NL)), None) if n > 1 => {
+    //                        n -= 1;
+    //                        Some(NL)
+    //                    }
+    //                    (Some((i, NL)), Some(NL)) => {
+    //                        break self.cursor.saturating_add(i);
+    //                    }
+    //                    (Some((i, NL)), None) => {
+    //                        break self.cursor.saturating_add(i);
+    //                    }
+    //                    (None, _) => {
+    //                        break self.buf.len_chars().saturating_sub(1);
+    //                    }
+    //                };
+    //            };
+    //            Ok(cursor)
+    //        }
+    //        _ => err_at!(Fatal, msg: format!("unreachable")),
+    //    }?;
 
-        self.skip_whitespace(Right);
+    //    self.skip_whitespace(Right);
 
-        Ok(None)
-    }
+    //    Ok(None)
+    //}
 
-    fn mto_para(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
+    fn mto_para(&mut self, mut n: usize, evnt: Event) -> Result<Option<Event>> {
         use crate::event::{Event::*, DP::*};
 
         let row = self.buf.char_to_line(self.cursor);
@@ -1200,14 +1226,15 @@ impl Change {
         Ok(None)
     }
 
-    fn mto_bracket(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
+    fn mto_bracket(&mut self, mut n: usize, e: Event) -> Result<Option<Event>> {
         use crate::event::{Event::*, DP::*};
 
         let mut m = 0;
-        match evnt {
+        let mut cursor = self.cursor;
+        match e {
             MtoBracket(yin, yan, Left) => {
                 let mut iter = self.iter(Left).enumerate();
-                self.cursor -= loop {
+                cursor -= loop {
                     match iter.next() {
                         Some((_, ch)) if ch == yin && m > 0 => m -= 1,
                         Some((i, ch)) if ch == yin && n == 0 => break i + 1,
@@ -1220,7 +1247,7 @@ impl Change {
             }
             MtoBracket(yin, yan, Right) => {
                 let mut iter = self.iter(Right).enumerate();
-                self.cursor += {
+                cursor += {
                     loop {
                         match iter.next() {
                             Some((_, ch)) if ch == yin && m > 0 => m -= 1,
@@ -1236,6 +1263,7 @@ impl Change {
             _ => err_at!(Fatal, msg: format!("unreachable"))?,
         }
 
+        self.cursor = cursor;
         Ok(None)
     }
 
@@ -1370,6 +1398,7 @@ impl Change {
         match dp {
             Left => Box::new(ReverseIter::new(chars)),
             Right => Box::new(chars),
+            _ => unreachable!(),
         }
     }
 
@@ -1385,6 +1414,7 @@ impl Change {
         match dp {
             Left => Box::new(ReverseIter::new(chars)),
             Right => Box::new(chars),
+            _ => unreachable!(),
         }
     }
 
@@ -1399,6 +1429,7 @@ impl Change {
         match dp {
             Left => Box::new(ReverseIter::new(lines)),
             Right => Box::new(lines),
+            _ => unreachable!(),
         }
     }
 

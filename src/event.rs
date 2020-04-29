@@ -86,7 +86,7 @@ impl TryFrom<OpenFile> for fs::File {
     }
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DP {
     Left,
     Right,
