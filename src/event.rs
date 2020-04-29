@@ -86,8 +86,8 @@ impl TryFrom<OpenFile> for fs::File {
     }
 }
 
-#[derive(Clone)]
-enum DP {
+#[derive(Clone, Eq, PartialEq)]
+pub enum DP {
     Left,
     Right,
     Find,
@@ -160,6 +160,7 @@ impl Default for Event {
 impl From<TermEvent> for Event {
     fn from(evnt: TermEvent) -> Event {
         use Event::*;
+        use DP::*;
 
         match evnt {
             TermEvent::Key(KeyEvent { code, modifiers: m }) => {
@@ -200,6 +201,27 @@ impl Event {
             Event::F(_, modifiers) => modifiers.clone(),
             Event::Char(_, modifiers) => modifiers.clone(),
             _ => KeyModifiers::empty(),
+        }
+    }
+
+    pub fn transform(self, dp: DP) -> Result<Self> {
+        use Event::*;
+        use DP::*;
+
+        match (self, dp) {
+            (MtoCharF(ch, DP::Left), DP::Right) => Ok(MtoCharF(ch, Left)),
+            (MtoCharF(ch, DP::Left), DP::Left) => Ok(MtoCharF(ch, Right)),
+            (MtoCharF(ch, DP::Right), DP::Right) => Ok(MtoCharF(ch, Right)),
+            (MtoCharF(ch, DP::Right), DP::Left) => Ok(MtoCharF(ch, Left)),
+            (MtoCharT(ch, DP::Left), DP::Right) => Ok(MtoCharT(ch, Left)),
+            (MtoCharT(ch, DP::Left), DP::Left) => Ok(MtoCharT(ch, Right)),
+            (MtoCharT(ch, DP::Right), DP::Right) => Ok(MtoCharT(ch, Right)),
+            (MtoCharT(ch, DP::Right), DP::Left) => Ok(MtoCharT(ch, Left)),
+            (MtoPattern(ch, DP::Left), DP::Right) => Ok(MtoPattern(ch, Left)),
+            (MtoPattern(ch, DP::Left), DP::Left) => Ok(MtoPattern(ch, Right)),
+            (MtoPattern(ch, DP::Right), DP::Right) => Ok(MtoPattern(ch, Right)),
+            (MtoPattern(ch, DP::Right), DP::Left) => Ok(MtoPattern(ch, Left)),
+            _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 }

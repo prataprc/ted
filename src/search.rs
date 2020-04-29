@@ -1,23 +1,20 @@
 use regex::Regex;
 
+use crate::event::DP;
 use crate::{Error, Result};
 
 #[derive(Clone)]
 pub struct Search {
     re: Regex,
     matches: Vec<(usize, usize)>, // byte (start, end)
-    forward: bool,
+    dp: DP,
 }
 
 impl Search {
-    pub fn new(patt: &str, text: &str, forward: bool) -> Result<Search> {
+    pub fn new(patt: &str, text: &str, dp: DP) -> Result<Search> {
         let re = err_at!(BadPattern, Regex::new(patt), format!("{}", patt))?;
         let matches = re.find_iter(text).map(|m| (m.start(), m.end())).collect();
-        Ok(Search {
-            re,
-            matches,
-            forward,
-        })
+        Ok(Search { re, matches, dp })
     }
 
     pub fn iter(&self, byte_off: usize) -> impl Iterator<Item = (usize, usize)> {

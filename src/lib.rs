@@ -1,3 +1,5 @@
+#![feature(box_syntax, box_patterns)]
+
 use std::{fmt, result};
 
 #[macro_use]

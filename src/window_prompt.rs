@@ -140,7 +140,7 @@ impl Window for WindowPrompt {
         evnt: Event,
     ) -> Result<Option<Event>> {
         match evnt {
-            Event::Backspace(_) => {
+            Event::Backspace => {
                 self.input.pop();
                 Ok(None)
             }
