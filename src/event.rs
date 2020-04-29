@@ -96,7 +96,7 @@ enum Dir {
     LineBound,
     Unbound,
     Caret,
-    None,
+    Nope,
 }
 
 #[derive(Clone)]
@@ -106,37 +106,37 @@ pub enum Event {
     F(u8, KeyModifiers),
     // Modal events
     ModeEsc,
-    ModeInsert(usize),      // (n,)
-    ModeAppend(usize, Dir), // (n, Right/End)
-    ModeOpen(usize, Dir),   // (n, Right/End)
+    ModeInsert(Dir), // (None/Caret,)
+    ModeAppend(Dir), // (Right/End,)
+    ModeOpen(Dir),   // (Left/Right,)
     // Command events
     Dec(Vec<char>),
-    N(Vec<char>),
-    PrefixG(usize),
-    PrefixFB(usize), // ]
-    PrefixBB(usize), // [
+    N(usize, Box<Event>), // (n, event)
+    G(Box<Event>),
+    B(Dir), // (Left/Right,)
     // Motion events
-    MtoLeft(usize, Dir),  // (n, LineBound/Unbound)
-    MtoRight(usize, Dir), // (n, LineBound/Unbound)
-    MtoUp(usize, Dir),    // (n, Caret/None)
-    MtoDown(usize, Dir),  // (n, Caret/None)
-    MtoCol(usize),        // (n,)
-    MtoRow(usize, Dir),   // (n, Caret/None)
-    MtoPercent(usize),    // (n,)
-    MtoHome(Dir),         // (Caret/None,)
+    MtoLeft(Dir),  // (LineBound/Unbound,)
+    MtoRight(Dir), // (LineBound/Unbound,)
+    MtoUp(Dir),    // (Caret/None,)
+    MtoDown(Dir),  // (Caret/None,)
+    MtoCol,
+    MtoRow(Dir), // (Caret/None,)
+    MtoPercent,
+    MtoHome(Dir), // (Caret/None,)
     MtoEnd,
-    MtoCursor(usize),                       // (n,)
-    MtoCharF(Option<char>, Dir, usize),     // (ch, Left/Right, n)
-    MtoCharT(Option<char>, Dir, usize),     // (ch, Left/Right, n)
-    MtoWords(usize, Dir, Dir),              // (n, Left/Right, Start/End)
-    MtoPattern(usize, Option<String>, Dir), // (n, pattern, Left/Right)
-    MtoWWord(usize, Dir, Dir),              // (n, Left/Right, Start/End)
-    MtoSentence(usize, Dir),                // (n, Left/Right)
-    MtoPara(usize, Dir),                    // (n, Left/Right)
-    MtoBracket(usize, char, char, Dir),     // (n, yin, yan, Left/Right)
+    MtoCursor,
+    MtoCharF(Option<char>, Dir), // (ch, Left/Right)
+    MtoCharT(Option<char>, Dir), // (ch, Left/Right)
+    MtoCharR(Dir),               // repeat MtoCharF/MtoCharT (Left/Right,)
+    MtoWord(Dir, Dir),           // (Left/Right, Start/End)
+    MtoWWord(Dir, Dir),          // (Left/Right, Start/End)
+    MtoSentence(Dir),            // (Left/Right,)
+    MtoPara(Dir),                // (Left/Right,)
+    MtoBracket(char, char, Dir), // (yin, yan, Left/Right)
     MtoChar(char),
+    MtoPattern(Option<String>, Dir), // (pattern, Left/Right)
     // Insert events
-    Backspace(usize), // (n,)
+    Backspace,
     Char(char, KeyModifiers),
     Delete,
     Enter,
@@ -162,7 +162,7 @@ impl From<TermEvent> for Event {
                 let ctrl = m.contains(KeyModifiers::CONTROL);
                 // let shift = m.contains(KeyModifiers::SHIFT);
                 match code {
-                    KeyCode::Backspace if m.is_empty() => Event::Backspace(1),
+                    KeyCode::Backspace if m.is_empty() => Event::Backspace,
                     KeyCode::Enter if m.is_empty() => Event::Enter,
                     KeyCode::Left if m.is_empty() => Event::MtoLeft(1, true),
                     KeyCode::Right if m.is_empty() => Event::Right(1, true),
