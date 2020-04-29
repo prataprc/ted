@@ -86,7 +86,8 @@ impl TryFrom<OpenFile> for fs::File {
     }
 }
 
-enum Dir {
+#[derive(Clone)]
+enum DP {
     Left,
     Right,
     Find,
@@ -94,7 +95,7 @@ enum Dir {
     Start,
     End,
     LineBound,
-    Unbound,
+    Nobound,
     Caret,
     Nope,
 }
@@ -104,37 +105,38 @@ pub enum Event {
     Noop,
     // Input events
     F(u8, KeyModifiers),
+    BackTab,
     // Modal events
     ModeEsc,
-    ModeInsert(Dir), // (None/Caret,)
-    ModeAppend(Dir), // (Right/End,)
-    ModeOpen(Dir),   // (Left/Right,)
+    ModeInsert(DP), // (Nope/Caret,)
+    ModeAppend(DP), // (Right/End,)
+    ModeOpen(DP),   // (Left/Right,)
     // Command events
     Dec(Vec<char>),
     N(usize, Box<Event>), // (n, event)
     G(Box<Event>),
-    B(Dir), // (Left/Right,)
+    B(DP), // (Left/Right,)
     // Motion events
-    MtoLeft(Dir),  // (LineBound/Unbound,)
-    MtoRight(Dir), // (LineBound/Unbound,)
-    MtoUp(Dir),    // (Caret/None,)
-    MtoDown(Dir),  // (Caret/None,)
+    MtoLeft(DP),  // (LineBound/Nobound,)
+    MtoRight(DP), // (LineBound/Nobound,)
+    MtoUp(DP),    // (Caret/Nope,)
+    MtoDown(DP),  // (Caret/Nope,)
     MtoCol,
-    MtoRow(Dir), // (Caret/None,)
+    MtoRow(DP), // (Caret/Nope,)
     MtoPercent,
-    MtoHome(Dir), // (Caret/None,)
+    MtoHome(DP), // (Caret/Nope,)
     MtoEnd,
     MtoCursor,
-    MtoCharF(Option<char>, Dir), // (ch, Left/Right)
-    MtoCharT(Option<char>, Dir), // (ch, Left/Right)
-    MtoCharR(Dir),               // repeat MtoCharF/MtoCharT (Left/Right,)
-    MtoWord(Dir, Dir),           // (Left/Right, Start/End)
-    MtoWWord(Dir, Dir),          // (Left/Right, Start/End)
-    MtoSentence(Dir),            // (Left/Right,)
-    MtoPara(Dir),                // (Left/Right,)
-    MtoBracket(char, char, Dir), // (yin, yan, Left/Right)
+    MtoCharF(Option<char>, DP), // (ch, Left/Right)
+    MtoCharT(Option<char>, DP), // (ch, Left/Right)
+    MtoCharR(DP),               // repeat MtoCharF/MtoCharT (Left/Right,)
+    MtoWord(DP, DP),            // (Left/Right, Start/End)
+    MtoWWord(DP, DP),           // (Left/Right, Start/End)
+    MtoSentence(DP),            // (Left/Right,)
+    MtoPara(DP),                // (Left/Right,)
+    MtoBracket(char, char, DP), // (yin, yan, Left/Right)
     MtoChar(char),
-    MtoPattern(Option<String>, Dir), // (pattern, Left/Right)
+    MtoPattern(Option<String>, DP), // (pattern, Left/Right)
     // Insert events
     Backspace,
     Char(char, KeyModifiers),
@@ -157,30 +159,33 @@ impl Default for Event {
 
 impl From<TermEvent> for Event {
     fn from(evnt: TermEvent) -> Event {
+        use Event::*;
+
         match evnt {
             TermEvent::Key(KeyEvent { code, modifiers: m }) => {
                 let ctrl = m.contains(KeyModifiers::CONTROL);
-                // let shift = m.contains(KeyModifiers::SHIFT);
                 match code {
-                    KeyCode::Backspace if m.is_empty() => Event::Backspace,
-                    KeyCode::Enter if m.is_empty() => Event::Enter,
-                    KeyCode::Left if m.is_empty() => Event::MtoLeft(1, true),
-                    KeyCode::Right if m.is_empty() => Event::Right(1, true),
-                    KeyCode::Up if m.is_empty() => Event::Up(1),
-                    KeyCode::Down if m.is_empty() => Event::Down(1),
-                    KeyCode::Home if m.is_empty() => Event::Home,
-                    KeyCode::End if m.is_empty() => Event::End,
-                    KeyCode::PageUp if m.is_empty() => Event::PageUp,
-                    KeyCode::PageDown if m.is_empty() => Event::PageDown,
-                    KeyCode::Tab if m.is_empty() => Event::Tab,
-                    KeyCode::BackTab if m.is_empty() => Event::BackTab,
-                    KeyCode::Delete if m.is_empty() => Event::Delete,
-                    KeyCode::F(f) if m.is_empty() => Event::F(f, m),
-                    KeyCode::Char('[') if ctrl => Event::Esc,
-                    KeyCode::Char(ch) if m.is_empty() => Event::Char(ch, m),
-                    KeyCode::Esc if m.is_empty() => Event::Esc,
-                    KeyCode::Insert => Event::ModeInsert(1),
-                    KeyCode::Null => Event::Noop,
+                    //
+                    KeyCode::Backspace if m.is_empty() => Backspace,
+                    KeyCode::Enter if m.is_empty() => Enter,
+                    KeyCode::Tab if m.is_empty() => Tab,
+                    KeyCode::Delete if m.is_empty() => Delete,
+                    KeyCode::Char(ch) if m.is_empty() => Char(ch, m),
+                    //
+                    KeyCode::BackTab if m.is_empty() => BackTab,
+                    KeyCode::F(f) if m.is_empty() => F(f, m),
+                    //
+                    KeyCode::Char('[') if ctrl => Esc,
+                    KeyCode::Esc if m.is_empty() => Esc,
+                    KeyCode::Insert => ModeInsert(Nope),
+                    //
+                    KeyCode::Left if m.is_empty() => MtoLeft(LineBound),
+                    KeyCode::Right if m.is_empty() => MtoRight(LineBound),
+                    KeyCode::Up if m.is_empty() => MtoUp(Nope),
+                    KeyCode::Down if m.is_empty() => MtoDown(Nope),
+                    KeyCode::Home if m.is_empty() => MtoHome(Nope),
+                    KeyCode::End if m.is_empty() => MtoEnd,
+                    KeyCode::Null => Noop,
                     _ => Event::Noop,
                 }
             }

@@ -177,17 +177,15 @@ impl Buffer {
                 };
                 match evnt {
                     None => Ok(None),
-                    Some(e @ ModeInsert(_))
-                    | Some(e @ ModeAppend(_))
-                    | Some(e @ ModeOpen(_, _)) => {
-                            *self = {
-                                let mut ib: InsertBuffer = nb.clone().into();
-                                ib.handle_event(e, false /*repeat*/)?;
-                                Buffer::InsertBuffer(ib)
-                            };
-                            Ok(None)
+                    Some(e @ ModeInsert(_)) | Some(e @ ModeAppend(_)) | Some(e @ ModeOpen(_)) => {
+                        *self = {
+                            let mut ib: InsertBuffer = nb.clone().into();
+                            ib.handle_event(e, false /*repeat*/)?;
+                            Buffer::InsertBuffer(ib)
+                        };
+                        Ok(None)
                     }
-                    evnt => Ok(Some(evnt))
+                    evnt => Ok(Some(evnt)),
                 }
             }
             Buffer::InsertBuffer(ib) => match ib.handle_event(evnt, false)? {
@@ -207,7 +205,7 @@ macro_rules! want_char {
     ($pe:expr) => {
         match $pe {
             Some(B(_)) | Some(MtoCharF(_, _)) | Some(MtoCharT(_, _)) => true,
-            None => false
+            None => false,
         }
     };
 }
@@ -241,23 +239,26 @@ macro_rules! normal_event {
             Char('I', _) if m.is_empty() => ModeInsert(Caret),
             Char('i', _) if m.is_empty() => ModeInsert(Nope),
             Char('a', _) if m.is_empty() => ModeAppend(Left),
-            Char('A', _) if m.is_empty() => ModeAppend(Right),
+            Char('A', _) if m.is_empty() => ModeAppend(End),
             Char('O', _) if m.is_empty() => ModeOpen(Left),
             Char('o', _) if m.is_empty() => ModeOpen(Right),
             // move commands
-            Backspace if m.is_empty() => MtoLeft(Unbound),
+            Backspace if m.is_empty() => MtoLeft(Nobound),
             Char('h', _) if m.is_empty() => MtoLeft(LineBound),
             Char(' ', _) if m.is_empty() => MtoRight(LineBound),
-            Char(' ', _) if m.is_empty() => MtoRight(Unbound),
+            Char(' ', _) if m.is_empty() => MtoRight(Nobound),
             Char('l', _) if m.is_empty() => MtoRight(LineBound),
             Char('-', _) if m.is_empty() => MtoUp(Caret),
             Char('j', _) if m.is_empty() => MtoUp(Nope),
             Char('k', _) if m.is_empty() => MtoDown(Nope),
             Char('+', _) if m.is_empty() => MtoDown(Caret),
             Enter if m.is_empty() =>        MtoDown(Caret),
+            Char('|', _) if m.is_empty() => MtoCol,
+            Char('G', _) if m.is_empty() => MtoRow(Caret),
+            Char('%', _) if m.is_empty() => MtoPercent,
             Char('0', _) if m.is_empty() => MtoHome(Nope),
             Char('^', _) if m.is_empty() => MtoHome(Caret),
-            Char('|', _) if m.is_empty() => MtoCol,
+            Char('$', _) if m.is_empty() => MtoEnd,
             Char('F', _) if m.is_empty() => MtoCharF(None, Left),
             Char('f', _) if m.is_empty() => MtoCharF(None, Right),
             Char('T', _) if m.is_empty() => MtoCharT(None, Left),
@@ -274,14 +275,12 @@ macro_rules! normal_event {
             Char('W', _) if m.is_empty() => MtoWWord(Right, Start),
             Char(';', _) if m.is_empty() => MtoCharR(Right),
             Char(',', _) if m.is_empty() => MtoCharR(Left),
-            Char('G', _) if m.is_empty() => MtoRow(Caret),
             Char('n', _) if m.is_empty() => MtoPattern(None, Right),
             Char('N', _) if m.is_empty() => MtoPattern(None, Left),
-            Char('%', _) if m.is_empty() => MtoPercent,
             // prefix event
             Char('g', _) if m.is_empty() => G(Event::None),
-            Char('[', _) if m.is_empty() => B(Event::None, Left),
-            Char(']', _) if m.is_empty() => B(Event::None, Right),
+            Char('[', _) if m.is_empty() => B(Left),
+            Char(']', _) if m.is_empty() => B(Right),
             evnt => evnt,
         }
     }};
@@ -383,54 +382,58 @@ impl NormalBuffer {
             }
             // N-Char prefix
             (Some(N(n, e)), MtoChar(ch)) => match e {
-                MtoCharF(None, dir) => {
-                    let f_prefix = Box::new(MtoCharF(Some(ch), dir));
-                    (Some(N(n, f_prefix)),  None)
-                },
-                MtoCharT(None, dir) => {
-                    let f_prefix = Box::new(MtoCharT(Some(ch), dir));
-                    (Some(N(n, f_prefix)),  None)
-                },
+                MtoCharF(None, dp) => {
+                    let f_prefix = Box::new(MtoCharF(Some(ch), dp));
+                    (Some(N(n, f_prefix)), None)
+                }
+                MtoCharT(None, dp) => {
+                    let f_prefix = Box::new(MtoCharT(Some(ch), dp));
+                    (Some(N(n, f_prefix)), None)
+                }
             },
             // N-G-prefix
-            (Some(N(n, G(_))), MtoRow(p)) => (None, Some(N(n, MtoRow(p)))),
-            (Some(N(n, G(_))), MtoWord(p)) => (None, Some(N(n, MtoWord(p)))),
-            (Some(N(n, G(_))), MtoWWord(p)) => (None, Some(N(n, MtoWWord(p)))),
+            (Some(N(n, G(_))), MtoRow(dp)) => (None, Some(N(n, MtoRow(dp)))),
+            (Some(N(n, G(_))), MtoWord(dp)) => (None, Some(N(n, MtoWord(dp)))),
+            (Some(N(n, G(_))), MtoWWord(d)) => (None, Some(N(n, MtoWWord(d)))),
             (Some(N(n, G(_))), MtoCursor) => (None, Some(N(n, MtoCursor))),
-            (Some(N(n, G(_))), ModeInsert(pos) => {
+            (Some(N(n, G(_))), ModeInsert(dp)) => {
                 //
-                (None, Some(N(n, ModeInsert(pos))))
+                (None, Some(N(n, ModeInsert(dp))))
             }
             // N-B-prefix
-            (Some(N(n, B(dir))), e @ MtoChar(ch)) => match ch {
-                '(' => (None, Some(N(n, MtoBracket('(', ')', dir)))),
-                ')' => (None, Some(N(n, MtoBracket(')', '(', dir)))),
-                '{' => (None, Some(N(n, MtoBracket('{', '}', dir)))),
-                '}' => (None, Some(N(n, MtoBracket('}', '{', dir)))),
-            }
+            (Some(N(n, B(dp))), e @ MtoChar(ch)) => match ch {
+                '(' => (None, Some(N(n, MtoBracket('(', ')', dp)))),
+                ')' => (None, Some(N(n, MtoBracket(')', '(', dp)))),
+                '{' => (None, Some(N(n, MtoBracket('{', '}', dp)))),
+                '}' => (None, Some(N(n, MtoBracket('}', '{', dp)))),
+            },
             // Commands
-            (Some(Dec(ns)), e) => (Some(N(parse_n!(ns)?, Box::new(e))),  None),
-            (Some(Dec(ns)), MtoCharR(dir)) if fc.is_none() => (None, None),
-            (Some(Dec(ns)), MtoCharR(dir)) if fc.is_none() => {
-                let e = match (fc.unwrap(), dir) {
+            (Some(Dec(ns)), e) => (Some(N(parse_n!(ns)?, Box::new(e))), None),
+            (Some(Dec(ns)), MtoCharR(_)) if fc.is_none() => (None, None),
+            (Some(Dec(ns)), MtoCharR(dp)) if fc.is_none() => {
+                let e = match (fc.unwrap(), dp) {
                     (MtoCharF(ch, Left), Right) => Ok(MtoCharF(ch, Left)),
                     (MtoCharF(ch, Left), Left) => Ok(MtoCharF(ch, Right)),
                     (MtoCharF(ch, Right), Right) => Ok(MtoCharF(ch, Right)),
                     (MtoCharF(ch, Right), Left) => Ok(MtoCharF(ch, Left)),
+                    (MtoCharT(ch, Left), Right) => Ok(MtoCharT(ch, Left)),
+                    (MtoCharT(ch, Left), Left) => Ok(MtoCharT(ch, Right)),
+                    (MtoCharT(ch, Right), Right) => Ok(MtoCharT(ch, Right)),
+                    (MtoCharT(ch, Right), Left) => Ok(MtoCharT(ch, Left)),
                     _ => err_at!(Fatal, msg: format!("unreachable")),
                 }?;
-                (Some(N(parse_n!(ns)?, Box::new(e))),  None)
+                (Some(N(parse_n!(ns)?, Box::new(e))), None)
             }
-            (Some(Dec(ns)), MtoPattern(dir)) if pn.is_none() => (None, None),
-            (Some(Dec(ns)), MtoPattern(dir)) => {
-                let e = match (pn.unwrap(), dir) {
+            (Some(Dec(ns)), MtoPattern(_)) if pn.is_none() => (None, None),
+            (Some(Dec(ns)), MtoPattern(dp)) => {
+                let e = match (pn.unwrap(), dp) {
                     (MtoPattern(ch, Left), Right) => Ok(MtoPattern(ch, Left)),
                     (MtoPattern(ch, Left), Left) => Ok(MtoPattern(ch, Right)),
                     (MtoPattern(ch, Right), Right) => Ok(MtoPattern(ch, Right)),
                     (MtoPattern(ch, Right), Left) => Ok(MtoPattern(ch, Left)),
                     _ => err_at!(Fatal, msg: format!("unreachable")),
                 }?;
-                (Some(N(parse_n!(ns)?, Box::new(e))),  None)
+                (Some(N(parse_n!(ns)?, Box::new(e))), None)
             }
             (pe, e) => (pe, Some(e)),
         };
@@ -448,31 +451,30 @@ impl NormalBuffer {
         let change = self.as_mut_change();
         match evnt {
             // execute motion command.
-            N(n, MtoLeft(dir)) => change.mto_left(n, dir),
-            N(n, MtoRight(dir)) => change.mto_right(n, dir),
-            N(n, MtoUp(dir) => change.mto_up(n, dir),
-            N(n, MtoDown(dir) => change.mto_down(n, dir),
-            N(n, MtoCol => change.mto_column(n),
-            N(n, MtoRow(dir) => change.mto_row(n, dir),
-            N(n, MtoPercent => change.mto_percent(n),
-            N(n, MtoHome(pos) => change.mto_home(pos),
-            N(n, MtoEnd => change.mto_end(),
-            N(n, MtoCursor => change.mto_cursor(n),
-            N(n, e @ MtoCharF(_, _) => change.mto_char(e),
-            N(n, e @ MtoCharT(_, _) => change.mto_char(e),
-            N(n, e @ MtoCharR(_, _) => change.mto_char(e),
-            N(n, e @ MtoWord(_, _) => change..mto_words(e),
-            N(n, e @ MtoWWord(_, _) => change.mto_wwords(e),
-            N(n, e @ MtoSentence(_) => change.mto_sentence(e),
-            N(n, e @ MtoPara(_) => change.mto_para(e),
-            N(n, e @ MtoBracket(_, _, _) => change.mto_bracket(e),
-            N(n, e @ MtoPattern(Some(_), _) => change.mto_pattern(e),
+            N(n, MtoLeft(dp)) => change.mto_left(n, dp),
+            N(n, MtoRight(dp)) => change.mto_right(n, dp),
+            N(n, MtoUp(dp)) => change.mto_up(n, dp),
+            N(n, MtoDown(dp)) => change.mto_down(n, dp),
+            N(n, MtoCol) => change.mto_column(n),
+            N(n, MtoRow(dp)) => change.mto_row(n, dp),
+            N(n, MtoPercent) => change.mto_percent(n),
+            N(n, MtoHome(dp)) => change.mto_home(dp),
+            N(n, MtoEnd) => change.mto_end(), // TODO: make this sticky.
+            N(n, MtoCursor) => change.mto_cursor(n),
+            N(n, e @ MtoCharF(_, _)) => change.mto_char(n, e),
+            N(n, e @ MtoCharT(_, _)) => change.mto_char(n, e),
+            N(n, e @ MtoWord(_, _)) => change..mto_words(n, e),
+            N(n, e @ MtoWWord(_, _)) => change.mto_wwords(n, e),
+            N(n, e @ MtoSentence(_)) => change.mto_sentence(n, e),
+            N(n, e @ MtoPara(_)) => change.mto_para(n, e),
+            N(n, e @ MtoBracket(_, _, _)) => change.mto_bracket(n, e),
+            N(n, e @ MtoPattern(Some(_), _)) => change.mto_pattern(n, e),
             // execute mode switching commands
-            N(n, e @ ModeInsert(_, Caret) => {
+            N(n, e @ ModeInsert(Caret)) => {
                 self.mto_home(MtoHome(Caret));
                 Some(e)
             }
-            N(n, e @ ModeInsert(_, _) => Some(e),
+            N(n, e @ ModeInsert(_)) => Some(e),
             //Char('%', _) if m.is_empty() => {
             //    self.as_mut_change().fwd_match_group();
             //    Ok(None)
@@ -615,11 +617,11 @@ impl InsertBuffer {
         match evnt {
             // Begin insert.
             ModeInsert(_) => Ok(None),
-            ModeAppend(_, Left) => {
+            ModeAppend(Right) => {
                 self.as_mut_change().move_right(1, false /*line_bound*/);
                 Ok(None)
             }
-            ModeAppend(_, Right) => {
+            ModeAppend(End) => {
                 self.as_mut_change().end();
                 self.as_mut_change().move_right(1, false /*line_bound*/);
                 Ok(None)
@@ -803,24 +805,24 @@ impl Change {
 }
 
 impl Change {
-    fn mto_left(&mut self, n: usize, dir: Dir) -> Result<Option<Event>> {
-        self.cursor = match dir {
-            Dir::LineBound => {
+    fn mto_left(&mut self, n: usize, dp: DP) -> Result<Option<Event>> {
+        use crate::event::DP::*;
+
+        self.cursor = match dp {
+            LineBound => {
                 let row = self.buf.char_to_line(self.cursor);
                 let home = self.buf.line_to_char(row);
                 let new_cursor = self.cursor.saturating_sub(n);
                 Ok(if_else!(new_cursor > home, new_cursor, home))
             }
-            Dir::Unbound => {
-                Ok(self.cursor.saturating_sub(n))
-            }
+            Nobound => Ok(self.cursor.saturating_sub(n)),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }?;
 
         Ok(None)
     }
 
-    fn mto_right(&mut self, n: usize, dir: Dir) -> Result<Option<Event>> {
+    fn mto_right(&mut self, n: usize, dp: DP) -> Result<Option<Event>> {
         for ch in self.buf.chars_at(self.cursor).take(n) {
             if line_bound && ch == NEW_LINE_CHAR {
                 break;
@@ -831,7 +833,9 @@ impl Change {
         Ok(None)
     }
 
-    fn mto_up(&mut self, n: usize, pop: Dir) -> Result<Option<Event>> {
+    fn mto_up(&mut self, n: usize, pop: DP) -> Result<Option<Event>> {
+        use crate::event::DP::*;
+
         match self.buf.char_to_line(self.cursor) {
             0 => Ok(None),
             row => {
@@ -843,15 +847,15 @@ impl Change {
                     );
                     self.buf.line_to_char(row) + col
                 };
-                if pos == Dir::Caret {
-                    self.mto_home(MtoHome(Dir::Caret));
+                if pos == DP::Caret {
+                    self.mto_home(MtoHome(Caret));
                 }
                 Ok(None)
             }
         }
     }
 
-    fn mto_down(&mut self, n: usize, pos: Dir) -> Result<Option<Event> {
+    fn mto_down(&mut self, n: usize, pos: DP) -> Result<Option<Event> {
         let row = self.buf.char_to_line(self.cursor);
         match self.buf.len_lines() {
             0 => Ok(None),
@@ -865,8 +869,8 @@ impl Change {
                     );
                     self.buf.line_to_char(row) + col
                 };
-                if pos == Dir::Caret {
-                    self.mto_home(MtoHome(Dir::Caret));
+                if pos == DP::Caret {
+                    self.mto_home(MtoHome(Caret));
                 }
                 Ok(None)
             }
@@ -882,12 +886,12 @@ impl Change {
         }
     }
 
-    fn mto_row(&mut self, n: usize, pos: Dir) -> Result<Option<Event>> {
+    fn mto_row(&mut self, n: usize, pos: DP) -> Result<Option<Event>> {
         let row = self.buf.char_to_line(self.cursor);
         match self.buf.len_lines() {
             0 => (),
-            _ if n < row => self.mto_up(MtoUp(row-n, pos)),
-            n_rows if n < n_rows => self.mto_up(MtoUp(n-row, pos)),
+            _ if n < row => self.mto_up(row-n, MtoUp(pos)),
+            n_rows if n < n_rows => self.mto_up(n-row, MtoUp(pos)),
             _ => (),
         }
         Ok(None)
@@ -901,9 +905,9 @@ impl Change {
                 n_rows -= 1;
                 let n = (((n_rows as f64) * (n as f64)) / (100 as f64)) as usize;
                 if n < row {
-                    self.mto_up(MtoUp(row-n, None))
+                    self.mto_up(row-n, MtoUp(Nope))
                 } else {
-                    self.mto_down(MtoDown(n - row, None))
+                    self.mto_down(n - row, MtoDown(Nope))
                 }
             }
             _ => Ok(None),
@@ -915,15 +919,15 @@ impl Change {
         Ok(None)
     }
 
-    fn mto_home(&mut self, pos: Dir) -> Result<Option<Event>> {
+    fn mto_home(&mut self, pos: DP) -> Result<Option<Event>> {
         self.cursor = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
-        self.skip_whitespace(Dir::Right);
+        self.skip_whitespace(DP::Right);
         Ok(None)
     }
 
-    fn mto_end(&mut self, pos: Dir) -> Result<Option<Event>> {
+    fn mto_end(&mut self, pos: DP) -> Result<Option<Event>> {
         let iter =self.buf.chars_at(self.cursor);
-        loop { 
+        loop {
             match iter.next() {
                 Some(NEW_LINE_CHAR) => break Ok(None),
                 Some(_) => self.cursor += 1,
@@ -932,18 +936,18 @@ impl Change {
         }
     }
 
-    fn mto_char(&mut self, evnt: Evnt) -> Result<Option<Event>> {
-        let mut iter = self.iter(dir).enumerate();
-        let (ch, dir, mut n, pos) => match evnt {
-            Event::MtoCharF(n, Some(ch), dir) => (ch, dir, n, Find),
-            Event::MtoCharT(n, Some(ch), dir) => (ch, dir, n, Till),
+    fn mto_char(&mut self, mut n: usize, evnt: Evnt) -> Result<Option<Event>> {
+        let (ch, dp, pos) => match evnt {
+            Event::MtoCharF(Some(ch), dp) => (ch, dp, Find),
+            Event::MtoCharT(Some(ch), dp) => (ch, dp, Till),
         };
+        let mut iter = self.iter(dp).enumerate();
 
-        self.cursor = match dir {
-            Dir::Right => loop {
+        self.cursor = match dp {
+            DP::Right => loop {
                 match iter.next() {
                     Some((_, NEW_LINE_CHAR)) => break self.cursor,
-                    Some((i, c)) if c == ch && n == 0 && pos == Dir::Till => {
+                    Some((i, c)) if c == ch && n == 0 && pos == DP::Till => {
                         break self.cursor + i;
                     }
                     Some((i, c)) if c == ch && n == 0 => {
@@ -953,10 +957,10 @@ impl Change {
                     _ => (),
                 }
             }
-            Dir::Left => loop {
+            DP::Left => loop {
                 match iter.next() {
                     Some((_, NEW_LINE_CHAR)) => break self.cursor,
-                    Some((i, c)) if c == ch && n == 0 && pos == Dir::Till => {
+                    Some((i, c)) if c == ch && n == 0 && pos == DP::Till => {
                         break self.cursor + i;
                     }
                     Some((i, c)) if c == ch && n == 0 => {
@@ -971,46 +975,46 @@ impl Change {
         Ok(None)
     }
 
-    fn mto_words(&mut self, evnt: Event) -> Result<Option<Event>> {
+    fn mto_words(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
         match evnt {
-            MtoWords(n, Left, pos) => {
+            MtoWords(Left, pos) => {
                 for _ in 0..n {
                     let n = self.skip_whitespace(Left);
                     match pos {
-                        Dir::End if n == 0 => {
+                        DP::End if n == 0 => {
                             self.skip_alphanumeric(Left);
-                            self.mto_right(MtoRight(1, Dir::Unbound));
+                            self.mto_right(MtoRight(Nobound));
                         }
-                        Dir::End => {
+                        DP::End => {
                             self.skip_alphanumeric(Left);
-                            self.mto_right(MtoRight(1, Dir::Unbound));
+                            self.mto_right(MtoRight(Nobound));
                         }
-                        Dir::Start if n == 0 => {
+                        DP::Start if n == 0 => {
                             self.skip_alphanumeric(Left);
                             self.skip_whitespace(Left);
                         }
-                        Dir::Start => (),
+                        DP::Start => (),
                     }
                 }
                 Ok(None)
             },
-            MtoWords(n, Right, pos) => {
+            MtoWords(Right, pos) => {
                 for _ in 0..n {
                     let n = self.skip_whitespace(Right);
                     match pos {
-                        Dir::End if n == 0 => {
+                        DP::End if n == 0 => {
                             self.skip_alphanumeric(Right);
-                            self.mto_left(MtoLeft(1, Dir::Unbound));
+                            self.mto_left(MtoLeft(Nobound));
                         }
-                        Dir::End => {
+                        DP::End => {
                             self.skip_alphanumeric(Right);
-                            self.mto_left(MtoLeft(1, Dir::Unbound));
+                            self.mto_left(MtoLeft(Nobound));
                         }
-                        Dir::Start if n == 0 => {
+                        DP::Start if n == 0 => {
                             self.skip_alphanumeric(Right);
                             self.skip_whitespace(Right);
                         }
-                        Dir::Start => (),
+                        DP::Start => (),
                     }
                 }
                 Ok(None)
@@ -1019,19 +1023,19 @@ impl Change {
         }
     }
 
-    fn mto_wwords(&mut self, evnt: Event) -> Result<Option<Event>> {
+    fn mto_wwords(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
         match evnt {
-            MtoWWords(m, Left, pos) => {
+            MtoWWords(Left, pos) => {
                 for _ in 0..n {
                     let n = self.skip_whitespace(Left);
                     match tail {
                         false if n == 0 => {
                             self.skip_non_whitespace(Left);
-                            self.mto_right(MtoRight(1, Dir::Unbound));
+                            self.mto_right(MtoRight(Nobound));
                         }
                         false => {
                             self.skip_non_whitespace(Left);
-                            self.mto_right(MtoRight(1, Dir::Unbound));
+                            self.mto_right(MtoRight(Nobound));
                         }
                         true if n == 0 => {
                             self.skip_non_whitespace(Left);
@@ -1042,17 +1046,17 @@ impl Change {
                 }
                 Ok(None)
             }
-            MtoWWords(n, Right, pos) => {
+            MtoWWords(Right, pos) => {
                 for _ in 0..n {
                     let n = self.skip_whitespace(Right);
                     match tail {
                         true if n == 0 => {
                             self.skip_non_whitespace(Right);
-                            self.mto_left(MtoLeft(1, Dir::Unbound));
+                            self.mto_left(MtoLeft(Nobound));
                         }
                         true => {
                             self.skip_non_whitespace(Right);
-                            self.mto_left(MtoLeft(1, Dir::Unbound));
+                            self.mto_left(MtoLeft(Nobound));
                         }
                         false if n == 0 => {
                             self.skip_non_whitespace(Right);
@@ -1067,10 +1071,10 @@ impl Change {
         }
     }
 
-    fn mto_sentence(&mut self, evnt: Event) -> Result<Option<Event>> {
+    fn mto_sentence(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
         let mut pch: Option<char> = None;
         match evnt {
-            MtoSentence(n, Left) => {
+            MtoSentence(Left) => {
                 let mut iter = self.iter(Left).enumerate();
                 loop {
                     pch = match (iter.next(), pch) {
@@ -1086,7 +1090,7 @@ impl Change {
                     };
                 }
             }
-            MtoSentence(n, Right) => {
+            MtoSentence(Right) => {
                 let mut iter = self.iter(Right).enumerate();
                 loop {
                     pch = match (iter.next(), pch) {
@@ -1111,10 +1115,10 @@ impl Change {
         Ok(None)
     }
 
-    fn mto_para(&mut self, evnt: Event) -> Result<Option<Event>> {
+    fn mto_para(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
         let row = self.buf.char_to_line(self.cursor);
         self.cursor = match evnt {
-            MtoPara(n, Left) => {
+            MtoPara(Left) => {
                 let mut iter = self.iter_line(Left).enumerate();
                 loop {
                     match iter.next() {
@@ -1130,7 +1134,7 @@ impl Change {
                     }
                 }
             }
-            MtoPara(n, Right) => {
+            MtoPara(Right) => {
                 let mut iter = self.iter_line(Right).enumerate();
                 loop {
                     match iter.next() {
@@ -1150,10 +1154,10 @@ impl Change {
         }
     }
 
-    fn mto_bracket(&mut self, evnt: Event) -> Result<Option<Event>> {
+    fn mto_bracket(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
         let mut m = 0;
         match evnt {
-            MtoBracket(n, yin, yan, Left) => {
+            MtoBracket(yin, yan, Left) => {
                 let mut iter = self.iter(Left).enumerate();
                 self.cursor -= loop {
                     match iter.next() {
@@ -1166,7 +1170,7 @@ impl Change {
                     }
                 };
             }
-            MtoBracket(n, yin, yan, Right) => {
+            MtoBracket(yin, yan, Right) => {
                 let mut iter = self.iter(Right).enumerate();
                 self.cursor += {
                     loop {
@@ -1185,7 +1189,7 @@ impl Change {
         }
     }
 
-    fn mto_pattern(&mut self, evnt: Event) -> Result<Option<Event>> {
+    fn mto_pattern(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
         let text = self.buf.to_string();
         let search = Search::new(p, &text, fwd)?;
         let byte_off = self.buf.char_to_byte(self.cursor);
@@ -1199,7 +1203,6 @@ impl Change {
                     None => self.cursor,
                 }
             },
-            }
             MtoPattern(n, pattern, Right) => {
                 let item = search.iter(byte_off).skip(n).next();
                 match item {
@@ -1213,43 +1216,42 @@ impl Change {
         Ok(None)
     }
 
-
-    fn skip_whitespace(&mut self, dir: Dir) -> usize {
+    fn skip_whitespace(&mut self, dp: DP) -> usize {
         let mut n = 0;
         let n = loop {
-            match self.iter(dir).next() {
+            match self.iter(dp).next() {
                 Some(ch) if ch.is_whitespace() => n += 1,
                 Some(_) => break n,
                 None => break n,
             }
         };
-        self.cursor = if_else!(dir == Right, self.cursor + n, self.cursor - n);
+        self.cursor = if_else!(dp == Right, self.cursor + n, self.cursor - n);
         n
     }
 
-    fn skip_non_whitespace(&mut self, dir: Dir) -> usize {
+    fn skip_non_whitespace(&mut self, dp: DP) -> usize {
         let mut n = 0;
         let n = loop {
-            match self.iter(dir).next() {
+            match self.iter(dp).next() {
                 Some(ch) if ch.is_whitespace() => n += 1,
                 Some(_) => break n,
                 None => break n,
             }
         };
-        self.cursor = if_else!(dir == Right, self.cursor + n, self.cursor - n);
+        self.cursor = if_else!(dp == Right, self.cursor + n, self.cursor - n);
         n
     }
 
-    fn skip_alphanumeric(&mut self, dir: Dir) -> usize {
+    fn skip_alphanumeric(&mut self, dp: DP) -> usize {
         let mut n = 0;
         let n = loop {
-            match self.iter(dir).next() {
+            match self.iter(dp).next() {
                 Some(ch) if ch.is_alphanumeric() => n += 1,
                 Some(_) => break n,
                 None => break n,
             }
         };
-        self.cursor = if_else!(dir == Right, self.cursor + n, self.cursor - n);
+        self.cursor = if_else!(dp == Right, self.cursor + n, self.cursor - n);
         n
     }
 
@@ -1298,36 +1300,36 @@ impl Change {
         self.buf.lines_at(line_idx)
     }
 
-    fn iter<'a>(&'a self, dir: Dir) -> Box<dyn Iterator<Item = char> + 'a> {
+    fn iter<'a>(&'a self, dp: DP) -> Box<dyn Iterator<Item = char> + 'a> {
         let chars = self.buf.chars_at(self.cursor);
-        match dir {
-            Dir::Left => Box::new(ReverseIter::new(chars)),
-            Dir::Right => Box::new(chars),
+        match dp {
+            DP::Left => Box::new(ReverseIter::new(chars)),
+            DP::Right => Box::new(chars),
         }
     }
 
     fn iter_at<'a>(
         //
         &'a self,
-        dir: Dir,
+        dp: DP,
         cursor: usize,
     ) -> Box<dyn Iterator<Item = char> + 'a> {
-        let chars = self.buf.chars_atxcursor);
-        match dir {
-            Dir::Left => Box::new(ReverseIter::new(chars)),
-            Dir::Right => Box::new(chars),
+        let chars = self.buf.chars_atxcursor;
+        match dp {
+            DP::Left => Box::new(ReverseIter::new(chars)),
+            DP::Right => Box::new(chars),
         }
     }
 
     fn iter_line<'a>(
         //
         &'a self,
-        dir: Dir,
+        dp: DP,
     ) -> Box<dyn Iterator<Item = RopeSlice> + 'a> {
         let lines = self.buf.lines_at(self.buf.char_to_line(self.cursor));
-        match dir {
-            Dir::Left => Box::new(ReverseIter::new(lines)),
-            Dir::Right => Box::new(lines),
+        match dp {
+            DP::Left => Box::new(ReverseIter::new(lines)),
+            DP::Right => Box::new(lines),
         }
     }
 
