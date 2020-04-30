@@ -389,10 +389,6 @@ impl NormalBuffer {
         &self.c
     }
 
-    fn as_mut_context(&mut self) -> &mut Context {
-        &mut self.c
-    }
-
     fn fold_event(&mut self, evnt: Event) -> Result<Option<Event>> {
         use crate::event::Event::*;
 
@@ -501,7 +497,7 @@ impl NormalBuffer {
             N(n, e @ box MtoPattern(Some(_), _)) => change.mto_pattern(n, *e),
             // execute mode switching commands
             N(n, box ModeInsert(Caret)) => {
-                change.mto_home(Caret);
+                change.mto_home(Caret)?;
                 Ok(Some(N(n, Box::new(ModeInsert(Caret)))))
             }
             N(n, e @ box ModeInsert(_)) => Ok(Some(N(n, Box::new(*e)))),
@@ -640,17 +636,17 @@ impl InsertBuffer {
             ModeInsert(_) => Ok(None),
             ModeAppend(Right) => change!(self, mto_right, 1, Nobound),
             ModeAppend(End) => {
-                change!(self, mto_end);
+                change!(self, mto_end)?;
                 change!(self, mto_right, 1, LineBound)
             }
             ModeOpen(Left) => {
-                change!(self, mto_home, Nope);
+                change!(self, mto_home, Nope)?;
                 change!(self, insert_char, NL);
                 change!(self, mto_left, 1, Nobound)
             }
             ModeOpen(Right) => {
-                change!(self, mto_end);
-                change!(self, mto_right, 1, Nobound);
+                change!(self, mto_end)?;
+                change!(self, mto_right, 1, Nobound)?;
                 change!(self, insert_char, NL);
                 Ok(None)
             }
@@ -663,7 +659,7 @@ impl InsertBuffer {
             MtoEnd => change!(self, mto_end),
             // Handle mode events.
             Esc => {
-                change!(self, mto_left, 1, LineBound);
+                change!(self, mto_left, 1, LineBound)?;
                 Ok(Some(ModeEsc))
             }
             // on going insert
@@ -846,7 +842,7 @@ impl Change {
                     self.buf.line_to_char(row) + col
                 };
                 if pos == Caret {
-                    self.mto_home(Caret);
+                    self.mto_home(Caret)?;
                 }
                 Ok(None)
             }
@@ -1003,11 +999,11 @@ impl Change {
                     match pos {
                         End if n == 0 => {
                             self.skip_alphanumeric(Left);
-                            self.mto_right(1, Nobound);
+                            self.mto_right(1, Nobound)?;
                         }
                         End => {
                             self.skip_alphanumeric(Left);
-                            self.mto_right(1, Nobound);
+                            self.mto_right(1, Nobound)?;
                         }
                         Start if n == 0 => {
                             self.skip_alphanumeric(Left);
@@ -1025,11 +1021,11 @@ impl Change {
                     match pos {
                         End if n == 0 => {
                             self.skip_alphanumeric(Right);
-                            self.mto_left(1, Nobound);
+                            self.mto_left(1, Nobound)?;
                         }
                         End => {
                             self.skip_alphanumeric(Right);
-                            self.mto_left(1, Nobound);
+                            self.mto_left(1, Nobound)?;
                         }
                         Start if n == 0 => {
                             self.skip_alphanumeric(Right);
@@ -1055,11 +1051,11 @@ impl Change {
                     match pos {
                         Start if n == 0 => {
                             self.skip_non_whitespace(Left);
-                            self.mto_right(1, Nobound);
+                            self.mto_right(1, Nobound)?;
                         }
                         Start => {
                             self.skip_non_whitespace(Left);
-                            self.mto_right(1, Nobound);
+                            self.mto_right(1, Nobound)?;
                         }
                         End if n == 0 => {
                             self.skip_non_whitespace(Left);
@@ -1077,11 +1073,11 @@ impl Change {
                     match pos {
                         End if n == 0 => {
                             self.skip_non_whitespace(Right);
-                            self.mto_left(1, Nobound);
+                            self.mto_left(1, Nobound)?;
                         }
                         End => {
                             self.skip_non_whitespace(Right);
-                            self.mto_left(1, Nobound);
+                            self.mto_left(1, Nobound)?;
                         }
                         Start if n == 0 => {
                             self.skip_non_whitespace(Right);
