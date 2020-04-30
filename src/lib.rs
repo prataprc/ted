@@ -7,6 +7,7 @@ pub mod util;
 pub mod buffer;
 pub mod config;
 pub mod event;
+pub mod location;
 mod search;
 pub mod stats;
 #[macro_use]

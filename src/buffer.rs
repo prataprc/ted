@@ -1,18 +1,16 @@
-use lazy_static::lazy_static;
 use log::trace;
 use ropey::{self, Rope, RopeSlice};
 
 use std::{
     cell::{self, RefCell},
-    cmp, ffi, fmt, io,
+    cmp, io,
     iter::FromIterator,
     rc::{self, Rc},
-    result,
-    sync::Mutex,
 };
 
 use crate::{
-    event::{Event, DP},
+    event::{Context, Event, DP},
+    location::Location,
     search::Search,
     {err_at, Error, Result},
 };
@@ -137,16 +135,6 @@ macro_rules! change {
     ($self:ident,$method:ident, $($s:expr),*) => {
         $self.as_mut_change().$method($($s),*)
     };
-}
-
-#[derive(Clone)]
-pub struct Context {
-    location: Location,
-    read_only: bool,
-    insert_only: bool,
-    evnt_mto_char: Option<Event>,
-    evnt_mto_patt: Option<Event>,
-    last_inserts: Vec<Event>,
 }
 
 // all bits and pieces of content is managed by buffer.
@@ -1414,47 +1402,6 @@ impl Change {
     fn to_col(&self) -> usize {
         let a_char = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
         self.cursor - a_char
-    }
-}
-
-// Location of buffer's content, typically a persistent medium.
-#[derive(Clone)]
-pub enum Location {
-    Anonymous(String),
-    Disk(ffi::OsString),
-}
-
-lazy_static! {
-    static ref ANONYMOUS_COUNT: Mutex<usize> = Mutex::new(0);
-}
-
-impl Location {
-    fn new_anonymous() -> Location {
-        let mut count = ANONYMOUS_COUNT.lock().unwrap();
-        *count = *count + 1;
-        Location::Anonymous(format!("anonymous-{}", count))
-    }
-
-    fn new_disk(loc: &ffi::OsStr) -> Location {
-        Location::Disk(loc.to_os_string())
-    }
-}
-
-impl Default for Location {
-    fn default() -> Location {
-        Location::new_anonymous()
-    }
-}
-
-impl fmt::Display for Location {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        match self {
-            Location::Anonymous(s) => write!(f, "{}", s),
-            Location::Disk(s) => {
-                let s = s.clone().into_string().unwrap();
-                write!(f, "{}", s)
-            }
-        }
     }
 }
 
