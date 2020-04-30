@@ -2,6 +2,7 @@ use log::trace;
 use ropey::{self, Rope, RopeSlice};
 
 use std::{
+    borrow::Borrow,
     cell::{self, RefCell},
     cmp, io,
     iter::FromIterator,
@@ -9,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    event::{Context, Event, DP},
+    event::{Event, DP},
     location::Location,
     search::Search,
     {err_at, Error, Result},
@@ -137,6 +138,37 @@ macro_rules! change {
     };
 }
 
+#[derive(Clone)]
+pub struct Context {
+    pub location: Location,
+    pub read_only: bool,
+    pub insert_only: bool,
+    pub evnt_mto_char: Option<Event>,
+    pub evnt_mto_patt: Option<Event>,
+    pub last_inserts: Vec<Event>,
+}
+
+impl Context {
+    pub fn set_location(&mut self, loc: Location) -> &mut Self {
+        self.location = loc;
+        self
+    }
+
+    pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
+        self.read_only = read_only;
+        self
+    }
+
+    pub fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
+        self.insert_only = insert_only;
+        self
+    }
+
+    pub fn to_location(&self) -> Location {
+        self.location.clone()
+    }
+}
+
 // all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
 pub enum Buffer {
@@ -165,42 +197,6 @@ impl Buffer {
         Self::from_reader(buf.as_slice())
     }
 
-    pub fn set_location(&mut self, loc: Location) -> &mut Self {
-        match self {
-            Buffer::NormalBuffer(val) => {
-                val.set_location(loc);
-            }
-            Buffer::InsertBuffer(val) => {
-                val.set_location(loc);
-            }
-        }
-        self
-    }
-
-    pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
-        match self {
-            Buffer::NormalBuffer(val) => {
-                val.set_read_only(read_only);
-            }
-            Buffer::InsertBuffer(val) => {
-                val.set_read_only(read_only);
-            }
-        }
-        self
-    }
-
-    pub fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
-        match self {
-            Buffer::NormalBuffer(val) => {
-                val.set_insert_only(insert_only);
-            }
-            Buffer::InsertBuffer(val) => {
-                val.set_insert_only(insert_only);
-            }
-        }
-        self
-    }
-
     pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
         match self {
             Buffer::NormalBuffer(val) => {
@@ -212,58 +208,52 @@ impl Buffer {
         }
         self
     }
-
-    pub fn as_change(&self) -> cell::Ref<Change> {
-        match self {
-            Buffer::NormalBuffer(val) => val.as_change(),
-            Buffer::InsertBuffer(val) => val.as_change(),
-        }
-    }
-
-    pub fn as_mut_change(&mut self) -> cell::RefMut<Change> {
-        match self {
-            Buffer::NormalBuffer(val) => val.as_mut_change(),
-            Buffer::InsertBuffer(val) => val.as_mut_change(),
-        }
-    }
 }
 
 impl Buffer {
+    #[inline]
+    pub fn as_context(&self) -> &Context {
+        match self {
+            Buffer::NormalBuffer(val) => &val.c,
+            Buffer::InsertBuffer(val) => &val.c,
+        }
+    }
+
+    #[inline]
+    pub fn as_mut_context(&mut self) -> &mut Context {
+        match self {
+            Buffer::NormalBuffer(val) => &mut val.c,
+            Buffer::InsertBuffer(val) => &mut val.c,
+        }
+    }
+
+    #[inline]
     pub fn to_string(&self) -> String {
-        match self {
-            Buffer::NormalBuffer(val) => val.as_change().as_ref().to_string(),
-            Buffer::InsertBuffer(val) => val.as_change().as_ref().to_string(),
-        }
+        self.as_change().as_ref().to_string()
     }
 
-    pub fn to_location(&self) -> Location {
-        match self {
-            Buffer::NormalBuffer(val) => val.as_context().location.clone(),
-            Buffer::InsertBuffer(val) => val.as_context().location.clone(),
-        }
-    }
-
+    #[inline]
     pub fn to_id(&self) -> String {
-        match self.to_location() {
+        match self.as_context().to_location() {
             Location::Anonymous(s) => s,
             Location::Disk(s) => s.to_str().unwrap().to_string(),
         }
     }
-}
 
-impl Buffer {
+    #[inline]
     pub fn to_cursor(&self) -> usize {
-        match self {
-            Buffer::NormalBuffer(val) => val.as_change().to_cursor(),
-            Buffer::InsertBuffer(val) => val.as_change().to_cursor(),
-        }
+        self.as_change().to_cursor()
     }
 
+    #[inline]
     pub fn to_xy_cursor(&self) -> (usize, usize) {
-        match self {
-            Buffer::NormalBuffer(val) => val.as_change().to_xy_cursor(),
-            Buffer::InsertBuffer(val) => val.as_change().to_xy_cursor(),
-        }
+        self.as_change().to_xy_cursor()
+    }
+
+    #[inline]
+    pub fn lines_at(&self, n_row: usize) -> impl Iterator<Item = RopeSlice> {
+        let change = self.as_change();
+        Iter::new_lines_at(change, n_row)
     }
 
     pub fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
@@ -300,6 +290,21 @@ impl Buffer {
             },
         }
     }
+
+    fn as_change(&self) -> cell::Ref<Change> {
+        match self {
+            Buffer::NormalBuffer(val) => val.as_change(),
+            Buffer::InsertBuffer(val) => val.as_change(),
+        }
+    }
+
+    // TODO
+    //fn as_mut_change(&mut self) -> cell::RefMut<Change> {
+    //    match self {
+    //        Buffer::NormalBuffer(val) => val.as_mut_change(),
+    //        Buffer::InsertBuffer(val) => val.as_mut_change(),
+    //    }
+    //}
 }
 
 #[derive(Clone)]
@@ -345,21 +350,6 @@ impl NormalBuffer {
         nb
     }
 
-    fn set_location(&mut self, loc: Location) -> &mut Self {
-        self.c.location = loc;
-        self
-    }
-
-    fn set_read_only(&mut self, read_only: bool) -> &mut Self {
-        self.c.read_only = read_only;
-        self
-    }
-
-    fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
-        self.c.insert_only = insert_only;
-        self
-    }
-
     fn set_cursor(&mut self, cursor: usize) -> &mut Self {
         self.as_mut_change().set_cursor(cursor);
         self
@@ -371,10 +361,6 @@ impl NormalBuffer {
 
     fn as_mut_change(&mut self) -> cell::RefMut<Change> {
         self.change.as_ref().borrow_mut()
-    }
-
-    fn as_context(&self) -> &Context {
-        &self.c
     }
 
     fn fold_event(&mut self, evnt: Event) -> Result<Option<Event>> {
@@ -537,27 +523,6 @@ impl Default for InsertBuffer {
 }
 
 impl InsertBuffer {
-    fn new(buf: Rope) -> InsertBuffer {
-        let mut ib: InsertBuffer = Default::default();
-        ib.change = Change::start(buf);
-        ib
-    }
-
-    fn set_location(&mut self, loc: Location) -> &mut Self {
-        self.c.location = loc;
-        self
-    }
-
-    fn set_read_only(&mut self, read_only: bool) -> &mut Self {
-        self.c.read_only = read_only;
-        self
-    }
-
-    fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
-        self.c.insert_only = insert_only;
-        self
-    }
-
     fn set_cursor(&mut self, cursor: usize) -> &mut Self {
         self.as_mut_change().set_cursor(cursor);
         self
@@ -567,12 +532,8 @@ impl InsertBuffer {
         self.change.as_ref().borrow()
     }
 
-    pub fn as_mut_change(&mut self) -> cell::RefMut<Change> {
+    fn as_mut_change(&mut self) -> cell::RefMut<Change> {
         self.change.as_ref().borrow_mut()
-    }
-
-    fn as_context(&self) -> &Context {
-        &self.c
     }
 
     pub fn as_mut_context(&mut self) -> &mut Context {
@@ -681,7 +642,7 @@ impl InsertBuffer {
 }
 
 #[derive(Clone)]
-pub struct Change {
+struct Change {
     buf: Rope,
     parent: Option<rc::Weak<RefCell<Change>>>,
     children: Vec<Rc<RefCell<Change>>>,
@@ -735,11 +696,12 @@ impl Change {
     }
 
     fn to_next_change(prev: &mut Rc<RefCell<Change>>) -> Rc<RefCell<Change>> {
+        let prev_change: &Change = &prev.as_ref().borrow();
         let next = Rc::new(RefCell::new(Change {
-            buf: prev.borrow().as_ref().clone(),
+            buf: prev_change.as_ref().clone(),
             parent: None,
             children: Default::default(),
-            cursor: prev.borrow().cursor,
+            cursor: prev_change.cursor,
         }));
 
         next.borrow_mut().children.push(Rc::clone(prev));
@@ -748,11 +710,11 @@ impl Change {
         next
     }
 
-    pub fn to_cursor(&self) -> usize {
+    fn to_cursor(&self) -> usize {
         self.cursor
     }
 
-    pub fn to_xy_cursor(&self) -> (usize, usize) {
+    fn to_xy_cursor(&self) -> (usize, usize) {
         let row_at = self.buf.char_to_line(self.cursor);
         let col_at = self.cursor - self.buf.line_to_char(row_at);
         (col_at, row_at)
@@ -1353,8 +1315,8 @@ impl Change {
 }
 
 impl Change {
-    pub fn lines_at(&self, line_idx: usize) -> ropey::iter::Lines {
-        self.buf.lines_at(line_idx)
+    fn lines_at(&self, n_row: usize) -> ropey::iter::Lines {
+        self.buf.lines_at(n_row)
     }
 
     fn iter<'a>(&'a self, dp: DP) -> Box<dyn Iterator<Item = char> + 'a> {
@@ -1402,6 +1364,47 @@ impl Change {
     fn to_col(&self) -> usize {
         let a_char = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
         self.cursor - a_char
+    }
+}
+
+struct Iter<'a, I, T>
+where
+    I: Iterator<Item = T>,
+{
+    _change: cell::Ref<'a, Change>, // holding a reference.
+    iter: I,
+}
+
+impl<'a> Iter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
+    fn new_lines_at(
+        //
+        change: cell::Ref<'a, Change>,
+        n_row: usize,
+    ) -> Iter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
+        let iter = unsafe {
+            let change: &Change = change.borrow();
+            (change as *const Change).as_ref().unwrap().lines_at(n_row)
+        };
+        Iter {
+            _change: change,
+            iter,
+        }
+    }
+}
+
+impl<'a> Iterator for Iter<'a, ropey::iter::Chars<'a>, char> {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+impl<'a> Iterator for Iter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
+    type Item = RopeSlice<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
     }
 }
 

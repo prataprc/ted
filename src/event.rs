@@ -2,7 +2,7 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
 use std::{convert::TryFrom, ffi, fs, path};
 
-use crate::{location::Location, Error, Result};
+use crate::{Error, Result};
 
 pub enum OpenFile {
     ReadWrite(fs::File, ffi::OsString),
@@ -84,16 +84,6 @@ impl TryFrom<OpenFile> for fs::File {
             }
         }
     }
-}
-
-#[derive(Clone)]
-pub struct Context {
-    pub location: Location,
-    pub read_only: bool,
-    pub insert_only: bool,
-    pub evnt_mto_char: Option<Event>,
-    pub evnt_mto_patt: Option<Event>,
-    pub last_inserts: Vec<Event>,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]

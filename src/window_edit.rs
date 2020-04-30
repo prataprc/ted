@@ -48,8 +48,8 @@ impl WindowEdit {
 
 impl WindowEdit {
     fn align_to_row(&self, context: &Context) -> (u16, u16) {
-        let change = context.as_buffer(&self.buffer_id).as_change();
-        let new_bc = change.to_xy_cursor();
+        let buffer = context.as_buffer(&self.buffer_id);
+        let new_bc = buffer.to_xy_cursor();
         let (hgt, _) = self.coord.to_size();
         let Cursor { row, .. } = self.cursor;
 
@@ -69,7 +69,7 @@ impl WindowEdit {
         let nu_wth = if context.config.line_number {
             let from = new_bc.1.saturating_sub(row as usize);
             let ls: Vec<RopeSlice> = {
-                let iter = change.lines_at(from).take(hgt as usize);
+                let iter = buffer.lines_at(from).take(hgt as usize);
                 iter.collect()
             };
             (from + ls.len()).to_string().len() as u16 + 1
@@ -124,10 +124,7 @@ impl WindowEdit {
             (c - 1, r - 1)
         };
 
-        let change = {
-            let buf = context.as_buffer(&self.buffer_id);
-            buf.as_change()
-        };
+        let buf = context.as_buffer(&self.buffer_id);
 
         let do_padding = |line: ropey::RopeSlice| -> Vec<char> {
             // trace!("l {} {} {:?}", new_bc.0, cursor.col, line.to_string());
@@ -138,7 +135,7 @@ impl WindowEdit {
         };
 
         let from = new_bc.1.saturating_sub(cursor.row as usize);
-        let lines = change.lines_at(from).map(do_padding);
+        let lines = buf.lines_at(from).map(do_padding);
         let mrgn_wth = nu_wth.saturating_sub(1) as usize;
         for (i, line) in lines.take(hgt as usize).enumerate() {
             let mut s: String = if_else!(
