@@ -490,8 +490,7 @@ impl NormalBuffer {
             N(n, e @ box MtoCharT(_, _)) => change.mto_char(n, *e),
             N(n, e @ box MtoWord(_, _)) => change.mto_words(n, *e),
             N(n, e @ box MtoWWord(_, _)) => change.mto_wwords(n, *e),
-            // TODO
-            // N(n, e @ box MtoSentence(_)) => change.mto_sentence(n, *e),
+            N(n, e @ box MtoSentence(_)) => change.mto_sentence(n, *e),
             N(n, e @ box MtoPara(_)) => change.mto_para(n, *e),
             N(n, e @ box MtoBracket(_, _, _)) => change.mto_bracket(n, *e),
             N(n, e @ box MtoPattern(Some(_), _)) => change.mto_pattern(n, *e),
@@ -1093,89 +1092,72 @@ impl Change {
         }
     }
 
-    //fn mto_sentence(&mut self, mut n: usize, e: Event) -> Result<Option<Event>> {
-    //    use crate::event::{Event::*, DP::*};
+    fn mto_sentence(&mut self, mut n: usize, e: Event) -> Result<Option<Event>> {
+        use crate::event::{Event::*, DP::*};
 
-    //    let is_ws = |ch: char| ch.is_whitespace();
+        let is_ws = |ch: char| ch.is_whitespace();
 
-    //    let mut pch: Option<char> = None;
-    //    self.cursor = match e {
-    //        MtoSentence(Left) => {
-    //            let mut iter = self.iter(Left).enumerate();
-    //            let cursor = loop {
-    //                pch = match (iter.next(), pch) {
-    //                    (Some((_, '.')), Some(pch)) if is_ws(pch) && n > 1 => {
-    //                        n -= 1;
-    //                        Some('.')
-    //                    }
-    //                    (Some((_, '.')), None) if n > 1 => {
-    //                        n -= 1;
-    //                        Some('.')
-    //                    }
-    //                    (Some((i, '.')), Some(pch)) if is_ws(pch) => {
-    //                        break self.cursor.saturating_sub(i + 1);
-    //                    }
-    //                    (Some((i, '.')), None) => {
-    //                        break self.cursor.saturating_sub(i + 1);
-    //                    }
-    //                    (Some((_, NL)), Some(NL)) if n > 1 => {
-    //                        n -= 1;
-    //                        Some(NL)
-    //                    }
-    //                    (Some((i, NL)), Some(NL)) => {
-    //                        break self.cursor.saturating_sub(i + 1);
-    //                    }
-    //                    (Some((_, NL)), None) if n > 1 => {
-    //                        n -= 1;
-    //                        Some(NL)
-    //                    }
-    //                    (Some((i, NL)), None) => {
-    //                        break self.cursor.saturating_sub(i + 1);
-    //                    }
-    //                    (None, _) => break 0,
-    //                };
-    //            };
-    //            Ok(cursor)
-    //        }
-    //        MtoSentence(Right) => {
-    //            let mut iter = self.iter(Right).enumerate();
-    //            let cursor = loop {
-    //                pch = match (iter.next(), pch) {
-    //                    (Some((_, ch)), Some('.')) if is_ws(ch) && n > 1 => {
-    //                        n -= 1;
-    //                        Some('.')
-    //                    }
-    //                    (Some((i, ch)), Some('.')) if is_ws(ch) => {
-    //                        break self.cursor.saturating_add(i);
-    //                    }
-    //                    (Some((_, NL)), Some(NL)) if n > 1 => {
-    //                        n -= 1;
-    //                        Some(NL)
-    //                    }
-    //                    (Some((_, NL)), None) if n > 1 => {
-    //                        n -= 1;
-    //                        Some(NL)
-    //                    }
-    //                    (Some((i, NL)), Some(NL)) => {
-    //                        break self.cursor.saturating_add(i);
-    //                    }
-    //                    (Some((i, NL)), None) => {
-    //                        break self.cursor.saturating_add(i);
-    //                    }
-    //                    (None, _) => {
-    //                        break self.buf.len_chars().saturating_sub(1);
-    //                    }
-    //                };
-    //            };
-    //            Ok(cursor)
-    //        }
-    //        _ => err_at!(Fatal, msg: format!("unreachable")),
-    //    }?;
+        let mut pch: Option<char> = None;
+        self.cursor = match e {
+            MtoSentence(Left) => {
+                let mut iter = self.iter(Left).enumerate();
+                Ok(loop {
+                    pch = match (iter.next(), pch) {
+                        (Some((i, '.')), Some(pch)) if is_ws(pch) => {
+                            if n > 1 {
+                                n -= 1;
+                            } else {
+                                break self.cursor.saturating_sub(i);
+                            }
+                            Some('.')
+                        }
+                        (Some((i, NL)), Some(NL)) => {
+                            if n > 1 {
+                                n -= 1;
+                            } else {
+                                break self.cursor.saturating_sub(i);
+                            }
+                            Some(NL)
+                        }
+                        (Some((_, ch)), _) => Some(ch),
+                        (None, _) => break 0,
+                    };
+                })
+            }
+            MtoSentence(Right) => {
+                let mut iter = self.iter(Right).enumerate();
+                Ok(loop {
+                    pch = match (pch, iter.next()) {
+                        (Some('.'), Some((i, ch))) if is_ws(ch) => {
+                            if n > 1 {
+                                n -= 1;
+                            } else {
+                                break self.cursor.saturating_add(i);
+                            }
+                            Some('.')
+                        }
+                        (Some(NL), Some((i, NL))) => {
+                            if n > 1 {
+                                n -= 1;
+                            } else {
+                                break self.cursor.saturating_add(i);
+                            }
+                            Some(NL)
+                        }
+                        (_, Some((_, ch))) => Some(ch),
+                        (_, None) => {
+                            break self.buf.len_chars().saturating_sub(1);
+                        }
+                    };
+                })
+            }
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }?;
 
-    //    self.skip_whitespace(Right);
+        self.skip_whitespace(Right);
 
-    //    Ok(None)
-    //}
+        Ok(None)
+    }
 
     fn mto_para(&mut self, mut n: usize, evnt: Event) -> Result<Option<Event>> {
         use crate::event::{Event::*, DP::*};
