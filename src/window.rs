@@ -20,23 +20,23 @@ macro_rules! cursor {
 
 #[macro_export]
 macro_rules! span {
-    (fg:$fg:expr, bg:$bg:expr, s:$text:expr) => {{
+    (fg:$fg:expr, bg:$bg:expr, st:$text:expr) => {{
         let mut spn = Span::new(&$text);
         spn.set_fg($fg).set_bg($bg);
         spn
     }};
-    (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), s:$text:expr) => {{
+    (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), st:$text:expr) => {{
         let mut spn = Span::new(&$text);
         spn.set_cursor(Cursor { col: $col, row: $row });
         spn.set_fg($fg).set_bg($bg);
         spn
     }};
-    (($col:expr, $row:expr), s:$text:expr) => {{
+    (($col:expr, $row:expr), st:$text:expr) => {{
         let mut spn = Span::new(&$text);
         spn.set_cursor(Cursor { col: $col, row: $row });
         spn
     }};
-    (s:$text:expr) => {{
+    (st:$text:expr) => {{
         Span::new(&$text)
     }};
     (fg:$fg:expr, bg:$bg:expr, $($s:expr),*) => {{
@@ -65,24 +65,24 @@ pub trait Window {
 
     fn to_cursor(&self) -> Cursor;
 
-    fn move_by(&mut self, col_off: i16, row_off: i16, context: &Context);
+    fn move_by(&mut self, s: &State, col_off: i16, row_off: i16);
 
-    fn resize_to(&mut self, height: u16, width: u16, context: &Context);
+    fn resize_to(&mut self, s: &State, height: u16, width: u16);
 
-    fn on_event(&mut self, ctxt: &mut Context, evnt: Event) -> Result<Event>;
+    fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event>;
 
-    fn refresh(&mut self, ctxt: &mut Context) -> Result<()>;
+    fn refresh(&mut self, s: &mut State) -> Result<()>;
 }
 
-// Application context.
-pub struct Context {
+// Application s.
+pub struct State {
     pub buffers: Vec<Buffer>,
     pub config: Config,
 }
 
-impl Context {
-    pub fn new(config: Config) -> Context {
-        Context {
+impl State {
+    pub fn new(config: Config) -> State {
+        State {
             buffers: Default::default(),
             config,
         }

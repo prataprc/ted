@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     event::{self, Event},
-    window::{Context, Coord, Cursor, Span, Window},
+    window::{Coord, Cursor, Span, State, Window},
     Error, Result,
 };
 
@@ -100,16 +100,16 @@ impl Window for WindowPrompt {
     }
 
     #[inline]
-    fn move_by(&mut self, col_off: i16, row_off: i16, _: &Context) {
+    fn move_by(&mut self, _: &State, col_off: i16, row_off: i16) {
         self.coord = self.coord.clone().move_by(col_off, row_off);
     }
 
     #[inline]
-    fn resize_to(&mut self, height: u16, width: u16, _: &Context) {
+    fn resize_to(&mut self, _: &State, height: u16, width: u16) {
         self.coord = self.coord.clone().resize_to(height, width);
     }
 
-    fn refresh(&mut self, _context: &mut Context) -> Result<()> {
+    fn refresh(&mut self, _: &mut State) -> Result<()> {
         let mut stdout = io::stdout();
 
         if !self.rendered {
@@ -133,7 +133,7 @@ impl Window for WindowPrompt {
         Ok(())
     }
 
-    fn on_event(&mut self, _: &mut Context, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, _: &mut State, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Backspace => {
                 self.input.pop();

@@ -2,7 +2,7 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
 use std::{convert::TryFrom, ffi, fs, path};
 
-use crate::{Error, Result};
+use crate::{location::Location, Error, Result};
 
 pub enum OpenFile {
     ReadWrite(fs::File, ffi::OsString),
@@ -86,6 +86,72 @@ impl TryFrom<OpenFile> for fs::File {
     }
 }
 
+#[derive(Clone)]
+pub struct Context {
+    pub location: Location,
+    pub read_only: bool,
+    pub insert_only: bool,
+    pub evnt_mto_char: Event,
+    pub evnt_mto_patt: Event,
+    pub last_inserts: Vec<Event>,
+}
+
+impl Default for Context {
+    fn default() -> Context {
+        use crate::event::Event::*;
+
+        Context {
+            location: Default::default(),
+            read_only: false,
+            insert_only: false,
+            evnt_mto_char: Noop,
+            evnt_mto_patt: Noop,
+            last_inserts: Default::default(),
+        }
+    }
+}
+
+impl Context {
+    pub fn set_location(&mut self, loc: Location) -> &mut Self {
+        self.location = loc;
+        self
+    }
+
+    pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
+        self.read_only = read_only;
+        self
+    }
+
+    pub fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
+        self.insert_only = insert_only;
+        self
+    }
+
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
+    }
+
+    pub fn is_insert_only(&self) -> bool {
+        self.insert_only
+    }
+
+    pub fn to_location(&self) -> Location {
+        self.location.clone()
+    }
+
+    pub fn to_mto_char(&self) -> Event {
+        self.evnt_mto_char.clone()
+    }
+
+    pub fn to_mto_pattern(&self) -> Event {
+        self.evnt_mto_patt.clone()
+    }
+
+    pub fn to_inserts(&self) -> Vec<Event> {
+        self.last_inserts.clone()
+    }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DP {
     Left,
@@ -103,19 +169,21 @@ pub enum DP {
 #[derive(Clone)]
 pub enum Event {
     Noop,
+    // Return events
+    List(Vec<Event>),
     // Input events
     F(u8, KeyModifiers),
     BackTab,
+    // Commands
+    Dec(Vec<char>),
+    N(usize, Box<Event>), // (n, event)
+    G(Box<Event>),
+    B(DP), // (Left/Right,)
     // Modal events
     ModeEsc,
     ModeInsert(DP), // (Nope/Caret,)
     ModeAppend(DP), // (Right/End,)
     ModeOpen(DP),   // (Left/Right,)
-    // Command events
-    Dec(Vec<char>),
-    N(usize, Box<Event>), // (n, event)
-    G(Box<Event>),
-    B(DP), // (Left/Right,)
     // Motion events
     MtoLeft(DP),  // (LineBound/Nobound,)
     MtoRight(DP), // (LineBound/Nobound,)
@@ -195,15 +263,20 @@ impl From<TermEvent> for Event {
     }
 }
 
-impl Event {
-    pub fn to_modifiers(&self) -> KeyModifiers {
-        match self {
-            Event::F(_, modifiers) => modifiers.clone(),
-            Event::Char(_, modifiers) => modifiers.clone(),
-            _ => KeyModifiers::empty(),
+impl From<Vec<Event>> for Event {
+    fn from(evnts: Vec<Event>) -> Event {
+        let mut out: Vec<Event> = vec![];
+        for evnt in evnts.into_iter() {
+            match evnt {
+                Event::List(es) => out.extend(es.into_iter()),
+                e => out.push(e),
+            }
         }
+        Event::List(out)
     }
+}
 
+impl Event {
     pub fn transform(self, dp: DP) -> Result<Self> {
         use Event::*;
         use DP::*;
@@ -222,6 +295,16 @@ impl Event {
             (MtoPattern(ch, DP::Right), DP::Right) => Ok(MtoPattern(ch, Right)),
             (MtoPattern(ch, DP::Right), DP::Left) => Ok(MtoPattern(ch, Left)),
             _ => err_at!(Fatal, msg: format!("unreachable")),
+        }
+    }
+}
+
+impl Event {
+    pub fn to_modifiers(&self) -> KeyModifiers {
+        match self {
+            Event::F(_, modifiers) => modifiers.clone(),
+            Event::Char(_, modifiers) => modifiers.clone(),
+            _ => KeyModifiers::empty(),
         }
     }
 }

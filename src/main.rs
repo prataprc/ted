@@ -17,13 +17,13 @@ use std::{
     convert::TryInto,
     fs,
     io::{self, Write},
-    path,
+    mem, path,
     time::SystemTime,
 };
 
 use ted::{
     err_at, event, stats,
-    window::{Context, Coord, Cursor},
+    window::{Coord, Cursor, State},
     window_file::WindowFile,
     window_prompt::WindowPrompt,
     Buffer, Config, Error, Event, Result, Window,
@@ -58,12 +58,12 @@ fn main() {
     }
 
     std::panic::set_hook(box |panic_info| {
-        let mut s = format!(
+        let mut strng = format!(
             "panic occured: {:?}",
             panic_info.payload().downcast_ref::<String>().unwrap()
         );
-        s.push_str(&format!("{}", std::backtrace::Backtrace::capture()));
-        fs::write("ted-panic.out", s.as_bytes()).unwrap();
+        strng.push_str(&format!("{}", std::backtrace::Backtrace::capture()));
+        fs::write("ted-panic.out", strng.as_bytes()).unwrap();
     });
 
     match Application::run(opts) {
@@ -74,12 +74,11 @@ fn main() {
 
 struct Application {
     tm: Terminal,
-    context: Context,
-
-    inner: Option<InnerApp>,
+    s: State,
+    inner: Inner,
 }
 
-enum InnerApp {
+enum Inner {
     OpenFiles {
         pw: WindowPrompt,
         window: Box<dyn Window>,
@@ -89,22 +88,31 @@ enum InnerApp {
     Usual {
         window: Box<dyn Window>,
     },
+    None,
 }
 
-impl InnerApp {
+impl Default for Inner {
+    fn default() -> Inner {
+        Inner::None
+    }
+}
+
+impl Inner {
     fn as_mut_window(&mut self) -> &mut Box<(dyn ted::window::Window + 'static)> {
         match self {
-            InnerApp::Usual { window } => window,
-            InnerApp::OpenFiles { window, .. } => window,
+            Inner::Usual { window } => window,
+            Inner::OpenFiles { window, .. } => window,
+            _ => todo!(),
         }
     }
 }
 
 impl Application {
     fn to_window_cursor(&self) -> Cursor {
-        match self.inner.as_ref().unwrap() {
-            InnerApp::Usual { window } => window.to_cursor(),
-            InnerApp::OpenFiles { window, .. } => window.to_cursor(),
+        match &self.inner {
+            Inner::Usual { window } => window.to_cursor(),
+            Inner::OpenFiles { window, .. } => window.to_cursor(),
+            _ => todo!(),
         }
     }
 
@@ -113,13 +121,13 @@ impl Application {
         let app = {
             let tm = Terminal::init()?;
             let coord = Coord::new(1, 1, tm.rows, tm.cols);
-            let window = err_at!(Fatal, WindowFile::new(coord, config.clone()))?;
+            let window = err_at!(Fatal, WindowFile::new(coord))?;
             Application {
                 tm,
-                context: Context::new(config.clone()),
-                inner: Some(InnerApp::Usual {
+                s: State::new(config),
+                inner: Inner::Usual {
                     window: Box::new(window),
-                }),
+                },
             }
         };
 
@@ -181,39 +189,17 @@ impl Application {
     }
 
     fn dispatch_event(&mut self, mut evnt: Event) -> Result<Event> {
-        self.inner = match self.inner.take() {
-            Some(InnerApp::Usual { mut window }) => {
-                evnt = window.on_event(&mut self.context, evnt)?;
-                Some(InnerApp::Usual { window })
-            }
-            Some(InnerApp::OpenFiles {
-                pw,
-                mut window,
-                flocs,
-                fds,
-            }) => {
-                evnt = window.on_event(&mut self.context, evnt)?;
-                Some(InnerApp::OpenFiles {
-                    pw,
-                    window,
-                    flocs,
-                    fds,
-                })
-            }
-            None => unreachable!(),
-        };
+        let mut inner = mem::replace(&mut self.inner, Default::default());
+        evnt = inner.as_mut_window().on_event(&mut self.s, evnt)?;
+        self.inner = inner;
 
         Ok(evnt)
     }
 
     fn dispatch_refresh(&mut self) -> Result<()> {
-        let mut inner = self.inner.take().unwrap();
-        let res = match &mut inner {
-            InnerApp::Usual { window } => window,
-            InnerApp::OpenFiles { window, .. } => window,
-        }
-        .refresh(&mut self.context);
-        self.inner = Some(inner);
+        let mut inner = mem::replace(&mut self.inner, Default::default());
+        let res = inner.as_mut_window().refresh(&mut self.s);
+        self.inner = inner;
         res
     }
 
@@ -226,16 +212,14 @@ impl Application {
                     (b.to_id(), b)
                 };
 
-                self.context.buffers.push(buffer);
+                self.s.buffers.push(buffer);
 
-                let mut inner = self.inner.take().unwrap();
-                let window = inner.as_mut_window();
-                window.on_event(
-                    //
-                    &mut self.context,
-                    Event::UseBuffer { buffer_id },
-                )?;
-                self.inner = Some(inner);
+                let mut inner = mem::replace(&mut self.inner, Default::default());
+                inner
+                    .as_mut_window()
+                    .on_event(&mut self.s, Event::UseBuffer { buffer_id })?;
+                self.inner = inner;
+
                 Ok(Some(self))
             }
             Event::OpenFiles { flocs } if flocs.len() > 0 => {
@@ -251,13 +235,10 @@ impl Application {
         Ok(self)
     }
 
-    fn handle_open_files(
-        //
-        mut self,
-        mut flocs: Vec<event::OpenFile>,
-    ) -> Result<Self> {
-        self.inner = match self.inner.take() {
-            Some(InnerApp::Usual { window }) => {
+    fn handle_open_files(mut self, mut flocs: Vec<event::OpenFile>) -> Result<Self> {
+        let inner = mem::replace(&mut self.inner, Default::default());
+        self.inner = match inner {
+            Inner::Usual { window } => {
                 let mut fds = vec![];
                 loop {
                     let floc = flocs.remove(0);
@@ -265,22 +246,22 @@ impl Application {
                     match pw {
                         Err(_) => {
                             fds.push(floc);
-                            break Some(InnerApp::Usual { window });
+                            break Inner::Usual { window };
                         }
                         Ok(pw) => {
                             flocs.insert(0, floc);
-                            break Some(InnerApp::OpenFiles {
+                            break Inner::OpenFiles {
                                 pw,
                                 window,
                                 flocs,
                                 fds,
-                            });
+                            };
                         }
                     }
                 }
             }
-            val @ Some(InnerApp::OpenFiles { .. }) => val,
-            None => err_at!(Fatal, msg: format!("unreachable"))?,
+            val @ Inner::OpenFiles { .. } => val,
+            Inner::None => err_at!(Fatal, msg: format!("unreachable"))?,
         };
 
         Ok(self)
