@@ -14,19 +14,19 @@ use simplelog;
 use structopt::StructOpt;
 
 use std::{
-    convert::TryInto,
-    fs,
+    ffi, fs,
     io::{self, Write},
     mem, path,
     time::SystemTime,
 };
 
 use ted::{
-    err_at, event, stats,
+    err_at,
+    location::Location,
+    on_win_event, on_win_refresh, stats,
     window::{Coord, Cursor, State},
     window_file::WindowFile,
-    window_prompt::WindowPrompt,
-    Buffer, Config, Error, Event, Result, Window,
+    Config, Error, Event, Result,
 };
 
 #[derive(Debug, StructOpt)]
@@ -84,8 +84,7 @@ impl Application {
             let tm = Terminal::init()?;
             let s = {
                 let coord = Coord::new(1, 1, tm.rows, tm.cols);
-                let w = err_at!(Fatal, WindowFile::new(coord))?;
-                State::new(config, w)
+                State::new(config, WindowFile::new(coord))
             };
             Application { tm, s }
         };
@@ -93,10 +92,11 @@ impl Application {
         let evnt = if opts.files.len() == 0 {
             Event::NewBuffer
         } else {
-            let flocs: Vec<Location> = {
-                let iter = opts.files.clone().into_iter();
-                iter.map(Into::into).collect()
-            };
+            let mut flocs = vec![];
+            for f in opts.files.clone().into_iter() {
+                let f: ffi::OsString = f.into();
+                flocs.push(Location::new_disk(&f));
+            }
             Event::OpenFiles { flocs }
         };
 
@@ -106,18 +106,19 @@ impl Application {
     fn event_loop(mut self, mut evnt: Event) -> Result<()> {
         let mut stats = stats::Latency::new();
 
-        let mut s = mem::replace(&self.s, Default::default());
+        let mut s = mem::replace(&mut self.s, Default::default());
+        let mut start = SystemTime::now();
 
         // TODO: later statistics can be moved to a different release stream
         // and or controlled by command line option.
         let res = loop {
             // hide cursor, handle event and refresh window
-            evnt = match evnt {
+            match evnt {
                 Event::Noop => Event::Noop,
                 evnt => {
                     err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
-                    on_win_event!(s, evnt);
-                    err_at!(Fatal, on_win_refresh!(s))?;
+                    s = on_win_event!(s, evnt);
+                    s = on_win_refresh!(s);
                     mem::replace(&mut s.event, Default::default())
                 }
             };
@@ -139,8 +140,7 @@ impl Application {
                     evnt => evnt,
                 }
             };
-
-            let start = SystemTime::now();
+            start = SystemTime::now();
         };
 
         stats.pretty_print("");

@@ -73,8 +73,6 @@ macro_rules! change {
 
 #[derive(Clone)]
 pub struct Context {
-    s: Option<State>,
-    e: Option<Event>,
     location: Location,
     read_only: bool,
     insert_only: bool,
@@ -266,25 +264,25 @@ impl Buffer {
         let evnt = mem::replace(&mut s.event, Default::default());
         let inner = mem::replace(&mut self.inner, Default::default());
         let (inner, evnt) = match inner {
-            Inner::Normal(mut nb) => match nb.on_event(s, &self.c, evnt)? {
-                Noop => (Inner::Normal(nb), Ok(Noop)),
+            Inner::Normal(mut nb) => match nb.on_event(&self.c, evnt)? {
+                Noop => (Inner::Normal(nb), Noop),
                 N(n, e) if n > 1 && is_insert!(e.as_ref()) => {
                     let ib = {
                         let mut ib: InsertBuffer = nb.into();
-                        ib.on_event(s, *e, false /*repeat*/)?;
+                        ib.on_event(*e, false /*repeat*/)?;
                         ib.repeat = n - 1;
                         ib
                     };
-                    (Inner::Insert(ib), Ok(Noop))
+                    (Inner::Insert(ib), Noop)
                 }
-                evnt => (Inner::Normal(nb), Ok(evnt)),
+                evnt => (Inner::Normal(nb), evnt),
             },
-            Inner::Insert(mut ib) => match ib.on_event(s, evnt, false)? {
+            Inner::Insert(mut ib) => match ib.on_event(evnt, false)? {
                 ModeEsc if !self.c.insert_only => {
                     self.c.last_inserts = ib.repeat()?;
-                    (Inner::Normal(ib.into()), Ok(Noop))
+                    (Inner::Normal(ib.into()), Noop)
                 }
-                evnt => (Inner::Insert(ib), Ok(evnt)),
+                evnt => (Inner::Insert(ib), evnt),
             },
         };
 

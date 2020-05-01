@@ -2,7 +2,7 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
 use std::{convert::TryFrom, ffi, fs, path};
 
-use crate::{Error, Result};
+use crate::{location::Location, Error, Result};
 
 pub enum OpenFile {
     ReadWrite(fs::File, ffi::OsString),
@@ -148,7 +148,7 @@ pub enum Event {
     Esc,
     // Application events
     NewBuffer,
-    OpenFiles { flocs: Vec<OpenFile> },
+    OpenFiles { flocs: Vec<Location> },
     UseBuffer { buffer_id: String },
     PromptReply { input: String },
 }

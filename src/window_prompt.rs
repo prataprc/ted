@@ -5,12 +5,12 @@ use std::{
     convert::TryFrom,
     fmt,
     io::{self, Write},
-    result,
+    mem, result,
 };
 
 use crate::{
     event::{self, Event},
-    window::{Coord, Cursor, Span, State, Window},
+    window::{Coord, Cursor, Span, State},
     Error, Result,
 };
 
@@ -89,27 +89,7 @@ impl WindowPrompt {
 }
 
 impl WindowPrompt {
-    #[inline]
-    fn to_origin(&self) -> (u16, u16) {
-        self.coord.to_origin()
-    }
-
-    #[inline]
-    fn to_cursor(&self) -> Cursor {
-        self.prompt_cursor
-    }
-
-    #[inline]
-    fn move_by(&mut self, _: &State, col_off: i16, row_off: i16) {
-        self.coord = self.coord.clone().move_by(col_off, row_off);
-    }
-
-    #[inline]
-    fn resize_to(&mut self, _: &State, height: u16, width: u16) {
-        self.coord = self.coord.clone().resize_to(height, width);
-    }
-
-    fn on_refresh(&mut self, s: State) -> Result<State> {
+    pub fn on_refresh(&mut self, s: State) -> Result<State> {
         let mut stdout = io::stdout();
 
         if !self.rendered {
@@ -133,7 +113,7 @@ impl WindowPrompt {
         Ok(s)
     }
 
-    fn on_event(&mut self, mut s: State) -> Result<State> {
+    pub fn on_event(&mut self, mut s: State) -> Result<State> {
         s.event = match mem::replace(&mut s.event, Default::default()) {
             Event::Backspace => {
                 self.input.pop();

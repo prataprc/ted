@@ -4,12 +4,13 @@ use std::{
     fmt,
     io::{self, Write},
     iter::FromIterator,
-    result,
+    mem, result,
 };
 
 use crate::{
+    buffer::Buffer,
     event::Event,
-    window::{Coord, Cursor, Span, State, Window},
+    window::{Coord, Cursor, Span, State},
     window_edit::WindowEdit,
     Error, Result,
 };
@@ -40,14 +41,14 @@ impl fmt::Display for WindowFile {
 
 impl WindowFile {
     #[inline]
-    pub fn new(coord: Coord) -> Result<WindowFile> {
-        let we = WindowEdit::new(coord.clone())?;
-        Ok(WindowFile {
+    pub fn new(coord: Coord) -> WindowFile {
+        let we = WindowEdit::new(coord.clone());
+        WindowFile {
             coord,
             we,
             we_hgt: 0,
             we_wth: 0,
-        })
+        }
     }
 }
 
@@ -66,7 +67,7 @@ impl WindowFile {
         }
     }
 
-    fn do_refresh(&mut self, mut s: State) -> Result<State> {
+    fn do_refresh(&mut self, s: State) -> Result<State> {
         use std::iter::repeat;
 
         let Cursor { col, row } = self.coord.to_top_left();
@@ -92,34 +93,24 @@ impl WindowFile {
     }
 }
 
-impl Window for WindowFile {
+impl WindowFile {
     #[inline]
     fn to_origin(&self) -> (u16, u16) {
         self.coord.to_origin()
     }
 
     #[inline]
-    fn to_cursor(&self) -> Cursor {
+    pub fn to_cursor(&self) -> Cursor {
         self.we.to_cursor()
     }
 
-    #[inline]
-    fn move_by(&mut self, _: &State, col_off: i16, row_off: i16) {
-        self.coord = self.coord.clone().move_by(col_off, row_off);
+    pub fn on_refresh(&mut self, mut s: State) -> Result<State> {
+        s = self.do_refresh(s)?;
+        self.we.on_refresh(s)
     }
 
-    #[inline]
-    fn resize_to(&mut self, _: &State, height: u16, width: u16) {
-        self.coord = self.coord.clone().resize_to(height, width);
-    }
-
-    fn on_refresh(&mut self, mut s: State) -> Result<State> {
-        self.do_refresh(s)?;
-        self.we.refresh(s)
-    }
-
-    fn on_event(&mut self, s: mut State) -> Result<State> {
-        let mut evnt = mem::replace(&mut s.event, Default::default());
+    pub fn on_event(&mut self, mut s: State) -> Result<State> {
+        let evnt = mem::replace(&mut s.event, Default::default());
         s.event = match evnt {
             Event::NewBuffer => {
                 let (buffer_id, buffer) = {

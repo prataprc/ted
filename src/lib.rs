@@ -20,7 +20,6 @@ pub mod window_prompt;
 pub use buffer::Buffer;
 pub use config::Config;
 pub use event::Event;
-pub use window::Window;
 
 pub type Result<T> = result::Result<T, Error>;
 

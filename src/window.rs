@@ -6,7 +6,7 @@ use crossterm::{
 
 use std::{fmt, ops::Add, result};
 
-use crate::{Buffer, Config, Event, Result};
+use crate::{window_file::WindowFile, Buffer, Config, Event};
 
 #[macro_export]
 macro_rules! cursor {
@@ -64,44 +64,46 @@ macro_rules! span {
 macro_rules! on_win_event {
     ($state:expr, $evnt:expr) => {{
         match $state.window.take() {
-            Some(window) => {
+            Some(mut window) => {
                 $state.event = $evnt;
-                let s = window.on_event($state)?;
+                let mut s = window.on_event($state)?;
                 s.window = Some(window);
-            },
-            None => (),
-        };
-    }}
+                s
+            }
+            None => $state,
+        }
+    }};
 }
 
 #[macro_export]
 macro_rules! on_win_refresh {
     ($state:expr) => {{
         match $state.window.take() {
-            Some(window) => {
-                let s = window.on_refresh($state)?;
+            Some(mut window) => {
+                let mut s = window.on_refresh($state)?;
                 s.window = Some(window);
-            },
-            None => None,
-        };
-    }}
+                s
+            }
+            None => $state,
+        }
+    }};
 }
 
 // Application state
 pub struct State {
-    buffers: Vec<Buffer>,
-    config: Config,
-    window: Option<WindowFile>,
-    event: Event,
+    pub buffers: Vec<Buffer>,
+    pub config: Config,
+    pub window: Option<WindowFile>,
+    pub event: Event,
 }
 
 impl Default for State {
     fn default() -> State {
-        let coord: Coord = Default::default(),
+        let coord: Coord = Default::default();
         State {
             buffers: Default::default(),
             config: Default::default(),
-            window: WindowFile::new(coord),
+            window: Some(WindowFile::new(coord)),
             event: Default::default(),
         }
     }
@@ -112,7 +114,7 @@ impl State {
         State {
             buffers: Default::default(),
             config,
-            window,
+            window: Some(window),
             event: Default::default(),
         }
     }
@@ -139,12 +141,12 @@ impl State {
 
     pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
         let i = {
-            let iter = self.buffers.iter().enumerate();
+            let mut iter = self.buffers.iter().enumerate();
             loop {
                 match iter.next() {
                     Some((i, b)) if b.to_id() == id => break Some(i),
-                    None => break None
-                    _ => ()
+                    None => break None,
+                    _ => (),
                 }
             }
         };
@@ -159,7 +161,10 @@ impl State {
     }
 
     pub fn to_window_cursor(&self) -> Cursor {
-        self.app.as_window().to_cursor()
+        match &self.window {
+            Some(w) => w.to_cursor(),
+            None => todo!(),
+        }
     }
 }
 

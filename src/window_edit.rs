@@ -3,17 +3,16 @@ use log::trace;
 use ropey::RopeSlice;
 
 use std::{
-    cmp,
     convert::TryInto,
     fmt,
     io::{self, Write},
     iter::FromIterator,
-    result,
+    mem, result,
 };
 
 use crate::{
     event::Event,
-    window::{Coord, Cursor, Span, State, Window},
+    window::{Coord, Cursor, Span, State},
     Error, Result,
 };
 
@@ -34,14 +33,14 @@ impl fmt::Display for WindowEdit {
 
 impl WindowEdit {
     #[inline]
-    pub fn new(coord: Coord) -> Result<WindowEdit> {
-        Ok(WindowEdit {
+    pub fn new(coord: Coord) -> WindowEdit {
+        WindowEdit {
             coord,
             cursor: cursor!(0, 0),
             nu_wth: 0,
             old_bc: (0, 0),
             buffer_id: Default::default(),
-        })
+        }
     }
 }
 
@@ -168,41 +167,19 @@ impl WindowEdit {
     }
 }
 
-impl Window for WindowEdit {
+impl WindowEdit {
     #[inline]
-    fn to_origin(&self) -> (u16, u16) {
-        self.coord.to_origin()
-    }
-
-    #[inline]
-    fn to_cursor(&self) -> Cursor {
+    pub fn to_cursor(&self) -> Cursor {
         let mut cursor = self.coord.to_top_left() + self.cursor;
         cursor.col += self.nu_wth;
         cursor
     }
 
-    #[inline]
-    fn move_by(&mut self, _: &State, col_off: i16, row_off: i16) {
-        self.coord = self.coord.clone().move_by(col_off, row_off);
-    }
-
-    #[inline]
-    fn resize_to(&mut self, s: &State, height: u16, width: u16) {
-        let scroll_off = s.config.scroll_off;
-
-        self.coord = self.coord.clone().resize_to(height, width);
-        self.cursor.col = cmp::min(self.cursor.col, width - 1);
-        self.cursor.row = {
-            let row = cmp::min(self.cursor.row, height - 1);
-            if_else!(row <= scroll_off, row, row - scroll_off)
-        };
-    }
-
-    fn on_refresh(&mut self, s: State) -> Result<State> {
+    pub fn on_refresh(&mut self, s: State) -> Result<State> {
         self.refresh_nowrap(s)
     }
 
-    fn on_event(&mut self, mut s: State) -> Result<State> {
+    pub fn on_event(&mut self, mut s: State) -> Result<State> {
         match mem::replace(&mut s.event, Default::default()) {
             Event::UseBuffer { buffer_id } => {
                 self.buffer_id = buffer_id;
@@ -211,8 +188,8 @@ impl Window for WindowEdit {
             evnt => {
                 s.event = evnt;
                 Ok(match s.take_buffer(&self.buffer_id) {
-                    Some(buffer) => {
-                        let s = buffer.on_event(s)?;
+                    Some(mut buffer) => {
+                        let mut s = buffer.on_event(s)?;
                         s.add_buffer(buffer);
                         s
                     }
