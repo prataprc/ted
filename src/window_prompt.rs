@@ -133,25 +133,20 @@ impl Window for WindowPrompt {
         Ok(())
     }
 
-    fn handle_event(
-        //
-        &mut self,
-        _context: &mut Context,
-        evnt: Event,
-    ) -> Result<Option<Event>> {
+    fn on_event(&mut self, _: &mut Context, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Backspace => {
                 self.input.pop();
-                Ok(None)
+                Ok(Event::Noop)
             }
-            Event::Enter => Ok(Some(Event::PromptReply {
+            Event::Enter => Ok(Event::PromptReply {
                 input: self.input.clone(),
-            })),
+            }),
             Event::Char(ch, _m) => {
                 self.input.push(ch);
-                Ok(None)
+                Ok(Event::Noop)
             }
-            _ => Ok(Some(evnt)),
+            _ => Ok(Event::Noop),
         }
     }
 }

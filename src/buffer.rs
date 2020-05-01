@@ -1,4 +1,3 @@
-use log::trace;
 use ropey::{self, Rope, RopeSlice};
 
 use std::{
@@ -6,12 +5,14 @@ use std::{
     cell::{self, RefCell},
     cmp, io,
     iter::FromIterator,
+    mem,
     rc::{self, Rc},
 };
 
 use crate::{
     event::{Event, DP},
     location::Location,
+    plugin::Plugin,
     search::Search,
     {err_at, Error, Result},
 };
@@ -28,23 +29,23 @@ macro_rules! parse_n {
 }
 
 macro_rules! want_char {
-    ($pe:expr) => {{
+    ($ep:expr) => {{
         use crate::event::Event::*;
 
-        match $pe {
-            Some(B(_)) | Some(MtoCharF(_, _)) | Some(MtoCharT(_, _)) => true,
-            Some(_) | None => false,
+        match $ep {
+            B(_) | MtoCharF(_, _) | MtoCharT(_, _) => true,
+            _ => false,
         }
     }};
 }
 
 macro_rules! g_prefix {
-    ($pe:expr) => {{
+    ($ep:expr) => {{
         use crate::event::Event::*;
 
-        match $pe {
-            Some(G(_)) => true,
-            Some(_) | None => false,
+        match $ep {
+            G(_) => true,
+            _ => false,
         }
     }};
 }
@@ -60,14 +61,312 @@ macro_rules! is_insert {
     }};
 }
 
-macro_rules! normal_event {
-    ($evnt:expr, $pe:expr) => {{
-        use crate::event::{DP::*, Event::*};
+macro_rules! change {
+    ($self:ident,$method:ident) => {
+        $self.as_mut_change().$method()
+    };
+    ($self:ident,$method:ident, $($s:expr),*) => {
+        $self.as_mut_change().$method($($s),*)
+    };
+}
 
-        let m = $evnt.to_modifiers();
-        let wc = want_char!($pe);
-        let gp = g_prefix!($pe);
-        match $evnt {
+#[derive(Clone)]
+pub struct Context {
+    pub location: Location,
+    pub read_only: bool,
+    pub insert_only: bool,
+    pub evnt_mto_char: Event,
+    pub evnt_mto_patt: Event,
+    pub last_inserts: Vec<Event>,
+}
+
+impl Default for Context {
+    fn default() -> Context {
+        use crate::event::Event::*;
+
+        Context {
+            location: Default::default(),
+            read_only: false,
+            insert_only: false,
+            evnt_mto_char: Noop,
+            evnt_mto_patt: Noop,
+            last_inserts: Default::default(),
+        }
+    }
+}
+
+impl Context {
+    pub fn set_location(&mut self, loc: Location) -> &mut Self {
+        self.location = loc;
+        self
+    }
+
+    pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
+        self.read_only = read_only;
+        self
+    }
+
+    pub fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
+        self.insert_only = insert_only;
+        self
+    }
+
+    pub fn to_location(&self) -> Location {
+        self.location.clone()
+    }
+}
+
+// all bits and pieces of content is managed by buffer.
+#[derive(Clone)]
+pub struct Buffer {
+    c: Context,
+    p: Plugin,
+    inner: Inner,
+}
+
+#[derive(Clone)]
+enum Inner {
+    Insert(InsertBuffer),
+    Normal(NormalBuffer),
+}
+
+impl Default for Inner {
+    fn default() -> Inner {
+        Inner::Normal(Default::default())
+    }
+}
+
+impl Default for Buffer {
+    fn default() -> Buffer {
+        Buffer {
+            c: Default::default(),
+            p: Default::default(),
+            inner: Default::default(),
+        }
+    }
+}
+
+impl AsRef<Context> for Buffer {
+    fn as_ref(&self) -> &Context {
+        &self.c
+    }
+}
+
+impl AsMut<Context> for Buffer {
+    fn as_mut(&mut self) -> &mut Context {
+        &mut self.c
+    }
+}
+
+impl Buffer {
+    pub fn from_reader<R>(data: R) -> Result<Buffer>
+    where
+        R: io::Read,
+    {
+        let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
+        Ok(Buffer {
+            c: Default::default(),
+            p: Default::default(),
+            inner: Inner::Normal(NormalBuffer::new(buf)),
+        })
+    }
+
+    pub fn empty() -> Result<Buffer> {
+        let buf = vec![];
+        Self::from_reader(buf.as_slice())
+    }
+
+    pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
+        match &mut self.inner {
+            Inner::Normal(val) => {
+                val.set_cursor(cursor);
+            }
+            Inner::Insert(val) => {
+                val.set_cursor(cursor);
+            }
+        };
+        self
+    }
+
+    pub fn set_plugin(&mut self, p: Plugin) -> &mut Self {
+        self.p = p;
+        self
+    }
+}
+
+impl Buffer {
+    pub fn as_mut_context(&mut self) -> &mut Context {
+        &mut self.c
+    }
+
+    fn as_change(&self) -> cell::Ref<Change> {
+        match &self.inner {
+            Inner::Normal(val) => val.as_change(),
+            Inner::Insert(val) => val.as_change(),
+        }
+    }
+}
+
+impl Buffer {
+    #[inline]
+    pub fn to_string(&self) -> String {
+        self.as_change().as_ref().to_string()
+    }
+
+    #[inline]
+    pub fn to_id(&self) -> String {
+        match self.c.to_location() {
+            Location::Anonymous(s) => s,
+            Location::Disk(s) => s.to_str().unwrap().to_string(),
+        }
+    }
+
+    #[inline]
+    pub fn to_cursor(&self) -> usize {
+        self.as_change().to_cursor()
+    }
+
+    #[inline]
+    pub fn to_xy_cursor(&self) -> (usize, usize) {
+        self.as_change().to_xy_cursor()
+    }
+
+    #[inline]
+    pub fn lines_at(&self, n_row: usize) -> impl Iterator<Item = RopeSlice> {
+        let change = self.as_change();
+        Iter::new_lines_at(change, n_row)
+    }
+
+    pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
+        use crate::event::Event::*;
+
+        let inner = mem::replace(&mut self.inner, Default::default());
+        let (inner, evnt) = match inner {
+            Inner::Normal(mut nb) => match nb.on_event(&self.c, evnt)? {
+                Noop => (Inner::Normal(nb), Ok(Noop)),
+                N(n, e) if n > 1 && is_insert!(e.as_ref()) => {
+                    let ib = {
+                        let mut ib: InsertBuffer = nb.into();
+                        ib.on_event(*e, false /*repeat*/)?;
+                        ib.repeat = n - 1;
+                        ib
+                    };
+                    (Inner::Insert(ib), Ok(Noop))
+                }
+                evnt => (Inner::Normal(nb), Ok(evnt)),
+            },
+            Inner::Insert(mut ib) => match ib.on_event(evnt, false)? {
+                ModeEsc if !self.c.insert_only => {
+                    self.c.last_inserts = ib.repeat()?;
+                    (Inner::Normal(ib.into()), Ok(Noop))
+                }
+                evnt => (Inner::Insert(ib), Ok(evnt)),
+            },
+        };
+
+        self.inner = inner;
+        evnt
+    }
+}
+
+#[derive(Clone)]
+pub struct NormalBuffer {
+    evnt_prefix: Event,
+    change: Rc<RefCell<Change>>,
+}
+
+impl Default for NormalBuffer {
+    fn default() -> NormalBuffer {
+        NormalBuffer {
+            evnt_prefix: Default::default(),
+            change: Default::default(),
+        }
+    }
+}
+
+impl From<InsertBuffer> for NormalBuffer {
+    fn from(ib: InsertBuffer) -> NormalBuffer {
+        NormalBuffer {
+            evnt_prefix: Default::default(),
+            change: ib.change,
+        }
+    }
+}
+
+impl NormalBuffer {
+    fn new(buf: Rope) -> NormalBuffer {
+        let mut nb: NormalBuffer = Default::default();
+        nb.change = Change::start(buf);
+        nb
+    }
+
+    fn set_cursor(&mut self, cursor: usize) -> &mut Self {
+        self.as_mut_change().set_cursor(cursor);
+        self
+    }
+}
+
+impl NormalBuffer {
+    fn as_change(&self) -> cell::Ref<Change> {
+        self.change.as_ref().borrow()
+    }
+
+    fn as_mut_change(&mut self) -> cell::RefMut<Change> {
+        self.change.as_ref().borrow_mut()
+    }
+}
+
+impl NormalBuffer {
+    fn on_event(&mut self, c: &Context, evnt: Event) -> Result<Event> {
+        use crate::event::{Event::*, DP::*};
+
+        let (pe, evnt) = Self::fold_event(c, self.evnt_prefix.clone(), evnt)?;
+        self.evnt_prefix = pe;
+
+        let mut change = self.as_mut_change();
+        match evnt {
+            Noop => Ok(Noop),
+            // execute motion command.
+            N(n, box MtoLeft(dp)) => change.mto_left(n, dp),
+            N(n, box MtoRight(dp)) => change.mto_right(n, dp),
+            N(n, box MtoUp(dp)) => change.mto_up(n, dp),
+            N(n, box MtoDown(dp)) => change.mto_down(n, dp),
+            N(n, box MtoCol) => change.mto_column(n),
+            N(n, box MtoRow(dp)) => change.mto_row(n, dp),
+            N(n, box MtoPercent) => change.mto_percent(n),
+            N(_, box MtoHome(dp)) => change.mto_home(dp),
+            N(_, box MtoEnd) => change.mto_end(), // TODO: make this sticky.
+            N(n, box MtoCursor) => change.mto_cursor(n),
+            N(n, e @ box MtoCharF(_, _)) => change.mto_char(n, *e),
+            N(n, e @ box MtoCharT(_, _)) => change.mto_char(n, *e),
+            N(n, e @ box MtoWord(_, _)) => change.mto_words(n, *e),
+            N(n, e @ box MtoWWord(_, _)) => change.mto_wwords(n, *e),
+            N(n, e @ box MtoSentence(_)) => change.mto_sentence(n, *e),
+            N(n, e @ box MtoPara(_)) => change.mto_para(n, *e),
+            N(n, e @ box MtoBracket(_, _, _)) => change.mto_bracket(n, *e),
+            N(n, e @ box MtoPattern(Some(_), _)) => change.mto_pattern(n, *e),
+            // execute mode switching commands
+            N(n, box ModeInsert(Caret)) => {
+                change.mto_home(Caret)?;
+                Ok(N(n, Box::new(ModeInsert(Caret))))
+            }
+            N(n, e @ box ModeInsert(_)) => Ok(N(n, Box::new(*e))),
+            //Char('%', _) if m.is_empty() => {
+            //    self.as_mut_change().fwd_match_group();
+            //    Ok(Noop)
+            //}
+            evnt => Ok(evnt),
+        }
+    }
+
+    fn fold_event(c: &Context, ep: Event, evnt: Event) -> Result<(Event, Event)> {
+        use crate::event::{Event::*, DP::*};
+
+        let m = evnt.to_modifiers();
+        let wc = want_char!(ep);
+        let gp = g_prefix!(ep);
+
+        let evnt = match evnt {
             // find char
             Char(ch, _) if wc && m.is_empty() => MtoChar(ch),
             // g-prefix
@@ -95,7 +394,7 @@ macro_rules! normal_event {
             Char('j', _) if m.is_empty() => MtoUp(Nope),
             Char('k', _) if m.is_empty() => MtoDown(Nope),
             Char('+', _) if m.is_empty() => MtoDown(Caret),
-            Enter if m.is_empty() =>        MtoDown(Caret),
+            Enter if m.is_empty() => MtoDown(Caret),
             Char('|', _) if m.is_empty() => MtoCol,
             Char('G', _) if m.is_empty() => MtoRow(Caret),
             Char('%', _) if m.is_empty() => MtoPercent,
@@ -125,377 +424,76 @@ macro_rules! normal_event {
             Char('[', _) if m.is_empty() => B(Left),
             Char(']', _) if m.is_empty() => B(Right),
             evnt => evnt,
-        }
-    }};
-}
-
-macro_rules! change {
-    ($self:ident,$method:ident) => {
-        $self.as_mut_change().$method()
-    };
-    ($self:ident,$method:ident, $($s:expr),*) => {
-        $self.as_mut_change().$method($($s),*)
-    };
-}
-
-#[derive(Clone)]
-pub struct Context {
-    pub location: Location,
-    pub read_only: bool,
-    pub insert_only: bool,
-    pub evnt_mto_char: Option<Event>,
-    pub evnt_mto_patt: Option<Event>,
-    pub last_inserts: Vec<Event>,
-}
-
-impl Context {
-    pub fn set_location(&mut self, loc: Location) -> &mut Self {
-        self.location = loc;
-        self
-    }
-
-    pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
-        self.read_only = read_only;
-        self
-    }
-
-    pub fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
-        self.insert_only = insert_only;
-        self
-    }
-
-    pub fn to_location(&self) -> Location {
-        self.location.clone()
-    }
-}
-
-// all bits and pieces of content is managed by buffer.
-#[derive(Clone)]
-pub enum Buffer {
-    InsertBuffer(InsertBuffer),
-    NormalBuffer(NormalBuffer),
-}
-
-impl Default for Buffer {
-    fn default() -> Buffer {
-        Buffer::NormalBuffer(Default::default())
-    }
-}
-
-impl Buffer {
-    pub fn from_reader<R>(data: R) -> Result<Buffer>
-    where
-        R: io::Read,
-    {
-        let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
-        // trace!("first {:p}", &buf);
-        Ok(Buffer::NormalBuffer(NormalBuffer::new(buf)))
-    }
-
-    pub fn empty() -> Result<Buffer> {
-        let buf = vec![];
-        Self::from_reader(buf.as_slice())
-    }
-
-    pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
-        match self {
-            Buffer::NormalBuffer(val) => {
-                val.set_cursor(cursor);
-            }
-            Buffer::InsertBuffer(val) => {
-                val.set_cursor(cursor);
-            }
-        }
-        self
-    }
-}
-
-impl Buffer {
-    #[inline]
-    pub fn as_context(&self) -> &Context {
-        match self {
-            Buffer::NormalBuffer(val) => &val.c,
-            Buffer::InsertBuffer(val) => &val.c,
-        }
-    }
-
-    #[inline]
-    pub fn as_mut_context(&mut self) -> &mut Context {
-        match self {
-            Buffer::NormalBuffer(val) => &mut val.c,
-            Buffer::InsertBuffer(val) => &mut val.c,
-        }
-    }
-
-    #[inline]
-    pub fn to_string(&self) -> String {
-        self.as_change().as_ref().to_string()
-    }
-
-    #[inline]
-    pub fn to_id(&self) -> String {
-        match self.as_context().to_location() {
-            Location::Anonymous(s) => s,
-            Location::Disk(s) => s.to_str().unwrap().to_string(),
-        }
-    }
-
-    #[inline]
-    pub fn to_cursor(&self) -> usize {
-        self.as_change().to_cursor()
-    }
-
-    #[inline]
-    pub fn to_xy_cursor(&self) -> (usize, usize) {
-        self.as_change().to_xy_cursor()
-    }
-
-    #[inline]
-    pub fn lines_at(&self, n_row: usize) -> impl Iterator<Item = RopeSlice> {
-        let change = self.as_change();
-        Iter::new_lines_at(change, n_row)
-    }
-
-    pub fn handle_event(&mut self, evnt: Event) -> Result<Option<Event>> {
-        use crate::event::Event::*;
-
-        match self {
-            Buffer::NormalBuffer(nb) => {
-                let evnt = {
-                    let evnt = normal_event!(evnt, nb.evnt_prefix.clone());
-                    nb.handle_event(evnt)?
-                };
-                match evnt {
-                    None => Ok(None),
-                    Some(N(n, e)) if n > 1 && is_insert!(e.as_ref()) => {
-                        *self = {
-                            let mut ib: InsertBuffer = nb.clone().into();
-                            ib.handle_event(*e, false /*repeat*/)?;
-                            ib.repeat = n - 1;
-                            Buffer::InsertBuffer(ib)
-                        };
-                        Ok(None)
-                    }
-                    evnt => Ok(evnt),
-                }
-            }
-            Buffer::InsertBuffer(ib) => match ib.handle_event(evnt, false)? {
-                Some(ModeEsc) if !ib.c.insert_only => {
-                    ib.c.last_inserts = ib.repeat()?;
-                    *self = Buffer::NormalBuffer(ib.clone().into());
-                    Ok(None)
-                }
-                Some(evnt) => Ok(Some(evnt)),
-                None => Ok(None),
-            },
-        }
-    }
-
-    fn as_change(&self) -> cell::Ref<Change> {
-        match self {
-            Buffer::NormalBuffer(val) => val.as_change(),
-            Buffer::InsertBuffer(val) => val.as_change(),
-        }
-    }
-
-    // TODO
-    //fn as_mut_change(&mut self) -> cell::RefMut<Change> {
-    //    match self {
-    //        Buffer::NormalBuffer(val) => val.as_mut_change(),
-    //        Buffer::InsertBuffer(val) => val.as_mut_change(),
-    //    }
-    //}
-}
-
-#[derive(Clone)]
-pub struct NormalBuffer {
-    c: Context,
-    evnt_prefix: Option<Event>,
-    change: Rc<RefCell<Change>>,
-}
-
-impl From<InsertBuffer> for NormalBuffer {
-    fn from(ib: InsertBuffer) -> NormalBuffer {
-        NormalBuffer {
-            c: ib.c,
-            evnt_prefix: None,
-            change: ib.change,
-        }
-    }
-}
-
-impl Default for NormalBuffer {
-    fn default() -> NormalBuffer {
-        let c = Context {
-            location: Default::default(),
-            read_only: false,
-            insert_only: false,
-            evnt_mto_char: None,
-            evnt_mto_patt: None,
-            last_inserts: Default::default(),
         };
 
-        NormalBuffer {
-            c,
-            evnt_prefix: None,
-            change: Default::default(),
-        }
-    }
-}
+        let fc = c.evnt_mto_char.clone();
+        let pn = c.evnt_mto_patt.clone();
 
-impl NormalBuffer {
-    fn new(buf: Rope) -> NormalBuffer {
-        let mut nb: NormalBuffer = Default::default();
-        nb.change = Change::start(buf);
-        nb
-    }
-
-    fn set_cursor(&mut self, cursor: usize) -> &mut Self {
-        self.as_mut_change().set_cursor(cursor);
-        self
-    }
-
-    fn as_change(&self) -> cell::Ref<Change> {
-        self.change.as_ref().borrow()
-    }
-
-    fn as_mut_change(&mut self) -> cell::RefMut<Change> {
-        self.change.as_ref().borrow_mut()
-    }
-
-    fn fold_event(&mut self, evnt: Event) -> Result<Option<Event>> {
-        use crate::event::Event::*;
-
-        let fc = self.c.evnt_mto_char.clone();
-        let pn = self.c.evnt_mto_patt.clone();
-        let (pe, e) = match (self.evnt_prefix.take(), evnt) {
+        let (ep, evnt) = match (ep, evnt) {
             // Simple Move Prefix
-            (None, e @ MtoCharF(_, _)) => (Some(e), None),
-            (None, e @ MtoCharT(_, _)) => (Some(e), None),
+            (Noop, e @ MtoCharF(_, _)) => (e, Noop),
+            (Noop, e @ MtoCharT(_, _)) => (e, Noop),
             // N prefix
-            (None, Dec(ns)) => (Some(Dec(ns)), None),
-            (Some(Dec(mut ns)), Dec(ms)) => {
+            (Noop, Dec(ns)) => (Dec(ns), Noop),
+            (Dec(mut ns), Dec(ms)) => {
                 ns.extend(&ms);
-                (Some(Dec(ns)), None)
+                (Dec(ns), Noop)
             }
-            // N-Char prefix
             // N-G-prefix
-            (Some(N(n, box G(_))), MtoRow(dp)) => {
-                //
-                (None, Some(N(n, Box::new(MtoRow(dp)))))
-            }
-            (Some(N(n, box G(_))), MtoWord(d, p)) => {
-                //
-                (None, Some(N(n, Box::new(MtoWord(d, p)))))
-            }
-            (Some(N(n, box G(_))), MtoWWord(d, p)) => {
-                //
-                (None, Some(N(n, Box::new(MtoWWord(d, p)))))
-            }
-            (Some(N(n, box G(_))), MtoCursor) => {
-                //
-                (None, Some(N(n, Box::new(MtoCursor))))
-            }
-            (Some(N(n, box G(_))), ModeInsert(dp)) => {
-                //
-                (None, Some(N(n, Box::new(ModeInsert(dp)))))
-            }
+            (N(n, box G(_)), e @ MtoRow(_)) => (Noop, N(n, Box::new(e))),
+            (N(n, box G(_)), e @ MtoWord(_, _)) => (Noop, N(n, Box::new(e))),
+            (N(n, box G(_)), e @ MtoWWord(_, _)) => (Noop, N(n, Box::new(e))),
+            (N(n, box G(_)), e @ MtoCursor) => (Noop, N(n, Box::new(e))),
+            (N(n, box G(_)), e @ ModeInsert(_)) => (Noop, N(n, Box::new(e))),
             // N-B-prefix
-            (Some(N(n, box B(dp))), MtoChar(ch)) => match ch {
-                '(' => (None, Some(N(n, Box::new(MtoBracket('(', ')', dp))))),
-                ')' => (None, Some(N(n, Box::new(MtoBracket(')', '(', dp))))),
-                '{' => (None, Some(N(n, Box::new(MtoBracket('{', '}', dp))))),
-                '}' => (None, Some(N(n, Box::new(MtoBracket('}', '{', dp))))),
+            (N(n, box B(dp)), MtoChar(ch)) => match ch {
+                '(' => (Noop, N(n, Box::new(MtoBracket('(', ')', dp)))),
+                ')' => (Noop, N(n, Box::new(MtoBracket(')', '(', dp)))),
+                '{' => (Noop, N(n, Box::new(MtoBracket('{', '}', dp)))),
+                '}' => (Noop, N(n, Box::new(MtoBracket('}', '{', dp)))),
                 _ => unreachable!(),
             },
-            (Some(N(n, box e)), MtoChar(ch)) => match e {
-                MtoCharF(None, dp) => {
-                    let f_prefix = Box::new(MtoCharF(Some(ch), dp));
-                    (Some(N(n, f_prefix)), None)
-                }
-                MtoCharT(None, dp) => {
-                    let f_prefix = Box::new(MtoCharT(Some(ch), dp));
-                    (Some(N(n, f_prefix)), None)
-                }
-                _ => err_at!(Fatal, msg: format!("unreachable"))?,
-            },
+            (N(n, box MtoCharF(None, dp)), MtoChar(ch)) => {
+                let f_prefix = Box::new(MtoCharF(Some(ch), dp));
+                (N(n, f_prefix), Noop)
+            }
+            (N(n, box MtoCharT(None, dp)), MtoChar(ch)) => {
+                let f_prefix = Box::new(MtoCharT(Some(ch), dp));
+                (N(n, f_prefix), Noop)
+            }
+            (N(_, _), _) => {
+                err_at!(Fatal, msg: format!("unreachable"))?;
+                (Noop, Noop)
+            }
             // Commands
-            (Some(Dec(_)), MtoCharR(_)) if fc.is_none() => (None, None),
-            (Some(Dec(mut ns)), MtoCharR(dp)) if fc.is_none() => {
-                let e = fc.unwrap().transform(dp)?;
-                (Some(N(parse_n!(ns)?, Box::new(e))), None)
-            }
-            (Some(Dec(_)), MtoPattern(_, _)) if pn.is_none() => (None, None),
-            (Some(Dec(mut ns)), MtoPattern(None, dp)) => {
-                let e = pn.unwrap().transform(dp)?;
-                (Some(N(parse_n!(ns)?, Box::new(e))), None)
-            }
-            (Some(Dec(mut ns)), e) => (Some(N(parse_n!(ns)?, Box::new(e))), None),
-            (None, e) => (None, Some(N(1, Box::new(e)))),
-            (pe, e) => (pe, Some(e)),
+            (Dec(mut ns), MtoCharR(dp)) => match fc {
+                Noop => (Noop, Noop),
+                fc => (N(parse_n!(ns)?, Box::new(fc.transform(dp)?)), Noop),
+            },
+            (Dec(mut ns), MtoPattern(None, dp)) => match pn {
+                Noop => (Noop, Noop),
+                pn => (N(parse_n!(ns)?, Box::new(pn.transform(dp)?)), Noop),
+            },
+            (Dec(mut ns), e) => (N(parse_n!(ns)?, Box::new(e)), Noop),
+            (Noop, e) => (Noop, N(1, Box::new(e))),
+            (ep, e) => (ep, e),
         };
 
-        self.evnt_prefix = pe;
-
-        Ok(e)
-    }
-
-    fn handle_event(&mut self, mut evnt: Event) -> Result<Option<Event>> {
-        use crate::event::{Event::*, DP::*};
-
-        evnt = match self.fold_event(evnt)? {
-            Some(evnt) => evnt,
-            None => return Ok(None),
-        };
-        let mut change = self.as_mut_change();
-        match evnt {
-            // execute motion command.
-            N(n, box MtoLeft(dp)) => change.mto_left(n, dp),
-            N(n, box MtoRight(dp)) => change.mto_right(n, dp),
-            N(n, box MtoUp(dp)) => change.mto_up(n, dp),
-            N(n, box MtoDown(dp)) => change.mto_down(n, dp),
-            N(n, box MtoCol) => change.mto_column(n),
-            N(n, box MtoRow(dp)) => change.mto_row(n, dp),
-            N(n, box MtoPercent) => change.mto_percent(n),
-            N(_, box MtoHome(dp)) => change.mto_home(dp),
-            N(_, box MtoEnd) => change.mto_end(), // TODO: make this sticky.
-            N(n, box MtoCursor) => change.mto_cursor(n),
-            N(n, e @ box MtoCharF(_, _)) => change.mto_char(n, *e),
-            N(n, e @ box MtoCharT(_, _)) => change.mto_char(n, *e),
-            N(n, e @ box MtoWord(_, _)) => change.mto_words(n, *e),
-            N(n, e @ box MtoWWord(_, _)) => change.mto_wwords(n, *e),
-            N(n, e @ box MtoSentence(_)) => change.mto_sentence(n, *e),
-            N(n, e @ box MtoPara(_)) => change.mto_para(n, *e),
-            N(n, e @ box MtoBracket(_, _, _)) => change.mto_bracket(n, *e),
-            N(n, e @ box MtoPattern(Some(_), _)) => change.mto_pattern(n, *e),
-            // execute mode switching commands
-            N(n, box ModeInsert(Caret)) => {
-                change.mto_home(Caret)?;
-                Ok(Some(N(n, Box::new(ModeInsert(Caret)))))
-            }
-            N(n, e @ box ModeInsert(_)) => Ok(Some(N(n, Box::new(*e)))),
-            //Char('%', _) if m.is_empty() => {
-            //    self.as_mut_change().fwd_match_group();
-            //    Ok(None)
-            //}
-            evnt => Ok(Some(evnt)),
-        }
+        Ok((ep, evnt))
     }
 }
 
 #[derive(Clone)]
 pub struct InsertBuffer {
     repeat: usize,
-    c: Context,
-    change: Rc<RefCell<Change>>,
     last_inserts: Vec<Event>,
+    change: Rc<RefCell<Change>>,
 }
 
 impl From<NormalBuffer> for InsertBuffer {
     fn from(nb: NormalBuffer) -> InsertBuffer {
         InsertBuffer {
             repeat: 1,
-            c: nb.c,
             change: nb.change,
             last_inserts: Default::default(),
         }
@@ -504,18 +502,8 @@ impl From<NormalBuffer> for InsertBuffer {
 
 impl Default for InsertBuffer {
     fn default() -> InsertBuffer {
-        let c = Context {
-            location: Default::default(),
-            read_only: false,
-            insert_only: false,
-            evnt_mto_char: None,
-            evnt_mto_patt: None,
-            last_inserts: Default::default(),
-        };
-
         InsertBuffer {
             repeat: 1,
-            c,
             change: Default::default(),
             last_inserts: Default::default(),
         }
@@ -527,17 +515,15 @@ impl InsertBuffer {
         self.as_mut_change().set_cursor(cursor);
         self
     }
+}
 
+impl InsertBuffer {
     fn as_change(&self) -> cell::Ref<Change> {
         self.change.as_ref().borrow()
     }
 
     fn as_mut_change(&mut self) -> cell::RefMut<Change> {
         self.change.as_ref().borrow_mut()
-    }
-
-    pub fn as_mut_context(&mut self) -> &mut Context {
-        &mut self.c
     }
 
     fn to_repeat_evnts(&mut self) -> Vec<Event> {
@@ -560,19 +546,16 @@ impl InsertBuffer {
         let last_inserts: Vec<Event> = self.to_repeat_evnts();
         for _ in 0..self.repeat {
             for evnt in last_inserts.iter() {
-                self.handle_event(evnt.clone(), true)?;
+                self.on_event(evnt.clone(), true)?;
             }
         }
 
         Ok(last_inserts)
     }
+}
 
-    fn handle_event(
-        //
-        &mut self,
-        evnt: Event,
-        repeat: bool,
-    ) -> Result<Option<Event>> {
+impl InsertBuffer {
+    fn on_event(&mut self, evnt: Event, repeat: bool) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         if !repeat {
@@ -581,7 +564,7 @@ impl InsertBuffer {
 
         match evnt {
             // Start mode.
-            ModeInsert(_) => Ok(None),
+            ModeInsert(_) => Ok(Noop),
             ModeAppend(Right) => change!(self, mto_right, 1, Nobound),
             ModeAppend(End) => {
                 change!(self, mto_end)?;
@@ -596,7 +579,7 @@ impl InsertBuffer {
                 change!(self, mto_end)?;
                 change!(self, mto_right, 1, Nobound)?;
                 change!(self, insert_char, NL);
-                Ok(None)
+                Ok(Noop)
             }
             // movement
             MtoLeft(dp) => change!(self, mto_left, 1, dp),
@@ -608,35 +591,35 @@ impl InsertBuffer {
             // Handle mode events.
             Esc => {
                 change!(self, mto_left, 1, LineBound)?;
-                Ok(Some(ModeEsc))
+                Ok(ModeEsc)
             }
             // on going insert
             Char(ch, _) => {
                 self.change = Change::to_next_change(&mut self.change);
                 change!(self, insert_char, ch);
-                Ok(None)
+                Ok(Noop)
             }
             Backspace => {
                 self.change = Change::to_next_change(&mut self.change);
                 change!(self, backspace, 1);
-                Ok(None)
+                Ok(Noop)
             }
             Enter => {
                 self.change = Change::to_next_change(&mut self.change);
                 change!(self, insert_char, NL);
-                Ok(None)
+                Ok(Noop)
             }
             Tab => {
                 self.change = Change::to_next_change(&mut self.change);
                 change!(self, insert_char, '\t');
-                Ok(None)
+                Ok(Noop)
             }
             Delete => {
                 self.change = Change::to_next_change(&mut self.change);
                 change!(self, remove_at);
-                Ok(None)
+                Ok(Noop)
             }
-            evnt => Ok(Some(evnt)),
+            evnt => Ok(evnt),
         }
     }
 }
@@ -728,7 +711,6 @@ impl Change {
     }
 
     fn insert_char(&mut self, ch: char) {
-        // trace!("insert char {} {:p}", ch, &self.buf);
         self.buf.insert_char(self.cursor, ch);
         self.cursor += 1;
     }
@@ -748,7 +730,7 @@ impl Change {
 }
 
 impl Change {
-    fn mto_left(&mut self, n: usize, dp: DP) -> Result<Option<Event>> {
+    fn mto_left(&mut self, n: usize, dp: DP) -> Result<Event> {
         use crate::event::DP::*;
 
         self.cursor = match dp {
@@ -762,10 +744,10 @@ impl Change {
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }?;
 
-        Ok(None)
+        Ok(Event::Noop)
     }
 
-    fn mto_right(&mut self, n: usize, dp: DP) -> Result<Option<Event>> {
+    fn mto_right(&mut self, n: usize, dp: DP) -> Result<Event> {
         for ch in self.buf.chars_at(self.cursor).take(n) {
             if dp == DP::LineBound && ch == NL {
                 break;
@@ -773,14 +755,14 @@ impl Change {
             self.cursor += 1
         }
 
-        Ok(None)
+        Ok(Event::Noop)
     }
 
-    fn mto_up(&mut self, n: usize, pos: DP) -> Result<Option<Event>> {
+    fn mto_up(&mut self, n: usize, pos: DP) -> Result<Event> {
         use crate::event::DP::*;
 
         match self.buf.char_to_line(self.cursor) {
-            0 => Ok(None),
+            0 => Ok(Event::Noop),
             row => {
                 let row = row.saturating_sub(n);
                 self.cursor = {
@@ -793,18 +775,18 @@ impl Change {
                 if pos == Caret {
                     self.mto_home(Caret)?;
                 }
-                Ok(None)
+                Ok(Event::Noop)
             }
         }
     }
 
-    fn mto_down(&mut self, n: usize, pos: DP) -> Result<Option<Event>> {
+    fn mto_down(&mut self, n: usize, pos: DP) -> Result<Event> {
         use crate::event::DP::*;
 
         let row = self.buf.char_to_line(self.cursor);
         match self.buf.len_lines() {
-            0 => Ok(None),
-            n_rows if row == n_rows => Ok(None),
+            0 => Ok(Event::Noop),
+            n_rows if row == n_rows => Ok(Event::Noop),
             n_rows => {
                 let row = limite!(row.saturating_add(n), n_rows);
                 self.cursor = {
@@ -817,37 +799,37 @@ impl Change {
                 if pos == Caret {
                     self.mto_home(Caret)?;
                 }
-                Ok(None)
+                Ok(Event::Noop)
             }
         }
     }
 
-    fn mto_column(&mut self, n: usize) -> Result<Option<Event>> {
+    fn mto_column(&mut self, n: usize) -> Result<Event> {
         for ch in self.buf.chars_at(self.cursor).take(n) {
             if ch == NL {
                 break;
             }
             self.cursor += 1;
         }
-        Ok(None)
+        Ok(Event::Noop)
     }
 
-    fn mto_row(&mut self, n: usize, pos: DP) -> Result<Option<Event>> {
+    fn mto_row(&mut self, n: usize, pos: DP) -> Result<Event> {
         let row = self.buf.char_to_line(self.cursor);
         match self.buf.len_lines() {
-            0 => Ok(None),
+            0 => Ok(Event::Noop),
             _ if n < row => self.mto_up(row - n, pos),
             n_rows if n < n_rows => self.mto_up(n - row, pos),
-            _ => Ok(None),
+            _ => Ok(Event::Noop),
         }
     }
 
-    fn mto_percent(&mut self, n: usize) -> Result<Option<Event>> {
+    fn mto_percent(&mut self, n: usize) -> Result<Event> {
         use crate::event::DP::*;
 
         let row = self.buf.char_to_line(self.cursor);
         match self.buf.len_lines() {
-            0 => Ok(None),
+            0 => Ok(Event::Noop),
             mut n_rows if n < 100 => {
                 n_rows -= 1;
                 let n = (((n_rows as f64) * (n as f64)) / (100 as f64)) as usize;
@@ -857,26 +839,26 @@ impl Change {
                     self.mto_down(n - row, Nope)
                 }
             }
-            _ => Ok(None),
+            _ => Ok(Event::Noop),
         }
     }
 
-    fn mto_cursor(&mut self, n: usize) -> Result<Option<Event>> {
+    fn mto_cursor(&mut self, n: usize) -> Result<Event> {
         self.cursor = limite!(self.cursor + n, self.buf.len_chars());
-        Ok(None)
+        Ok(Event::Noop)
     }
 
-    fn mto_home(&mut self, pos: DP) -> Result<Option<Event>> {
+    fn mto_home(&mut self, pos: DP) -> Result<Event> {
         use crate::event::DP::*;
 
         self.cursor = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
         if pos == Caret {
             self.skip_whitespace(Right);
         }
-        Ok(None)
+        Ok(Event::Noop)
     }
 
-    fn mto_end(&mut self) -> Result<Option<Event>> {
+    fn mto_end(&mut self) -> Result<Event> {
         let mut iter = self.buf.chars_at(self.cursor);
         let mut cursor = self.cursor;
         loop {
@@ -887,10 +869,10 @@ impl Change {
             }
         }
         self.cursor = cursor;
-        Ok(None)
+        Ok(Event::Noop)
     }
 
-    fn mto_char(&mut self, mut n: usize, evnt: Event) -> Result<Option<Event>> {
+    fn mto_char(&mut self, mut n: usize, evnt: Event) -> Result<Event> {
         use crate::event::DP::*;
 
         let (ch, dp, pos) = match evnt {
@@ -935,10 +917,10 @@ impl Change {
             _ => unreachable!(),
         };
 
-        Ok(None)
+        Ok(Event::Noop)
     }
 
-    fn mto_words(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
+    fn mto_words(&mut self, n: usize, evnt: Event) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         match evnt {
@@ -962,7 +944,7 @@ impl Change {
                         _ => unreachable!(),
                     }
                 }
-                Ok(None)
+                Ok(Event::Noop)
             }
             MtoWord(Right, pos) => {
                 for _ in 0..n {
@@ -984,13 +966,13 @@ impl Change {
                         _ => unreachable!(),
                     }
                 }
-                Ok(None)
+                Ok(Event::Noop)
             }
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
-    fn mto_wwords(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
+    fn mto_wwords(&mut self, n: usize, evnt: Event) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         match evnt {
@@ -1014,7 +996,7 @@ impl Change {
                         _ => unreachable!(),
                     }
                 }
-                Ok(None)
+                Ok(Event::Noop)
             }
             MtoWWord(Right, pos) => {
                 for _ in 0..n {
@@ -1036,13 +1018,13 @@ impl Change {
                         _ => unreachable!(),
                     }
                 }
-                Ok(None)
+                Ok(Event::Noop)
             }
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
-    fn mto_sentence(&mut self, mut n: usize, e: Event) -> Result<Option<Event>> {
+    fn mto_sentence(&mut self, mut n: usize, e: Event) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         let is_ws = |ch: char| ch.is_whitespace();
@@ -1106,10 +1088,10 @@ impl Change {
 
         self.skip_whitespace(Right);
 
-        Ok(None)
+        Ok(Event::Noop)
     }
 
-    fn mto_para(&mut self, mut n: usize, evnt: Event) -> Result<Option<Event>> {
+    fn mto_para(&mut self, mut n: usize, evnt: Event) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         let row = self.buf.char_to_line(self.cursor);
@@ -1151,10 +1133,10 @@ impl Change {
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }?;
 
-        Ok(None)
+        Ok(Event::Noop)
     }
 
-    fn mto_bracket(&mut self, mut n: usize, e: Event) -> Result<Option<Event>> {
+    fn mto_bracket(&mut self, mut n: usize, e: Event) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         let mut m = 0;
@@ -1192,10 +1174,10 @@ impl Change {
         }
 
         self.cursor = cursor;
-        Ok(None)
+        Ok(Event::Noop)
     }
 
-    fn mto_pattern(&mut self, n: usize, evnt: Event) -> Result<Option<Event>> {
+    fn mto_pattern(&mut self, n: usize, evnt: Event) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         let (pattern, dp) = match evnt {
@@ -1226,7 +1208,7 @@ impl Change {
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }?;
 
-        Ok(None)
+        Ok(Event::Noop)
     }
 
     fn skip_whitespace(&mut self, dp: DP) -> usize {
@@ -1315,6 +1297,11 @@ impl Change {
 }
 
 impl Change {
+    fn to_col(&self) -> usize {
+        let a_char = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
+        self.cursor - a_char
+    }
+
     fn lines_at(&self, n_row: usize) -> ropey::iter::Lines {
         self.buf.lines_at(n_row)
     }
@@ -1359,11 +1346,6 @@ impl Change {
             Right => Box::new(lines),
             _ => unreachable!(),
         }
-    }
-
-    fn to_col(&self) -> usize {
-        let a_char = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
-        self.cursor - a_char
     }
 }
 

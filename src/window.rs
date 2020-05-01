@@ -59,6 +59,7 @@ macro_rules! span {
         Span::new(&format!($($s),*))
     }};
 }
+
 pub trait Window {
     fn to_origin(&self) -> (u16, u16);
 
@@ -68,12 +69,7 @@ pub trait Window {
 
     fn resize_to(&mut self, height: u16, width: u16, context: &Context);
 
-    fn handle_event(
-        //
-        &mut self,
-        ctxt: &mut Context,
-        evnt: Event,
-    ) -> Result<Option<Event>>;
+    fn on_event(&mut self, ctxt: &mut Context, evnt: Event) -> Result<Event>;
 
     fn refresh(&mut self, ctxt: &mut Context) -> Result<()>;
 }

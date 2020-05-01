@@ -203,20 +203,15 @@ impl Window for WindowEdit {
         self.refresh_nowrap(context)
     }
 
-    fn handle_event(
-        //
-        &mut self,
-        context: &mut Context,
-        evnt: Event,
-    ) -> Result<Option<Event>> {
+    fn on_event(&mut self, context: &mut Context, evnt: Event) -> Result<Event> {
         match evnt {
             Event::UseBuffer { buffer_id } => {
                 self.buffer_id = buffer_id;
-                Ok(None)
+                Ok(Event::Noop)
             }
             evnt => {
                 let buffer = context.as_mut_buffer(&self.buffer_id);
-                buffer.handle_event(evnt)
+                buffer.on_event(evnt)
             }
         }
     }

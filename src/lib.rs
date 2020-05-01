@@ -8,6 +8,7 @@ pub mod buffer;
 pub mod config;
 pub mod event;
 pub mod location;
+pub mod plugin;
 mod search;
 pub mod stats;
 #[macro_use]

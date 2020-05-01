@@ -131,10 +131,10 @@ impl Application {
             Event::OpenFiles { flocs }
         };
 
-        app.event_loop(Some(evnt))
+        app.event_loop(evnt)
     }
 
-    fn event_loop(mut self, mut evnt: Option<Event>) -> Result<()> {
+    fn event_loop(mut self, mut evnt: Event) -> Result<()> {
         let mut stats_a = stats::Latency::new();
         let mut stats_z = stats::Latency::new();
 
@@ -143,12 +143,9 @@ impl Application {
         let res = loop {
             let start = SystemTime::now();
             // app-handle bubble up event.
-            self = match evnt {
-                Some(evnt) => match self.handle_up(evnt)? {
-                    Some(app) => app,
-                    None => break Ok(()),
-                },
-                None => self,
+            self = match self.handle_up(evnt)? {
+                Some(app) => app,
+                None => break Ok(()),
             };
 
             err_at!(Fatal, self.dispatch_refresh())?;
@@ -164,14 +161,14 @@ impl Application {
             evnt = {
                 let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
                 trace!("Event-{:?} Cursor:({},{})", tevnt, col, row);
-                Some(tevnt.clone().into())
+                tevnt.clone().into()
             };
 
             let start = SystemTime::now();
             // hide-cursor
             err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
             // app-handle bubble down event
-            self = self.handle_down(evnt.clone().unwrap())?;
+            self = self.handle_down(evnt.clone())?;
             // event handling
             evnt = self.dispatch_event(evnt)?;
             stats_z.sample(start.elapsed().unwrap());
@@ -183,14 +180,10 @@ impl Application {
         res
     }
 
-    fn dispatch_event(
-        //
-        &mut self,
-        mut evnt: Option<Event>,
-    ) -> Result<Option<Event>> {
+    fn dispatch_event(&mut self, mut evnt: Event) -> Result<Event> {
         self.inner = match self.inner.take() {
             Some(InnerApp::Usual { mut window }) => {
-                evnt = window.handle_event(&mut self.context, evnt.unwrap())?;
+                evnt = window.on_event(&mut self.context, evnt)?;
                 Some(InnerApp::Usual { window })
             }
             Some(InnerApp::OpenFiles {
@@ -199,7 +192,7 @@ impl Application {
                 flocs,
                 fds,
             }) => {
-                evnt = window.handle_event(&mut self.context, evnt.unwrap())?;
+                evnt = window.on_event(&mut self.context, evnt)?;
                 Some(InnerApp::OpenFiles {
                     pw,
                     window,
@@ -237,7 +230,7 @@ impl Application {
 
                 let mut inner = self.inner.take().unwrap();
                 let window = inner.as_mut_window();
-                window.handle_event(
+                window.on_event(
                     //
                     &mut self.context,
                     Event::UseBuffer { buffer_id },

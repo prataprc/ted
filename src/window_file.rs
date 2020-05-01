@@ -121,12 +121,7 @@ impl Window for WindowFile {
         self.we.refresh(context)
     }
 
-    fn handle_event(
-        //
-        &mut self,
-        context: &mut Context,
-        evnt: Event,
-    ) -> Result<Option<Event>> {
-        self.we.handle_event(context, evnt)
+    fn on_event(&mut self, context: &mut Context, evnt: Event) -> Result<Event> {
+        self.we.on_event(context, evnt)
     }
 }
