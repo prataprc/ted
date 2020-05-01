@@ -75,67 +75,28 @@ fn main() {
 struct Application {
     tm: Terminal,
     s: State,
-    inner: Inner,
-}
-
-enum Inner {
-    OpenFiles {
-        pw: WindowPrompt,
-        window: Box<dyn Window>,
-        flocs: Vec<event::OpenFile>,
-        fds: Vec<event::OpenFile>,
-    },
-    Usual {
-        window: Box<dyn Window>,
-    },
-    None,
-}
-
-impl Default for Inner {
-    fn default() -> Inner {
-        Inner::None
-    }
-}
-
-impl Inner {
-    fn as_mut_window(&mut self) -> &mut Box<(dyn ted::window::Window + 'static)> {
-        match self {
-            Inner::Usual { window } => window,
-            Inner::OpenFiles { window, .. } => window,
-            _ => todo!(),
-        }
-    }
 }
 
 impl Application {
-    fn to_window_cursor(&self) -> Cursor {
-        match &self.inner {
-            Inner::Usual { window } => window.to_cursor(),
-            Inner::OpenFiles { window, .. } => window.to_cursor(),
-            _ => todo!(),
-        }
-    }
-
     fn run(opts: Opt) -> Result<()> {
         let config: Config = Default::default();
         let app = {
             let tm = Terminal::init()?;
-            let coord = Coord::new(1, 1, tm.rows, tm.cols);
-            let window = err_at!(Fatal, WindowFile::new(coord))?;
-            Application {
-                tm,
-                s: State::new(config),
-                inner: Inner::Usual {
-                    window: Box::new(window),
-                },
-            }
+            let s = {
+                let coord = Coord::new(1, 1, tm.rows, tm.cols);
+                let w = err_at!(Fatal, WindowFile::new(coord))?;
+                State::new(config, w)
+            };
+            Application { tm, s }
         };
 
         let evnt = if opts.files.len() == 0 {
             Event::NewBuffer
         } else {
-            let flocs: Vec<event::OpenFile> =
-                opts.files.clone().into_iter().map(Into::into).collect();
+            let flocs: Vec<Location> = {
+                let iter = opts.files.clone().into_iter();
+                iter.map(Into::into).collect()
+            };
             Event::OpenFiles { flocs }
         };
 
@@ -143,129 +104,81 @@ impl Application {
     }
 
     fn event_loop(mut self, mut evnt: Event) -> Result<()> {
-        let mut stats_a = stats::Latency::new();
-        let mut stats_z = stats::Latency::new();
+        let mut stats = stats::Latency::new();
+
+        let mut s = mem::replace(&self.s, Default::default());
 
         // TODO: later statistics can be moved to a different release stream
         // and or controlled by command line option.
         let res = loop {
-            let start = SystemTime::now();
-            // app-handle bubble up event.
-            self = match self.handle_up(evnt)? {
-                Some(app) => app,
-                None => break Ok(()),
+            // hide cursor, handle event and refresh window
+            evnt = match evnt {
+                Event::Noop => Event::Noop,
+                evnt => {
+                    err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
+                    on_win_event!(s, evnt);
+                    err_at!(Fatal, on_win_refresh!(s))?;
+                    mem::replace(&mut s.event, Default::default())
+                }
             };
 
-            err_at!(Fatal, self.dispatch_refresh())?;
-
             // show-cursor
-            let Cursor { col, row } = self.to_window_cursor();
+            let Cursor { col, row } = s.to_window_cursor();
             err_at!(Fatal, queue!(self.tm.stdout, cursor::MoveTo(col, row)))?;
             err_at!(Fatal, queue!(self.tm.stdout, cursor::Show))?;
             err_at!(Fatal, self.tm.stdout.flush())?;
-            stats_a.sample(start.elapsed().unwrap());
+
+            stats.sample(start.elapsed().unwrap());
 
             // new event
             evnt = {
                 let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
                 trace!("Event-{:?} Cursor:({},{})", tevnt, col, row);
-                tevnt.clone().into()
+                match tevnt.clone().into() {
+                    Event::Char('q', m) if m.is_empty() => break Ok(()),
+                    evnt => evnt,
+                }
             };
 
             let start = SystemTime::now();
-            // hide-cursor
-            err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
-            // app-handle bubble down event
-            self = self.handle_down(evnt.clone())?;
-            // event handling
-            evnt = self.dispatch_event(evnt)?;
-            stats_z.sample(start.elapsed().unwrap());
         };
 
-        stats_a.pretty_print("");
-        stats_z.pretty_print("");
+        stats.pretty_print("");
 
         res
     }
 
-    fn dispatch_event(&mut self, mut evnt: Event) -> Result<Event> {
-        let mut inner = mem::replace(&mut self.inner, Default::default());
-        evnt = inner.as_mut_window().on_event(&mut self.s, evnt)?;
-        self.inner = inner;
+    //fn do_open_files(mut self, mut flocs: Vec<event::OpenFile>) -> Result<Self> {
+    //    let inner = mem::replace(&mut self.inner, Default::default());
+    //    self.inner = match inner {
+    //        Inner::Usual { window } => {
+    //            let mut fds = vec![];
+    //            loop {
+    //                let floc = flocs.remove(0);
+    //                let pw: Result<WindowPrompt> = floc.clone().try_into();
+    //                match pw {
+    //                    Err(_) => {
+    //                        fds.push(floc);
+    //                        break Inner::Usual { window };
+    //                    }
+    //                    Ok(pw) => {
+    //                        flocs.insert(0, floc);
+    //                        break Inner::OpenFiles {
+    //                            pw,
+    //                            window,
+    //                            flocs,
+    //                            fds,
+    //                        };
+    //                    }
+    //                }
+    //            }
+    //        }
+    //        val @ Inner::OpenFiles { .. } => val,
+    //        Inner::None => err_at!(Fatal, msg: format!("unreachable"))?,
+    //    };
 
-        Ok(evnt)
-    }
-
-    fn dispatch_refresh(&mut self) -> Result<()> {
-        let mut inner = mem::replace(&mut self.inner, Default::default());
-        let res = inner.as_mut_window().refresh(&mut self.s);
-        self.inner = inner;
-        res
-    }
-
-    fn handle_up(mut self, evnt: Event) -> Result<Option<Self>> {
-        match evnt {
-            Event::NewBuffer => {
-                let (buffer_id, buffer) = {
-                    let mut b = Buffer::empty()?;
-                    b.as_mut_context().set_location(Default::default());
-                    (b.to_id(), b)
-                };
-
-                self.s.buffers.push(buffer);
-
-                let mut inner = mem::replace(&mut self.inner, Default::default());
-                inner
-                    .as_mut_window()
-                    .on_event(&mut self.s, Event::UseBuffer { buffer_id })?;
-                self.inner = inner;
-
-                Ok(Some(self))
-            }
-            Event::OpenFiles { flocs } if flocs.len() > 0 => {
-                //
-                self.handle_open_files(flocs).map(|x| Some(x))
-            }
-            Event::Char('q', m) if m.is_empty() => Ok(None),
-            _ => Ok(Some(self)),
-        }
-    }
-
-    fn handle_down(self, _evnt: Event) -> Result<Self> {
-        Ok(self)
-    }
-
-    fn handle_open_files(mut self, mut flocs: Vec<event::OpenFile>) -> Result<Self> {
-        let inner = mem::replace(&mut self.inner, Default::default());
-        self.inner = match inner {
-            Inner::Usual { window } => {
-                let mut fds = vec![];
-                loop {
-                    let floc = flocs.remove(0);
-                    let pw: Result<WindowPrompt> = floc.clone().try_into();
-                    match pw {
-                        Err(_) => {
-                            fds.push(floc);
-                            break Inner::Usual { window };
-                        }
-                        Ok(pw) => {
-                            flocs.insert(0, floc);
-                            break Inner::OpenFiles {
-                                pw,
-                                window,
-                                flocs,
-                                fds,
-                            };
-                        }
-                    }
-                }
-            }
-            val @ Inner::OpenFiles { .. } => val,
-            Inner::None => err_at!(Fatal, msg: format!("unreachable"))?,
-        };
-
-        Ok(self)
-    }
+    //    Ok(self)
+    //}
 }
 
 struct Terminal {

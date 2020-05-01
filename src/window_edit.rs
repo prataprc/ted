@@ -93,14 +93,14 @@ impl WindowEdit {
         col.try_into().unwrap()
     }
 
-    fn refresh_nowrap(&mut self, s: &mut State) -> Result<()> {
+    fn refresh_nowrap(&mut self, mut s: State) -> Result<State> {
         use std::iter::repeat;
 
         let new_bc = s.as_mut_buffer(&self.buffer_id).to_xy_cursor();
         let (hgt, wth) = self.coord.to_size();
         let (cursor, nu_wth) = {
-            let (crow, nu_wth) = self.align_to_row(s);
-            let ccol = self.align_to_col(s, nu_wth);
+            let (crow, nu_wth) = self.align_to_row(&s);
+            let ccol = self.align_to_col(&s, nu_wth);
             (cursor!(ccol, crow), nu_wth)
         };
 
@@ -137,34 +137,34 @@ impl WindowEdit {
         let lines = buf.lines_at(from).map(do_padding);
         let mrgn_wth = nu_wth.saturating_sub(1) as usize;
         for (i, line) in lines.take(hgt as usize).enumerate() {
-            let mut s: String = if_else!(
+            let mut st: String = if_else!(
                 s.config.line_number,
                 format!("{:>width$} ", from + i + 1, width = mrgn_wth),
                 Default::default()
             );
             let s_line = String::from_iter(line);
             // trace!("bufline col:{} row:{} line:{:?}", col, row, s_line);
-            s.push_str(&s_line);
-            err_at!(Fatal, queue!(stdout, span!((col, row), st: s)))?;
+            st.push_str(&s_line);
+            err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
             row += 1;
         }
         for _ in row..hgt {
-            let mut s: String = if_else!(
+            let mut st: String = if_else!(
                 s.config.line_number,
                 format!("{} ", '~'),
                 Default::default()
             );
-            s.push_str(&{
+            st.push_str(&{
                 let iter = repeat(' ').take((wth - 2) as usize);
                 String::from_iter(iter)
             });
-            // trace!("empline col:{} row:{} line:{:?}", col, row, s.len());
-            err_at!(Fatal, queue!(stdout, span!((col, row), st: s)))?;
+            // trace!("empline col:{} row:{} line:{:?}", col, row, st.len());
+            err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
             row += 1;
         }
         assert!(row == hgt);
 
-        Ok(())
+        Ok(s)
     }
 }
 
@@ -198,19 +198,26 @@ impl Window for WindowEdit {
         };
     }
 
-    fn refresh(&mut self, s: &mut State) -> Result<()> {
+    fn on_refresh(&mut self, s: State) -> Result<State> {
         self.refresh_nowrap(s)
     }
 
-    fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
-        match evnt {
+    fn on_event(&mut self, mut s: State) -> Result<State> {
+        match mem::replace(&mut s.event, Default::default()) {
             Event::UseBuffer { buffer_id } => {
                 self.buffer_id = buffer_id;
-                Ok(Event::Noop)
+                Ok(s)
             }
             evnt => {
-                let buffer = s.as_mut_buffer(&self.buffer_id);
-                buffer.on_event(evnt)
+                s.event = evnt;
+                Ok(match s.take_buffer(&self.buffer_id) {
+                    Some(buffer) => {
+                        let s = buffer.on_event(s)?;
+                        s.add_buffer(buffer);
+                        s
+                    }
+                    None => s,
+                })
             }
         }
     }

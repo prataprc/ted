@@ -10,10 +10,11 @@ use std::{
 };
 
 use crate::{
-    event::{Context, Event, DP},
+    event::{Event, DP},
     location::Location,
     plugin::Plugin,
     search::Search,
+    window::State,
     {err_at, Error, Result},
 };
 
@@ -68,6 +69,74 @@ macro_rules! change {
     ($self:ident,$method:ident, $($s:expr),*) => {
         $self.as_mut_change().$method($($s),*)
     };
+}
+
+#[derive(Clone)]
+pub struct Context {
+    s: Option<State>,
+    e: Option<Event>,
+    location: Location,
+    read_only: bool,
+    insert_only: bool,
+    evnt_mto_char: Event,
+    evnt_mto_patt: Event,
+    last_inserts: Vec<Event>,
+}
+
+impl Default for Context {
+    fn default() -> Context {
+        use crate::event::Event::*;
+
+        Context {
+            location: Default::default(),
+            read_only: false,
+            insert_only: false,
+            evnt_mto_char: Noop,
+            evnt_mto_patt: Noop,
+            last_inserts: Default::default(),
+        }
+    }
+}
+
+impl Context {
+    pub fn set_location(&mut self, loc: Location) -> &mut Self {
+        self.location = loc;
+        self
+    }
+
+    pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
+        self.read_only = read_only;
+        self
+    }
+
+    pub fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
+        self.insert_only = insert_only;
+        self
+    }
+
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
+    }
+
+    pub fn is_insert_only(&self) -> bool {
+        self.insert_only
+    }
+
+    pub fn to_location(&self) -> Location {
+        self.location.clone()
+    }
+
+    pub fn to_mto_char(&self) -> Event {
+        self.evnt_mto_char.clone()
+    }
+
+    pub fn to_mto_pattern(&self) -> Event {
+        self.evnt_mto_patt.clone()
+    }
+
+    pub fn to_inserts(&self) -> Vec<Event> {
+        self.last_inserts.clone()
+    }
 }
 
 // all bits and pieces of content is managed by buffer.
@@ -191,17 +260,18 @@ impl Buffer {
         Iter::new_lines_at(change, n_row)
     }
 
-    pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, mut s: State) -> Result<State> {
         use crate::event::Event::*;
 
+        let evnt = mem::replace(&mut s.event, Default::default());
         let inner = mem::replace(&mut self.inner, Default::default());
         let (inner, evnt) = match inner {
-            Inner::Normal(mut nb) => match nb.on_event(&self.c, evnt)? {
+            Inner::Normal(mut nb) => match nb.on_event(s, &self.c, evnt)? {
                 Noop => (Inner::Normal(nb), Ok(Noop)),
                 N(n, e) if n > 1 && is_insert!(e.as_ref()) => {
                     let ib = {
                         let mut ib: InsertBuffer = nb.into();
-                        ib.on_event(*e, false /*repeat*/)?;
+                        ib.on_event(s, *e, false /*repeat*/)?;
                         ib.repeat = n - 1;
                         ib
                     };
@@ -209,7 +279,7 @@ impl Buffer {
                 }
                 evnt => (Inner::Normal(nb), Ok(evnt)),
             },
-            Inner::Insert(mut ib) => match ib.on_event(evnt, false)? {
+            Inner::Insert(mut ib) => match ib.on_event(s, evnt, false)? {
                 ModeEsc if !self.c.insert_only => {
                     self.c.last_inserts = ib.repeat()?;
                     (Inner::Normal(ib.into()), Ok(Noop))
@@ -219,7 +289,9 @@ impl Buffer {
         };
 
         self.inner = inner;
-        evnt
+        s.event = evnt;
+
+        Ok(s)
     }
 }
 

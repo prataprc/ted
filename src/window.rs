@@ -60,34 +60,65 @@ macro_rules! span {
     }};
 }
 
-pub trait Window {
-    fn to_origin(&self) -> (u16, u16);
-
-    fn to_cursor(&self) -> Cursor;
-
-    fn move_by(&mut self, s: &State, col_off: i16, row_off: i16);
-
-    fn resize_to(&mut self, s: &State, height: u16, width: u16);
-
-    fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event>;
-
-    fn refresh(&mut self, s: &mut State) -> Result<()>;
+#[macro_export]
+macro_rules! on_win_event {
+    ($state:expr, $evnt:expr) => {{
+        match $state.window.take() {
+            Some(window) => {
+                $state.event = $evnt;
+                let s = window.on_event($state)?;
+                s.window = Some(window);
+            },
+            None => (),
+        };
+    }}
 }
 
-// Application s.
+#[macro_export]
+macro_rules! on_win_refresh {
+    ($state:expr) => {{
+        match $state.window.take() {
+            Some(window) => {
+                let s = window.on_refresh($state)?;
+                s.window = Some(window);
+            },
+            None => None,
+        };
+    }}
+}
+
+// Application state
 pub struct State {
-    pub buffers: Vec<Buffer>,
-    pub config: Config,
+    buffers: Vec<Buffer>,
+    config: Config,
+    window: Option<WindowFile>,
+    event: Event,
+}
+
+impl Default for State {
+    fn default() -> State {
+        let coord: Coord = Default::default(),
+        State {
+            buffers: Default::default(),
+            config: Default::default(),
+            window: WindowFile::new(coord),
+            event: Default::default(),
+        }
+    }
 }
 
 impl State {
-    pub fn new(config: Config) -> State {
+    pub fn new(config: Config, window: WindowFile) -> State {
         State {
             buffers: Default::default(),
             config,
+            window,
+            event: Default::default(),
         }
     }
+}
 
+impl State {
     pub fn as_buffer(&self, id: &str) -> &Buffer {
         for b in self.buffers.iter() {
             if b.to_id() == id {
@@ -104,6 +135,31 @@ impl State {
             }
         }
         unreachable!()
+    }
+
+    pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
+        let i = {
+            let iter = self.buffers.iter().enumerate();
+            loop {
+                match iter.next() {
+                    Some((i, b)) if b.to_id() == id => break Some(i),
+                    None => break None
+                    _ => ()
+                }
+            }
+        };
+        match i {
+            Some(i) => Some(self.buffers.remove(i)),
+            None => None,
+        }
+    }
+
+    pub fn add_buffer(&mut self, buffer: Buffer) {
+        self.buffers.insert(0, buffer)
+    }
+
+    pub fn to_window_cursor(&self) -> Cursor {
+        self.app.as_window().to_cursor()
     }
 }
 

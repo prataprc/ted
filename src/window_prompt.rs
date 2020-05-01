@@ -88,7 +88,7 @@ impl WindowPrompt {
     }
 }
 
-impl Window for WindowPrompt {
+impl WindowPrompt {
     #[inline]
     fn to_origin(&self) -> (u16, u16) {
         self.coord.to_origin()
@@ -109,7 +109,7 @@ impl Window for WindowPrompt {
         self.coord = self.coord.clone().resize_to(height, width);
     }
 
-    fn refresh(&mut self, _: &mut State) -> Result<()> {
+    fn on_refresh(&mut self, s: State) -> Result<State> {
         let mut stdout = io::stdout();
 
         if !self.rendered {
@@ -130,23 +130,24 @@ impl Window for WindowPrompt {
             err_at!(Fatal, queue!(stdout, cursor::MoveTo(col, row)))?;
         }
 
-        Ok(())
+        Ok(s)
     }
 
-    fn on_event(&mut self, _: &mut State, evnt: Event) -> Result<Event> {
-        match evnt {
+    fn on_event(&mut self, mut s: State) -> Result<State> {
+        s.event = match mem::replace(&mut s.event, Default::default()) {
             Event::Backspace => {
                 self.input.pop();
-                Ok(Event::Noop)
+                Event::Noop
             }
-            Event::Enter => Ok(Event::PromptReply {
+            Event::Enter => Event::PromptReply {
                 input: self.input.clone(),
-            }),
+            },
             Event::Char(ch, _m) => {
                 self.input.push(ch);
-                Ok(Event::Noop)
+                Event::Noop
             }
-            _ => Ok(Event::Noop),
-        }
+            _ => Event::Noop,
+        };
+        Ok(s)
     }
 }

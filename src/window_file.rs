@@ -66,7 +66,7 @@ impl WindowFile {
         }
     }
 
-    fn do_refresh(&mut self, s: &mut State) -> Result<()> {
+    fn do_refresh(&mut self, mut s: State) -> Result<State> {
         use std::iter::repeat;
 
         let Cursor { col, row } = self.coord.to_top_left();
@@ -88,7 +88,7 @@ impl WindowFile {
             }
         }
 
-        Ok(())
+        Ok(s)
     }
 }
 
@@ -113,12 +113,25 @@ impl Window for WindowFile {
         self.coord = self.coord.clone().resize_to(height, width);
     }
 
-    fn refresh(&mut self, s: &mut State) -> Result<()> {
+    fn on_refresh(&mut self, mut s: State) -> Result<State> {
         self.do_refresh(s)?;
         self.we.refresh(s)
     }
 
-    fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
-        self.we.on_event(s, evnt)
+    fn on_event(&mut self, s: mut State) -> Result<State> {
+        let mut evnt = mem::replace(&mut s.event, Default::default());
+        s.event = match evnt {
+            Event::NewBuffer => {
+                let (buffer_id, buffer) = {
+                    let mut b = Buffer::empty()?;
+                    b.as_mut_context().set_location(Default::default());
+                    (b.to_id(), b)
+                };
+                s.buffers.push(buffer);
+                Event::UseBuffer { buffer_id }
+            }
+            evnt => evnt,
+        };
+        self.we.on_event(s)
     }
 }
