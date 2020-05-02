@@ -3,9 +3,7 @@ use ropey::{self, Rope, RopeSlice};
 use std::{
     borrow::Borrow,
     cell::{self, RefCell},
-    cmp, io,
-    iter::FromIterator,
-    mem,
+    cmp, io, mem,
     rc::{self, Rc},
 };
 
@@ -33,10 +31,10 @@ macro_rules! is_insert {
 
 macro_rules! change {
     ($self:ident,$method:ident) => {
-        $self.as_mut_change().$method()
+        $self.to_mut_change().$method()
     };
     ($self:ident,$method:ident, $($s:expr),*) => {
-        $self.as_mut_change().$method($($s),*)
+        $self.to_mut_change().$method($($s),*)
     };
 }
 
@@ -75,6 +73,7 @@ impl Default for Buffer {
             evnt_mto_char: Event::Noop,
             evnt_mto_patt: Event::Noop,
             last_inserts: Default::default(),
+            keymap: Default::default(),
 
             inner: Default::default(),
         }
@@ -94,6 +93,7 @@ impl Buffer {
             evnt_mto_char: Event::Noop,
             evnt_mto_patt: Event::Noop,
             last_inserts: Default::default(),
+            keymap: Default::default(),
 
             inner: Inner::Normal(NormalBuffer::new(buf)),
         })
@@ -138,30 +138,38 @@ impl Buffer {
 
     pub fn set_event_prefix(&mut self, prefix: Event) -> &mut Self {
         match &mut self.inner {
-            Inner::Insert(_) => Event::Noop,
-            Inner::Normal(NormalBuffer { evnt_prefix }) => {
+            Inner::Insert(_) => (),
+            Inner::Normal(NormalBuffer { evnt_prefix, .. }) => {
                 *evnt_prefix = prefix;
             }
-        }
+        };
         self
     }
-
 }
 
 impl Buffer {
-    #[inline]
-    fn to_mode(&self) -> &str {
-        match &self.inner {
-            Inner::Insert(_) => "insert",
-            Inner::Normal(_) => "normal",
-        }
-    }
-
     #[inline]
     fn to_change(&self) -> cell::Ref<Change> {
         match &self.inner {
             Inner::Normal(val) => val.to_change(),
             Inner::Insert(val) => val.to_change(),
+        }
+    }
+
+    fn to_mut_change(&mut self) -> cell::RefMut<Change> {
+        match &mut self.inner {
+            Inner::Insert(ib) => ib.to_mut_change(),
+            Inner::Normal(nb) => nb.to_mut_change(),
+        }
+    }
+}
+
+impl Buffer {
+    #[inline]
+    pub fn to_mode(&self) -> &str {
+        match &self.inner {
+            Inner::Insert(_) => "insert",
+            Inner::Normal(_) => "normal",
         }
     }
 
@@ -203,7 +211,10 @@ impl Buffer {
     pub fn to_event_prefix(&self) -> Event {
         match &self.inner {
             Inner::Insert(_) => Event::Noop,
-            Inner::Normal(NormalBuffer { evnt_prefix }) => evnt_prefix.clone(),
+            Inner::Normal(NormalBuffer { evnt_prefix, .. }) => {
+                //
+                evnt_prefix.clone()
+            }
         }
     }
 
@@ -222,21 +233,28 @@ impl Buffer {
 
 impl Buffer {
     pub fn on_event(c: &mut Context, evnt: Event) -> Result<Event> {
-        use crate::event::Event::*;
-
-        let (prefix, evnt) = self.keymap.fold(c, evnt);
+        let (prefix, evnt) = {
+            let mut keymap = mem::replace(
+                //
+                &mut c.as_mut_buffer().keymap,
+                Default::default(),
+            );
+            let (prefix, evnt) = keymap.fold(c, evnt)?;
+            c.as_mut_buffer().keymap = keymap;
+            (prefix, evnt)
+        };
         c.as_mut_buffer().set_event_prefix(prefix);
+
         match evnt {
             Event::Noop => Ok(Event::Noop),
             evnt => {
-                let (inner, insert_only) = {
+                let inner = {
                     let b: &mut Buffer = c.as_mut();
-                    let inner = mem::replace(&mut b.inner, Default::default());
-                    (inner, b.insert_only)
+                    mem::replace(&mut b.inner, Default::default())
                 };
                 let (inner, evnt) = match inner {
-                    Inner::Normal(nb) => nb.on_event(c, evnt)?;
-                    Inner::Insert(ib) => ib.on_event(c, evnt)?;
+                    Inner::Normal(nb) => nb.on_event(c, evnt)?,
+                    Inner::Insert(ib) => ib.on_event(c, evnt)?,
                 };
 
                 c.as_mut_buffer().inner = inner;
@@ -286,7 +304,7 @@ impl NormalBuffer {
     }
 
     fn set_cursor(&mut self, cursor: usize) -> &mut Self {
-        self.as_mut_change().set_cursor(cursor);
+        self.to_mut_change().set_cursor(cursor);
         self
     }
 }
@@ -296,31 +314,25 @@ impl NormalBuffer {
         self.change.as_ref().borrow()
     }
 
-    fn as_mut_change(&mut self) -> cell::RefMut<Change> {
+    fn to_mut_change(&mut self) -> cell::RefMut<Change> {
         self.change.as_ref().borrow_mut()
     }
 }
 
 impl NormalBuffer {
-    fn on_event(mut self, c: &mut Context, e: Event) -> Result<(Inner, Event)> {
+    fn on_event(self, c: &mut Context, e: Event) -> Result<(Inner, Event)> {
         use crate::event::{Event::*, DP::*};
-
-        let mut change = c.as_mut_buffer().as_mut_change();
 
         // switch to insert mode.
         match e {
             N(n, evnt) if n > 1 && is_insert!(evnt.as_ref()) => {
-                let ib = {
-                    let mut ib: InsertBuffer = nb.into();
-                    ib.on_event(c, *evnt)?;
-                    ib.repeat = n - 1;
-                    ib
-                };
-                return Ok((Inner::Insert(ib), Noop))
+                let ib: InsertBuffer = self.into();
+                return ib.on_event(c, *evnt);
             }
             _ => (),
         };
 
+        let mut change = c.as_mut_buffer().to_mut_change();
         let evnt = match e {
             Noop => Noop,
             // execute motion command.
@@ -349,7 +361,7 @@ impl NormalBuffer {
             }
             N(n, e @ box ModeInsert(_)) => N(n, Box::new(*e)),
             //Char('%', _) if m.is_empty() => {
-            //    self.as_mut_change().fwd_match_group();
+            //    self.to_mut_change().fwd_match_group();
             //    Ok(Noop)
             //}
             evnt => evnt,
@@ -388,7 +400,7 @@ impl Default for InsertBuffer {
 
 impl InsertBuffer {
     fn set_cursor(&mut self, cursor: usize) -> &mut Self {
-        self.as_mut_change().set_cursor(cursor);
+        self.to_mut_change().set_cursor(cursor);
         self
     }
 }
@@ -398,7 +410,7 @@ impl InsertBuffer {
         self.change.as_ref().borrow()
     }
 
-    fn as_mut_change(&mut self) -> cell::RefMut<Change> {
+    fn to_mut_change(&mut self) -> cell::RefMut<Change> {
         self.change.as_ref().borrow_mut()
     }
 
@@ -423,9 +435,13 @@ impl InsertBuffer {
     fn on_event(mut self, c: &mut Context, e: Event) -> Result<(Inner, Event)> {
         use crate::event::Event::*;
 
-        c.as_mut_buffer().last_inserts.push(e.clone());
+        let insert_only = {
+            let b = c.as_mut_buffer();
+            b.last_inserts.push(e.clone());
+            b.insert_only
+        };
 
-        match self.exec_event(c, e) {
+        match self.exec_event(c, e)? {
             ModeEsc if !insert_only => {
                 self.repeat(c)?;
                 Ok((Inner::Normal(self.into()), Noop))
@@ -450,18 +466,27 @@ impl InsertBuffer {
 
         match evnt {
             // Start mode.
-            ModeInsert(_) => Ok(Noop),
-            ModeAppend(Right) => change!(self, mto_right, 1, Nobound),
-            ModeAppend(End) => {
+            N(n, box ModeInsert(_)) if n > 1 => {
+                self.repeat = n - 1;
+                Ok(Noop)
+            }
+            N(n, box ModeAppend(Right)) if n > 1 => {
+                self.repeat = n - 1;
+                change!(self, mto_right, 1, Nobound)
+            }
+            N(n, box ModeAppend(End)) if n > 1 => {
+                self.repeat = n - 1;
                 change!(self, mto_end)?;
                 change!(self, mto_right, 1, LineBound)
             }
-            ModeOpen(Left) => {
+            N(n, box ModeOpen(Left)) if n > 1 => {
+                self.repeat = n - 1;
                 change!(self, mto_home, Nope)?;
                 change!(self, insert_char, NL);
                 change!(self, mto_left, 1, Nobound)
             }
-            ModeOpen(Right) => {
+            N(n, box ModeOpen(Right)) if n > 1 => {
+                self.repeat = n - 1;
                 change!(self, mto_end)?;
                 change!(self, mto_right, 1, Nobound)?;
                 change!(self, insert_char, NL);

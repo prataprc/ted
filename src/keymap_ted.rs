@@ -1,3 +1,7 @@
+use std::iter::FromIterator;
+
+use crate::{window::Context, Error, Event, Result};
+
 macro_rules! want_char {
     ($prefix:expr) => {{
         use crate::event::Event::*;
@@ -35,13 +39,14 @@ pub struct Ted;
 impl Ted {
     pub fn fold(&mut self, c: &Context, evnt: Event) -> Result<(Event, Event)> {
         match c.as_buffer().to_mode() {
-            "insert" => insert_fold(c, evnt),
-            "normal" => normal_fold(c, evnt),
+            "insert" => self.insert_fold(c, evnt),
+            "normal" => self.normal_fold(c, evnt),
+            _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
-    fn insert_fold(&mut self, c: &Context evnt: Event) -> Result<(Event, Event)> {
-        Ok(evnt)
+    fn insert_fold(&mut self, _: &Context, evnt: Event) -> Result<(Event, Event)> {
+        Ok((Event::Noop, evnt))
     }
 
     fn normal_fold(&mut self, c: &Context, evnt: Event) -> Result<(Event, Event)> {
@@ -49,10 +54,9 @@ impl Ted {
 
         let prefix = c.to_event_prefix();
         let (fc, pn) = {
-            let b = c.as_mut_buffer();
+            let b = c.as_buffer();
             (b.evnt_mto_char.clone(), b.evnt_mto_patt.clone())
         };
-
 
         let m = evnt.to_modifiers();
         let wc = want_char!(prefix);
@@ -112,7 +116,7 @@ impl Ted {
             Char('n', _) if m.is_empty() => MtoPattern(None, Right),
             Char('N', _) if m.is_empty() => MtoPattern(None, Left),
             // prefix event
-            Char('g', _) if m.is_empty() => G(Box::new(Event::Noop)),
+            Char('g', _) if m.is_empty() => G(Box::new(Noop)),
             Char('[', _) if m.is_empty() => B(Left),
             Char(']', _) if m.is_empty() => B(Right),
             evnt => evnt,
@@ -168,6 +172,6 @@ impl Ted {
             (prefix, e) => (prefix, e),
         };
 
-        Ok((ep, evnt))
+        Ok((prefix, evnt))
     }
 }

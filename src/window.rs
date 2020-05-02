@@ -234,12 +234,21 @@ impl<'a> Context<'a> {
         Context { state: s, buffer }
     }
 
+    #[inline]
     pub fn as_buffer(&self) -> &Buffer {
         &self.buffer
     }
 
+    #[inline]
     pub fn as_mut_buffer(&mut self) -> &mut Buffer {
         &mut self.buffer
+    }
+}
+
+impl<'a> Context<'a> {
+    #[inline]
+    pub fn to_event_prefix(&self) -> Event {
+        self.as_buffer().to_event_prefix()
     }
 }
 
