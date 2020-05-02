@@ -7,8 +7,8 @@ use crossterm::{
 use std::{fmt, mem, ops::Add, result};
 
 use crate::{
-    window_edit::WindowEdit, window_file::WindowFile, window_prompt::WindowPrompt, Buffer, Config,
-    Event, Result,
+    buffer::Buffer, window_edit::WindowEdit, window_file::WindowFile, window_prompt::WindowPrompt,
+    Config, Event, Result,
 };
 
 #[macro_export]
@@ -197,6 +197,45 @@ impl Window {
             Window::WP(w) => w.to_cursor(),
             Window::None => Default::default(),
         }
+    }
+}
+
+pub struct Context<'a> {
+    pub state: &'a mut State,
+    pub buffer: Buffer,
+}
+
+impl<'a> AsRef<Buffer> for Context<'a> {
+    fn as_ref(&self) -> &Buffer {
+        &self.buffer
+    }
+}
+
+impl<'a> AsRef<State> for Context<'a> {
+    fn as_ref(&self) -> &State {
+        &self.state
+    }
+}
+
+impl<'a> AsMut<Buffer> for Context<'a> {
+    fn as_mut(&mut self) -> &mut Buffer {
+        &mut self.buffer
+    }
+}
+
+impl<'a> AsMut<State> for Context<'a> {
+    fn as_mut(&mut self) -> &mut State {
+        &mut self.state
+    }
+}
+
+impl<'a> Context<'a> {
+    pub fn new(s: &'a mut State, buffer: Buffer) -> Context<'a> {
+        Context { state: s, buffer }
+    }
+
+    pub fn as_mut_buffer(&mut self) -> &mut Buffer {
+        &mut self.buffer
     }
 }
 

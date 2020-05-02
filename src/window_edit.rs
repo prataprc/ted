@@ -11,8 +11,9 @@ use std::{
 };
 
 use crate::{
+    buffer::Buffer,
     event::Event,
-    window::{Coord, Cursor, Span, State},
+    window::{Context, Coord, Cursor, Span, State},
     Error, Result,
 };
 
@@ -186,8 +187,12 @@ impl WindowEdit {
                 Ok(Event::Noop)
             }
             mut evnt => match s.take_buffer(&self.buffer_id) {
-                Some(mut buffer) => {
-                    evnt = buffer.on_event(s, evnt)?;
+                Some(buffer) => {
+                    let (buffer, evnt) = {
+                        let mut c = Context::new(s, buffer);
+                        evnt = Buffer::on_event(&mut c, evnt)?;
+                        (c.buffer, evnt)
+                    };
                     s.add_buffer(buffer);
                     Ok(evnt)
                 }

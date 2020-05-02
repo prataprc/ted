@@ -13,7 +13,7 @@ use crate::{
     event::{Event, DP},
     location::Location,
     search::Search,
-    window::State,
+    window::Context,
     {err_at, Error, Result},
 };
 
@@ -70,32 +70,81 @@ macro_rules! change {
     };
 }
 
+// all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
-pub struct Context {
+pub struct Buffer {
     location: Location,
     read_only: bool,
     insert_only: bool,
     evnt_mto_char: Event,
     evnt_mto_patt: Event,
     last_inserts: Vec<Event>,
+
+    inner: Inner,
 }
 
-impl Default for Context {
-    fn default() -> Context {
-        use crate::event::Event::*;
+#[derive(Clone)]
+enum Inner {
+    Insert(InsertBuffer),
+    Normal(NormalBuffer),
+}
 
-        Context {
+impl Default for Inner {
+    fn default() -> Inner {
+        Inner::Normal(Default::default())
+    }
+}
+
+impl Default for Buffer {
+    fn default() -> Buffer {
+        Buffer {
             location: Default::default(),
             read_only: false,
             insert_only: false,
-            evnt_mto_char: Noop,
-            evnt_mto_patt: Noop,
+            evnt_mto_char: Event::Noop,
+            evnt_mto_patt: Event::Noop,
             last_inserts: Default::default(),
+
+            inner: Default::default(),
         }
     }
 }
 
-impl Context {
+impl Buffer {
+    pub fn from_reader<R>(data: R) -> Result<Buffer>
+    where
+        R: io::Read,
+    {
+        let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
+        Ok(Buffer {
+            location: Default::default(),
+            read_only: false,
+            insert_only: false,
+            evnt_mto_char: Event::Noop,
+            evnt_mto_patt: Event::Noop,
+            last_inserts: Default::default(),
+
+            inner: Inner::Normal(NormalBuffer::new(buf)),
+        })
+    }
+
+    pub fn empty() -> Result<Buffer> {
+        let buf = vec![];
+        Self::from_reader(buf.as_slice())
+    }
+
+    pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
+        match &mut self.inner {
+            Inner::Normal(val) => {
+                val.set_cursor(cursor);
+            }
+            Inner::Insert(val) => {
+                val.set_cursor(cursor);
+            }
+        };
+        self
+    }
+
     pub fn set_location(&mut self, loc: Location) -> &mut Self {
         self.location = loc;
         self
@@ -112,7 +161,38 @@ impl Context {
     }
 }
 
-impl Context {
+impl Buffer {
+    #[inline]
+    fn to_change(&self) -> cell::Ref<Change> {
+        match &self.inner {
+            Inner::Normal(val) => val.to_change(),
+            Inner::Insert(val) => val.to_change(),
+        }
+    }
+
+    #[inline]
+    pub fn to_string(&self) -> String {
+        self.to_change().as_ref().to_string()
+    }
+
+    #[inline]
+    pub fn to_id(&self) -> String {
+        match self.to_location() {
+            Location::Anonymous(s) => s,
+            Location::Disk(s) => s.to_str().unwrap().to_string(),
+        }
+    }
+
+    #[inline]
+    pub fn to_cursor(&self) -> usize {
+        self.to_change().to_cursor()
+    }
+
+    #[inline]
+    pub fn to_xy_cursor(&self) -> (usize, usize) {
+        self.to_change().to_xy_cursor()
+    }
+
     pub fn is_read_only(&self) -> bool {
         self.read_only
     }
@@ -138,130 +218,22 @@ impl Context {
     }
 }
 
-// all bits and pieces of content is managed by buffer.
-#[derive(Clone)]
-pub struct Buffer {
-    pub context: Context,
-    inner: Inner,
-}
-
-#[derive(Clone)]
-enum Inner {
-    Insert(InsertBuffer),
-    Normal(NormalBuffer),
-}
-
-impl Default for Inner {
-    fn default() -> Inner {
-        Inner::Normal(Default::default())
-    }
-}
-
-impl Default for Buffer {
-    fn default() -> Buffer {
-        Buffer {
-            context: Default::default(),
-            inner: Default::default(),
-        }
-    }
-}
-
-impl AsRef<Context> for Buffer {
-    fn as_ref(&self) -> &Context {
-        &self.context
-    }
-}
-
-impl AsMut<Context> for Buffer {
-    fn as_mut(&mut self) -> &mut Context {
-        &mut self.context
-    }
-}
-
 impl Buffer {
-    pub fn from_reader<R>(data: R) -> Result<Buffer>
-    where
-        R: io::Read,
-    {
-        let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
-        Ok(Buffer {
-            context: Default::default(),
-            inner: Inner::Normal(NormalBuffer::new(buf)),
-        })
-    }
-
-    pub fn empty() -> Result<Buffer> {
-        let buf = vec![];
-        Self::from_reader(buf.as_slice())
-    }
-
-    pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
-        match &mut self.inner {
-            Inner::Normal(val) => {
-                val.set_cursor(cursor);
-            }
-            Inner::Insert(val) => {
-                val.set_cursor(cursor);
-            }
-        };
-        self
-    }
-}
-
-impl Buffer {
-    pub fn as_mut_context(&mut self) -> &mut Context {
-        &mut self.context
-    }
-
-    fn as_change(&self) -> cell::Ref<Change> {
-        match &self.inner {
-            Inner::Normal(val) => val.as_change(),
-            Inner::Insert(val) => val.as_change(),
-        }
-    }
-}
-
-impl Buffer {
-    #[inline]
-    pub fn to_string(&self) -> String {
-        self.as_change().as_ref().to_string()
-    }
-
-    #[inline]
-    pub fn to_id(&self) -> String {
-        match self.context.to_location() {
-            Location::Anonymous(s) => s,
-            Location::Disk(s) => s.to_str().unwrap().to_string(),
-        }
-    }
-
-    #[inline]
-    pub fn to_cursor(&self) -> usize {
-        self.as_change().to_cursor()
-    }
-
-    #[inline]
-    pub fn to_xy_cursor(&self) -> (usize, usize) {
-        self.as_change().to_xy_cursor()
-    }
-
-    #[inline]
-    pub fn lines_at(&self, n_row: usize) -> impl Iterator<Item = RopeSlice> {
-        let change = self.as_change();
-        Iter::new_lines_at(change, n_row)
-    }
-
-    pub fn on_event(&mut self, _: &mut State, evnt: Event) -> Result<Event> {
+    pub fn on_event(c: &mut Context, evnt: Event) -> Result<Event> {
         use crate::event::Event::*;
 
-        let inner = mem::replace(&mut self.inner, Default::default());
+        let (inner, insert_only) = {
+            let b: &mut Buffer = c.as_mut();
+            let inner = mem::replace(&mut b.inner, Default::default());
+            (inner, b.insert_only)
+        };
         let (inner, evnt) = match inner {
-            Inner::Normal(mut nb) => match nb.on_event(&self.context, evnt)? {
+            Inner::Normal(mut nb) => match nb.on_event(c, evnt)? {
                 Noop => (Inner::Normal(nb), Noop),
-                N(n, e) if n > 1 && is_insert!(e.as_ref()) => {
+                N(n, evnt) if n > 1 && is_insert!(evnt.as_ref()) => {
                     let ib = {
                         let mut ib: InsertBuffer = nb.into();
-                        ib.on_event(*e, false /*repeat*/)?;
+                        ib.on_event(c, *evnt)?;
                         ib.repeat = n - 1;
                         ib
                     };
@@ -269,17 +241,25 @@ impl Buffer {
                 }
                 evnt => (Inner::Normal(nb), evnt),
             },
-            Inner::Insert(mut ib) => match ib.on_event(evnt, false)? {
-                ModeEsc if !self.context.insert_only => {
-                    self.context.last_inserts = ib.repeat()?;
+            Inner::Insert(mut ib) => match ib.on_event(c, evnt)? {
+                ModeEsc if !insert_only => {
+                    ib.repeat(c)?;
                     (Inner::Normal(ib.into()), Noop)
                 }
                 evnt => (Inner::Insert(ib), evnt),
             },
         };
 
-        self.inner = inner;
+        c.as_mut_buffer().inner = inner;
         Ok(evnt)
+    }
+}
+
+impl Buffer {
+    #[inline]
+    pub fn lines_at(&self, n_row: usize) -> impl Iterator<Item = RopeSlice> {
+        let change = self.to_change();
+        Iter::new_lines_at(change, n_row)
     }
 }
 
@@ -321,7 +301,7 @@ impl NormalBuffer {
 }
 
 impl NormalBuffer {
-    fn as_change(&self) -> cell::Ref<Change> {
+    fn to_change(&self) -> cell::Ref<Change> {
         self.change.as_ref().borrow()
     }
 
@@ -331,7 +311,7 @@ impl NormalBuffer {
 }
 
 impl NormalBuffer {
-    fn fold_event(context: &Context, ep: Event, evnt: Event) -> Result<(Event, Event)> {
+    fn fe(c: &mut Context, ep: Event, evnt: Event) -> Result<(Event, Event)> {
         use crate::event::{Event::*, DP::*};
 
         let m = evnt.to_modifiers();
@@ -398,8 +378,10 @@ impl NormalBuffer {
             evnt => evnt,
         };
 
-        let fc = context.evnt_mto_char.clone();
-        let pn = context.evnt_mto_patt.clone();
+        let (fc, pn) = {
+            let b = c.as_mut_buffer();
+            (b.evnt_mto_char.clone(), b.evnt_mto_patt.clone())
+        };
 
         let (ep, evnt) = match (ep, evnt) {
             // Simple Move Prefix
@@ -454,10 +436,10 @@ impl NormalBuffer {
         Ok((ep, evnt))
     }
 
-    fn on_event(&mut self, context: &Context, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
-        let (pe, evnt) = Self::fold_event(context, self.evnt_prefix.clone(), evnt)?;
+        let (pe, evnt) = Self::fe(c, self.evnt_prefix.clone(), evnt)?;
         self.evnt_prefix = pe;
 
         let mut change = self.as_mut_change();
@@ -532,7 +514,7 @@ impl InsertBuffer {
 }
 
 impl InsertBuffer {
-    fn as_change(&self) -> cell::Ref<Change> {
+    fn to_change(&self) -> cell::Ref<Change> {
         self.change.as_ref().borrow()
     }
 
@@ -555,26 +537,27 @@ impl InsertBuffer {
             vec![]
         }
     }
-
-    fn repeat(&mut self) -> Result<Vec<Event>> {
-        let last_inserts: Vec<Event> = self.to_repeat_evnts();
-        for _ in 0..self.repeat {
-            for evnt in last_inserts.iter() {
-                self.on_event(evnt.clone(), true)?;
-            }
-        }
-
-        Ok(last_inserts)
-    }
 }
 
 impl InsertBuffer {
-    fn on_event(&mut self, evnt: Event, repeat: bool) -> Result<Event> {
-        use crate::event::{Event::*, DP::*};
+    fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+        c.as_mut_buffer().last_inserts.push(evnt.clone());
+        self.exec_event(c, evnt)
+    }
 
-        if !repeat {
-            self.last_inserts.push(evnt.clone());
+    fn repeat(&mut self, c: &mut Context) -> Result<()> {
+        let last_inserts: Vec<Event> = self.to_repeat_evnts();
+        for _ in 0..self.repeat {
+            for evnt in last_inserts.iter() {
+                self.exec_event(c, evnt.clone())?;
+            }
         }
+        c.as_mut_buffer().last_inserts = last_inserts;
+        Ok(())
+    }
+
+    fn exec_event(&mut self, _: &mut Context, evnt: Event) -> Result<Event> {
+        use crate::event::{Event::*, DP::*};
 
         match evnt {
             // Start mode.

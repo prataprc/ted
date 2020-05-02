@@ -114,7 +114,7 @@ impl WindowFile {
             Event::NewBuffer => {
                 let (buffer_id, buffer) = {
                     let mut b = Buffer::empty()?;
-                    b.as_mut_context().set_location(Default::default());
+                    b.set_location(Default::default());
                     (b.to_id(), b)
                 };
                 s.add_buffer(buffer);
