@@ -7,6 +7,8 @@ pub mod util;
 pub mod buffer;
 pub mod config;
 pub mod event;
+pub mod keymap;
+pub mod keymap_ted;
 pub mod location;
 pub mod plugin;
 mod search;

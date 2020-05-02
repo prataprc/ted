@@ -234,6 +234,10 @@ impl<'a> Context<'a> {
         Context { state: s, buffer }
     }
 
+    pub fn as_buffer(&self) -> &Buffer {
+        &self.buffer
+    }
+
     pub fn as_mut_buffer(&mut self) -> &mut Buffer {
         &mut self.buffer
     }
