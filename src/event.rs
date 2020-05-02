@@ -241,4 +241,13 @@ impl Event {
             _ => KeyModifiers::empty(),
         }
     }
+
+    pub fn is_insert(&self) -> bool {
+        use Event::*;
+
+        match self {
+            ModeInsert(_) | ModeAppend(_) | ModeOpen(_) => true,
+            _ => false,
+        }
+    }
 }

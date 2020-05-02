@@ -18,17 +18,6 @@ use crate::{
 
 const NL: char = '\n';
 
-macro_rules! is_insert {
-    ($e:expr) => {{
-        use crate::event::Event::*;
-
-        match $e {
-            ModeInsert(_) | ModeAppend(_) | ModeOpen(_) => true,
-            _ => false,
-        }
-    }};
-}
-
 macro_rules! change {
     ($self:ident,$method:ident) => {
         $self.to_mut_change().$method()
@@ -165,17 +154,20 @@ impl Buffer {
 }
 
 impl Buffer {
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
+    }
+
+    pub fn is_insert_only(&self) -> bool {
+        self.insert_only
+    }
+
     #[inline]
-    pub fn to_mode(&self) -> &str {
+    pub fn to_mode(&self) -> &'static str {
         match &self.inner {
             Inner::Insert(_) => "insert",
             Inner::Normal(_) => "normal",
         }
-    }
-
-    #[inline]
-    pub fn to_string(&self) -> String {
-        self.to_change().as_ref().to_string()
     }
 
     #[inline]
@@ -184,24 +176,6 @@ impl Buffer {
             Location::Anonymous(s) => s,
             Location::Disk(s) => s.to_str().unwrap().to_string(),
         }
-    }
-
-    #[inline]
-    pub fn to_cursor(&self) -> usize {
-        self.to_change().to_cursor()
-    }
-
-    #[inline]
-    pub fn to_xy_cursor(&self) -> (usize, usize) {
-        self.to_change().to_xy_cursor()
-    }
-
-    pub fn is_read_only(&self) -> bool {
-        self.read_only
-    }
-
-    pub fn is_insert_only(&self) -> bool {
-        self.insert_only
     }
 
     pub fn to_location(&self) -> Location {
@@ -232,13 +206,62 @@ impl Buffer {
 }
 
 impl Buffer {
+    #[inline]
+    pub fn to_string(&self) -> String {
+        self.to_change().as_ref().to_string()
+    }
+
+    #[inline]
+    pub fn to_cursor(&self) -> usize {
+        self.to_change().to_cursor()
+    }
+
+    #[inline]
+    pub fn to_xy_cursor(&self) -> (usize, usize) {
+        self.to_change().to_xy_cursor()
+    }
+
+    #[inline]
+    pub fn lines_at(&self, n_row: usize) -> impl Iterator<Item = RopeSlice> {
+        let change = self.to_change();
+        Iter::new_lines_at(change, n_row)
+    }
+
+    #[inline]
+    pub fn char_to_line(&self, cursor: usize) -> usize {
+        self.to_change().buf.char_to_line(cursor)
+    }
+
+    #[inline]
+    pub fn line_to_char(&self, row: usize) -> usize {
+        self.to_change().buf.line_to_char(row)
+    }
+
+    #[inline]
+    pub fn line_start(&self) -> usize {
+        let change = self.to_change();
+        change
+            .buf
+            .line_to_char(change.buf.char_to_line(self.to_cursor()))
+    }
+
+    pub fn chars_at<'a>(
+        //
+        &'a self,
+        char_idx: usize,
+    ) -> impl Iterator<Item = char> + 'a {
+        let change = self.to_change();
+        Iter::new_chars_at(change, char_idx)
+    }
+}
+
+impl Buffer {
     pub fn on_event(c: &mut Context, evnt: Event) -> Result<Event> {
         let (prefix, evnt) = {
-            let mut keymap = mem::replace(
-                //
-                &mut c.as_mut_buffer().keymap,
-                Default::default(),
-            );
+            let mut keymap = {
+                let b = c.as_mut_buffer();
+                mem::replace(&mut b.keymap, Default::default())
+            };
             let (prefix, evnt) = keymap.fold(c, evnt)?;
             c.as_mut_buffer().keymap = keymap;
             (prefix, evnt)
@@ -262,13 +285,13 @@ impl Buffer {
             }
         }
     }
-}
 
-impl Buffer {
-    #[inline]
-    pub fn lines_at(&self, n_row: usize) -> impl Iterator<Item = RopeSlice> {
-        let change = self.to_change();
-        Iter::new_lines_at(change, n_row)
+    fn mode_insert(&mut self) -> Result<()> {
+        self.inner = match mem::replace(&mut self.inner, Default::default()) {
+            Inner::Normal(nb) => Inner::Insert(nb.into()),
+            inner @ Inner::Insert(_) => inner,
+        };
+        Ok(())
     }
 }
 
@@ -324,13 +347,13 @@ impl NormalBuffer {
         use crate::event::{Event::*, DP::*};
 
         // switch to insert mode.
-        match e {
-            N(n, evnt) if n > 1 && is_insert!(evnt.as_ref()) => {
-                let ib: InsertBuffer = self.into();
-                return ib.on_event(c, *evnt);
-            }
-            _ => (),
-        };
+        //match e {
+        //    N(n, evnt) if n > 1 && is_insert!(evnt.as_ref()) => {
+        //        let ib: InsertBuffer = self.into();
+        //        return ib.on_event(c, *evnt);
+        //    }
+        //    _ => (),
+        //};
 
         let mut change = c.as_mut_buffer().to_mut_change();
         let evnt = match e {
@@ -1254,13 +1277,27 @@ where
 
 impl<'a> Iter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
     fn new_lines_at(
-        //
         change: cell::Ref<'a, Change>,
         n_row: usize,
     ) -> Iter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
         let iter = unsafe {
             let change: &Change = change.borrow();
             (change as *const Change).as_ref().unwrap().lines_at(n_row)
+        };
+        Iter {
+            _change: change,
+            iter,
+        }
+    }
+
+    fn new_chars_at(
+        change: cell::Ref<'a, Change>,
+        char_idx: usize,
+    ) -> Iter<'a, ropey::iter::Chars<'a>, char> {
+        let iter = unsafe {
+            let change: &Change = change.borrow();
+            let r: &Rope = (change as *const Change).as_ref().unwrap().as_ref();
+            r.chars_at(char_idx)
         };
         Iter {
             _change: change,
