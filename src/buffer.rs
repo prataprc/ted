@@ -12,7 +12,6 @@ use std::{
 use crate::{
     event::{Event, DP},
     location::Location,
-    plugin::Plugin,
     search::Search,
     window::State,
     {err_at, Error, Result},
@@ -111,7 +110,9 @@ impl Context {
         self.insert_only = insert_only;
         self
     }
+}
 
+impl Context {
     pub fn is_read_only(&self) -> bool {
         self.read_only
     }
@@ -140,8 +141,7 @@ impl Context {
 // all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
 pub struct Buffer {
-    c: Context,
-    p: Plugin,
+    pub context: Context,
     inner: Inner,
 }
 
@@ -160,8 +160,7 @@ impl Default for Inner {
 impl Default for Buffer {
     fn default() -> Buffer {
         Buffer {
-            c: Default::default(),
-            p: Default::default(),
+            context: Default::default(),
             inner: Default::default(),
         }
     }
@@ -169,13 +168,13 @@ impl Default for Buffer {
 
 impl AsRef<Context> for Buffer {
     fn as_ref(&self) -> &Context {
-        &self.c
+        &self.context
     }
 }
 
 impl AsMut<Context> for Buffer {
     fn as_mut(&mut self) -> &mut Context {
-        &mut self.c
+        &mut self.context
     }
 }
 
@@ -186,8 +185,7 @@ impl Buffer {
     {
         let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
         Ok(Buffer {
-            c: Default::default(),
-            p: Default::default(),
+            context: Default::default(),
             inner: Inner::Normal(NormalBuffer::new(buf)),
         })
     }
@@ -208,16 +206,11 @@ impl Buffer {
         };
         self
     }
-
-    pub fn set_plugin(&mut self, p: Plugin) -> &mut Self {
-        self.p = p;
-        self
-    }
 }
 
 impl Buffer {
     pub fn as_mut_context(&mut self) -> &mut Context {
-        &mut self.c
+        &mut self.context
     }
 
     fn as_change(&self) -> cell::Ref<Change> {
@@ -236,7 +229,7 @@ impl Buffer {
 
     #[inline]
     pub fn to_id(&self) -> String {
-        match self.c.to_location() {
+        match self.context.to_location() {
             Location::Anonymous(s) => s,
             Location::Disk(s) => s.to_str().unwrap().to_string(),
         }
@@ -258,13 +251,12 @@ impl Buffer {
         Iter::new_lines_at(change, n_row)
     }
 
-    pub fn on_event(&mut self, mut s: State) -> Result<State> {
+    pub fn on_event(&mut self, _: &mut State, evnt: Event) -> Result<Event> {
         use crate::event::Event::*;
 
-        let evnt = mem::replace(&mut s.event, Default::default());
         let inner = mem::replace(&mut self.inner, Default::default());
         let (inner, evnt) = match inner {
-            Inner::Normal(mut nb) => match nb.on_event(&self.c, evnt)? {
+            Inner::Normal(mut nb) => match nb.on_event(&self.context, evnt)? {
                 Noop => (Inner::Normal(nb), Noop),
                 N(n, e) if n > 1 && is_insert!(e.as_ref()) => {
                     let ib = {
@@ -278,8 +270,8 @@ impl Buffer {
                 evnt => (Inner::Normal(nb), evnt),
             },
             Inner::Insert(mut ib) => match ib.on_event(evnt, false)? {
-                ModeEsc if !self.c.insert_only => {
-                    self.c.last_inserts = ib.repeat()?;
+                ModeEsc if !self.context.insert_only => {
+                    self.context.last_inserts = ib.repeat()?;
                     (Inner::Normal(ib.into()), Noop)
                 }
                 evnt => (Inner::Insert(ib), evnt),
@@ -287,9 +279,7 @@ impl Buffer {
         };
 
         self.inner = inner;
-        s.event = evnt;
-
-        Ok(s)
+        Ok(evnt)
     }
 }
 
@@ -341,7 +331,7 @@ impl NormalBuffer {
 }
 
 impl NormalBuffer {
-    fn fold_event(c: &Context, ep: Event, evnt: Event) -> Result<(Event, Event)> {
+    fn fold_event(context: &Context, ep: Event, evnt: Event) -> Result<(Event, Event)> {
         use crate::event::{Event::*, DP::*};
 
         let m = evnt.to_modifiers();
@@ -408,8 +398,8 @@ impl NormalBuffer {
             evnt => evnt,
         };
 
-        let fc = c.evnt_mto_char.clone();
-        let pn = c.evnt_mto_patt.clone();
+        let fc = context.evnt_mto_char.clone();
+        let pn = context.evnt_mto_patt.clone();
 
         let (ep, evnt) = match (ep, evnt) {
             // Simple Move Prefix
@@ -464,10 +454,10 @@ impl NormalBuffer {
         Ok((ep, evnt))
     }
 
-    fn on_event(&mut self, c: &Context, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, context: &Context, evnt: Event) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
-        let (pe, evnt) = Self::fold_event(c, self.evnt_prefix.clone(), evnt)?;
+        let (pe, evnt) = Self::fold_event(context, self.evnt_prefix.clone(), evnt)?;
         self.evnt_prefix = pe;
 
         let mut change = self.as_mut_change();

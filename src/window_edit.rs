@@ -7,7 +7,7 @@ use std::{
     fmt,
     io::{self, Write},
     iter::FromIterator,
-    mem, result,
+    result,
 };
 
 use crate::{
@@ -52,7 +52,7 @@ impl WindowEdit {
         let Cursor { row, .. } = self.cursor;
 
         let row: u16 = {
-            let soff = s.config.scroll_off * 2;
+            let soff = s.as_ref().scroll_off * 2;
             let nx = if_else!(hgt < soff, (0, hgt - 1), (soff, hgt - soff - 1));
             limit!(
                 (row as isize) + (new_bc.1 as isize) - (self.old_bc.1 as isize),
@@ -64,7 +64,7 @@ impl WindowEdit {
         };
 
         // nu_wth extra space "<n> ".
-        let nu_wth = if s.config.line_number {
+        let nu_wth = if s.as_ref().line_number {
             let from = new_bc.1.saturating_sub(row as usize);
             let ls: Vec<RopeSlice> = {
                 let iter = buffer.lines_at(from).take(hgt as usize);
@@ -92,7 +92,7 @@ impl WindowEdit {
         col.try_into().unwrap()
     }
 
-    fn refresh_nowrap(&mut self, mut s: State) -> Result<State> {
+    fn refresh_nowrap(&mut self, s: &mut State) -> Result<()> {
         use std::iter::repeat;
 
         let new_bc = s.as_mut_buffer(&self.buffer_id).to_xy_cursor();
@@ -137,7 +137,7 @@ impl WindowEdit {
         let mrgn_wth = nu_wth.saturating_sub(1) as usize;
         for (i, line) in lines.take(hgt as usize).enumerate() {
             let mut st: String = if_else!(
-                s.config.line_number,
+                s.as_ref().line_number,
                 format!("{:>width$} ", from + i + 1, width = mrgn_wth),
                 Default::default()
             );
@@ -149,7 +149,7 @@ impl WindowEdit {
         }
         for _ in row..hgt {
             let mut st: String = if_else!(
-                s.config.line_number,
+                s.as_ref().line_number,
                 format!("{} ", '~'),
                 Default::default()
             );
@@ -163,7 +163,7 @@ impl WindowEdit {
         }
         assert!(row == hgt);
 
-        Ok(s)
+        Ok(())
     }
 }
 
@@ -175,27 +175,24 @@ impl WindowEdit {
         cursor
     }
 
-    pub fn on_refresh(&mut self, s: State) -> Result<State> {
+    pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
         self.refresh_nowrap(s)
     }
 
-    pub fn on_event(&mut self, mut s: State) -> Result<State> {
-        match mem::replace(&mut s.event, Default::default()) {
+    pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
+        match evnt {
             Event::UseBuffer { buffer_id } => {
                 self.buffer_id = buffer_id;
-                Ok(s)
+                Ok(Event::Noop)
             }
-            evnt => {
-                s.event = evnt;
-                Ok(match s.take_buffer(&self.buffer_id) {
-                    Some(mut buffer) => {
-                        let mut s = buffer.on_event(s)?;
-                        s.add_buffer(buffer);
-                        s
-                    }
-                    None => s,
-                })
-            }
+            mut evnt => match s.take_buffer(&self.buffer_id) {
+                Some(mut buffer) => {
+                    evnt = buffer.on_event(s, evnt)?;
+                    s.add_buffer(buffer);
+                    Ok(evnt)
+                }
+                None => Ok(evnt),
+            },
         }
     }
 }

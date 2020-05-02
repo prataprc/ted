@@ -4,9 +4,12 @@ use crossterm::{
     Command,
 };
 
-use std::{fmt, ops::Add, result};
+use std::{fmt, mem, ops::Add, result};
 
-use crate::{window_file::WindowFile, Buffer, Config, Event};
+use crate::{
+    window_edit::WindowEdit, window_file::WindowFile, window_prompt::WindowPrompt, Buffer, Config,
+    Event, Result,
+};
 
 #[macro_export]
 macro_rules! cursor {
@@ -60,41 +63,11 @@ macro_rules! span {
     }};
 }
 
-#[macro_export]
-macro_rules! on_win_event {
-    ($state:expr, $evnt:expr) => {{
-        match $state.window.take() {
-            Some(mut window) => {
-                $state.event = $evnt;
-                let mut s = window.on_event($state)?;
-                s.window = Some(window);
-                s
-            }
-            None => $state,
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! on_win_refresh {
-    ($state:expr) => {{
-        match $state.window.take() {
-            Some(mut window) => {
-                let mut s = window.on_refresh($state)?;
-                s.window = Some(window);
-                s
-            }
-            None => $state,
-        }
-    }};
-}
-
 // Application state
 pub struct State {
-    pub buffers: Vec<Buffer>,
-    pub config: Config,
-    pub window: Option<WindowFile>,
-    pub event: Event,
+    config: Config,
+    buffers: Vec<Buffer>,
+    window: Window,
 }
 
 impl Default for State {
@@ -103,40 +76,24 @@ impl Default for State {
         State {
             buffers: Default::default(),
             config: Default::default(),
-            window: Some(WindowFile::new(coord)),
-            event: Default::default(),
+            window: Window::WF(WindowFile::new(coord)),
         }
     }
 }
 
+impl AsRef<Config> for State {
+    fn as_ref(&self) -> &Config {
+        &self.config
+    }
+}
+
 impl State {
-    pub fn new(config: Config, window: WindowFile) -> State {
+    pub fn new(config: Config, window: Window) -> State {
         State {
             buffers: Default::default(),
             config,
-            window: Some(window),
-            event: Default::default(),
+            window: window,
         }
-    }
-}
-
-impl State {
-    pub fn as_buffer(&self, id: &str) -> &Buffer {
-        for b in self.buffers.iter() {
-            if b.to_id() == id {
-                return b;
-            }
-        }
-        unreachable!()
-    }
-
-    pub fn as_mut_buffer(&mut self, id: &str) -> &mut Buffer {
-        for b in self.buffers.iter_mut() {
-            if b.to_id() == id {
-                return b;
-            }
-        }
-        unreachable!()
     }
 
     pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
@@ -159,11 +116,86 @@ impl State {
     pub fn add_buffer(&mut self, buffer: Buffer) {
         self.buffers.insert(0, buffer)
     }
+}
+
+impl State {
+    pub fn as_buffer(&self, id: &str) -> &Buffer {
+        for b in self.buffers.iter() {
+            if b.to_id() == id {
+                return b;
+            }
+        }
+        unreachable!()
+    }
+
+    pub fn as_mut_buffer(&mut self, id: &str) -> &mut Buffer {
+        for b in self.buffers.iter_mut() {
+            if b.to_id() == id {
+                return b;
+            }
+        }
+        unreachable!()
+    }
 
     pub fn to_window_cursor(&self) -> Cursor {
-        match &self.window {
-            Some(w) => w.to_cursor(),
-            None => todo!(),
+        self.window.to_cursor()
+    }
+}
+
+impl State {
+    pub fn on_event(&mut self, mut evnt: Event) -> Result<Event> {
+        let mut window = mem::replace(&mut self.window, Default::default());
+        evnt = window.on_event(self, evnt)?;
+        self.window = window;
+        Ok(evnt)
+    }
+
+    pub fn on_refresh(&mut self) -> Result<()> {
+        let mut window = mem::replace(&mut self.window, Default::default());
+        window.on_refresh(self)?;
+        self.window = window;
+        Ok(())
+    }
+}
+
+pub enum Window {
+    WF(WindowFile),
+    WE(WindowEdit),
+    WP(WindowPrompt),
+    None,
+}
+
+impl Default for Window {
+    fn default() -> Window {
+        Window::None
+    }
+}
+
+impl Window {
+    fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
+        match self {
+            Window::WF(w) => w.on_event(s, evnt),
+            Window::WE(w) => w.on_event(s, evnt),
+            Window::WP(w) => w.on_event(s, evnt),
+            Window::None => Ok(evnt),
+        }
+    }
+
+    fn on_refresh(&mut self, s: &mut State) -> Result<()> {
+        match self {
+            Window::WF(w) => w.on_refresh(s),
+            Window::WE(w) => w.on_refresh(s),
+            Window::WP(w) => w.on_refresh(s),
+            Window::None => Ok(()),
+        }
+    }
+
+    fn to_cursor(&self) -> Cursor {
+        match self {
+            Window::WF(w) => w.to_cursor(),
+            Window::WE(w) => w.to_cursor(),
+            Window::WP(w) => w.to_cursor(),
+            Window::None => Default::default(),
         }
     }
 }

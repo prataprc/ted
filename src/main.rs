@@ -23,8 +23,8 @@ use std::{
 use ted::{
     err_at,
     location::Location,
-    on_win_event, on_win_refresh, stats,
-    window::{Coord, Cursor, State},
+    stats,
+    window::{Coord, Cursor, State, Window},
     window_file::WindowFile,
     Config, Error, Event, Result,
 };
@@ -84,7 +84,7 @@ impl Application {
             let tm = Terminal::init()?;
             let s = {
                 let coord = Coord::new(1, 1, tm.rows, tm.cols);
-                State::new(config, WindowFile::new(coord))
+                State::new(config, Window::WF(WindowFile::new(coord)))
             };
             Application { tm, s }
         };
@@ -113,15 +113,18 @@ impl Application {
         // and or controlled by command line option.
         let res = loop {
             // hide cursor, handle event and refresh window
-            match evnt {
+            let _evnt = match evnt {
                 Event::Noop => Event::Noop,
                 evnt => {
                     err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
-                    s = on_win_event!(s, evnt);
-                    s = on_win_refresh!(s);
-                    mem::replace(&mut s.event, Default::default())
+                    let evnt = s.on_event(evnt)?;
+                    s.on_refresh()?;
+                    evnt
                 }
             };
+
+            // TODO: post handling if any, like command processing, status-line
+            // processing.
 
             // show-cursor
             let Cursor { col, row } = s.to_window_cursor();

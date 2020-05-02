@@ -5,7 +5,7 @@ use std::{
     convert::TryFrom,
     fmt,
     io::{self, Write},
-    mem, result,
+    result,
 };
 
 use crate::{
@@ -89,7 +89,13 @@ impl WindowPrompt {
 }
 
 impl WindowPrompt {
-    pub fn on_refresh(&mut self, s: State) -> Result<State> {
+    #[inline]
+    pub fn to_cursor(&self) -> Cursor {
+        // TODO: Fix this
+        Default::default()
+    }
+
+    pub fn on_refresh(&mut self, _: &mut State) -> Result<()> {
         let mut stdout = io::stdout();
 
         if !self.rendered {
@@ -110,11 +116,11 @@ impl WindowPrompt {
             err_at!(Fatal, queue!(stdout, cursor::MoveTo(col, row)))?;
         }
 
-        Ok(s)
+        Ok(())
     }
 
-    pub fn on_event(&mut self, mut s: State) -> Result<State> {
-        s.event = match mem::replace(&mut s.event, Default::default()) {
+    pub fn on_event(&mut self, _: &mut State, mut evnt: Event) -> Result<Event> {
+        evnt = match evnt {
             Event::Backspace => {
                 self.input.pop();
                 Event::Noop
@@ -128,6 +134,6 @@ impl WindowPrompt {
             }
             _ => Event::Noop,
         };
-        Ok(s)
+        Ok(evnt)
     }
 }

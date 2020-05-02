@@ -4,7 +4,7 @@ use std::{
     fmt,
     io::{self, Write},
     iter::FromIterator,
-    mem, result,
+    result,
 };
 
 use crate::{
@@ -67,7 +67,7 @@ impl WindowFile {
         }
     }
 
-    fn do_refresh(&mut self, s: State) -> Result<State> {
+    fn do_refresh(&mut self, s: &State) -> Result<()> {
         use std::iter::repeat;
 
         let Cursor { col, row } = self.coord.to_top_left();
@@ -75,7 +75,7 @@ impl WindowFile {
         let mut stdout = io::stdout();
 
         if self.is_top_margin() {
-            let iter = repeat(s.config.top_margin_char);
+            let iter = repeat(s.as_ref().top_margin_char);
             let span = span!(
                 (col, row),
                 st: String::from_iter(iter.take(self.coord.wth as usize))
@@ -83,13 +83,13 @@ impl WindowFile {
             err_at!(Fatal, queue!(stdout, span))?;
         }
         if self.is_left_margin() {
-            let st = s.config.left_margin_char.to_string();
+            let st = s.as_ref().left_margin_char.to_string();
             for _i in 0..hgt {
                 err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
             }
         }
 
-        Ok(s)
+        Ok(())
     }
 }
 
@@ -104,25 +104,24 @@ impl WindowFile {
         self.we.to_cursor()
     }
 
-    pub fn on_refresh(&mut self, mut s: State) -> Result<State> {
-        s = self.do_refresh(s)?;
+    pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
+        self.do_refresh(s)?;
         self.we.on_refresh(s)
     }
 
-    pub fn on_event(&mut self, mut s: State) -> Result<State> {
-        let evnt = mem::replace(&mut s.event, Default::default());
-        s.event = match evnt {
+    pub fn on_event(&mut self, s: &mut State, mut evnt: Event) -> Result<Event> {
+        evnt = match evnt {
             Event::NewBuffer => {
                 let (buffer_id, buffer) = {
                     let mut b = Buffer::empty()?;
                     b.as_mut_context().set_location(Default::default());
                     (b.to_id(), b)
                 };
-                s.buffers.push(buffer);
+                s.add_buffer(buffer);
                 Event::UseBuffer { buffer_id }
             }
             evnt => evnt,
         };
-        self.we.on_event(s)
+        self.we.on_event(s, evnt)
     }
 }
