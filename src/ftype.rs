@@ -1,4 +1,4 @@
-use crate::window::Context;
+use crate::{event::Event, window::Context, Error, Result};
 
 #[derive(Clone)]
 pub struct FType {
@@ -29,7 +29,7 @@ impl FType {
 }
 
 #[derive(Clone)]
-enum FT {
+pub enum FT {
     Text(Text),
 }
 
@@ -40,15 +40,15 @@ impl Default for FT {
 }
 
 impl FT {
-    fn on_event(&mut self, c: &mut Context, evnt, Event) -> Result<Event> {
+    fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
         match self {
-            FT::Text(t) => t.on_event(c, evnt)
+            FT::Text(t) => t.on_event(c, evnt),
         }
     }
 }
 
 #[derive(Clone)]
-struct Text;
+pub struct Text;
 
 impl Default for Text {
     fn default() -> Text {
@@ -61,6 +61,7 @@ impl Text {
         match c.as_buffer().to_mode() {
             "insert" => self.on_i_event(c, evnt),
             "normal" => self.on_n_event(c, evnt),
+            _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
@@ -68,50 +69,50 @@ impl Text {
         use crate::event::{Event::*, DP::*};
 
         // switch to insert mode.
-        match evnt {
-            evnt @ N(n, _) if n > 1 && evnt.is_insert() => {
-                let b = c.as_mut_buffer();
-                b.mode_insert()?;
-                b.on_event(c, evnt);
-            }
-            _ => (),
-        };
+        //let evnt = match evnt {
+        //    evnt @ N(n, _) if n > 1 && evnt.is_insert() => {
+        //        let b = c.as_mut_buffer();
+        //        b.mode_insert()?;
+        //        return b.on_event(c, evnt);
+        //    }
+        //    evnt => evnt,
+        //};
 
-        let evnt = match e {
-            Noop => Noop,
-            // execute motion command.
-            N(n, box MtoLeft(dp)) => self.mto_left(n, dp)?,
-            N(n, box MtoRight(dp)) => self.mto_right(n, dp)?,
-            N(n, box MtoUp(dp)) => self.mto_up(n, dp)?,
-            N(n, box MtoDown(dp)) => self.mto_down(n, dp)?,
-            N(n, box MtoCol) => self.mto_column(n)?,
-            N(n, box MtoRow(dp)) => self.mto_row(n, dp)?,
-            N(n, box MtoPercent) => self.mto_percent(n)?,
-            N(_, box MtoHome(dp)) => self.mto_home(dp)?,
-            N(_, box MtoEnd) => self.mto_end()?, // TODO: make this sticky.
-            N(n, box MtoCursor) => self.mto_cursor(n)?,
-            N(n, e @ box MtoCharF(_, _)) => self.mto_char(n, *e)?,
-            N(n, e @ box MtoCharT(_, _)) => self.mto_char(n, *e)?,
-            N(n, e @ box MtoWord(_, _)) => self.mto_words(n, *e)?,
-            N(n, e @ box MtoWWord(_, _)) => self.mto_wwords(n, *e)?,
-            N(n, e @ box MtoSentence(_)) => self.mto_sentence(n, *e)?,
-            N(n, e @ box MtoPara(_)) => self.mto_para(n, *e)?,
-            N(n, e @ box MtoBracket(_, _, _)) => self.mto_bracket(n, *e)?,
-            N(n, e @ box MtoPattern(Some(_), _)) => self.mto_pattern(n, *e)?,
-            // execute mode switching commands
-            N(n, box ModeInsert(Caret)) => {
-                self.mto_home(Caret)?;
-                N(n, Box::new(ModeInsert(Caret)))
-            }
-            N(n, e @ box ModeInsert(_)) => N(n, Box::new(*e)),
-            //Char('%', _) if m.is_empty() => {
-            //    self.to_mut_change().fwd_match_group();
-            //    Ok(Noop)
-            //}
-            evnt => evnt,
-        };
+        //let evnt = match evnt {
+        //    Noop => Noop,
+        //    // execute motion command.
+        //    N(n, box MtoLeft(dp)) => self.mto_left(n, dp)?,
+        //    N(n, box MtoRight(dp)) => self.mto_right(n, dp)?,
+        //    N(n, box MtoUp(dp)) => self.mto_up(n, dp)?,
+        //    N(n, box MtoDown(dp)) => self.mto_down(n, dp)?,
+        //    N(n, box MtoCol) => self.mto_column(n)?,
+        //    N(n, box MtoRow(dp)) => self.mto_row(n, dp)?,
+        //    N(n, box MtoPercent) => self.mto_percent(n)?,
+        //    N(_, box MtoHome(dp)) => self.mto_home(dp)?,
+        //    N(_, box MtoEnd) => self.mto_end()?, // TODO: make this sticky.
+        //    N(n, box MtoCursor) => self.mto_cursor(n)?,
+        //    N(n, e @ box MtoCharF(_, _)) => self.mto_char(n, *e)?,
+        //    N(n, e @ box MtoCharT(_, _)) => self.mto_char(n, *e)?,
+        //    N(n, e @ box MtoWord(_, _)) => self.mto_words(n, *e)?,
+        //    N(n, e @ box MtoWWord(_, _)) => self.mto_wwords(n, *e)?,
+        //    N(n, e @ box MtoSentence(_)) => self.mto_sentence(n, *e)?,
+        //    N(n, e @ box MtoPara(_)) => self.mto_para(n, *e)?,
+        //    N(n, e @ box MtoBracket(_, _, _)) => self.mto_bracket(n, *e)?,
+        //    N(n, e @ box MtoPattern(Some(_), _)) => self.mto_pattern(n, *e)?,
+        //    // execute mode switching commands
+        //    N(n, box ModeInsert(Caret)) => {
+        //        self.mto_home(Caret)?;
+        //        N(n, Box::new(ModeInsert(Caret)))
+        //    }
+        //    N(n, e @ box ModeInsert(_)) => N(n, Box::new(*e)),
+        //    //Char('%', _) if m.is_empty() => {
+        //    //    self.to_mut_change().fwd_match_group();
+        //    //    Ok(Noop)
+        //    //}
+        //    evnt => evnt,
+        //};
 
-        evnt
+        Ok(evnt)
     }
 
     fn on_i_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
