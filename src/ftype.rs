@@ -1,4 +1,11 @@
-use crate::{event::Event, window::Context, Error, Result};
+use std::cmp;
+
+use crate::{
+    buffer::NL,
+    event::{Event, DP},
+    window::Context,
+    Error, Result,
+};
 
 #[derive(Clone)]
 pub struct FType {
@@ -121,63 +128,83 @@ impl Text {
 }
 
 impl Text {
-    //fn mto_left(&mut self, n: usize, dp: DP) -> Result<Event> {
-    //    use crate::event::DP::*;
+    fn mto_left(&mut self, c: &mut Context, n: usize, dp: DP) -> Result<Event> {
+        use crate::event::DP::*;
 
-    //    let mut cursor = self.as_mut_buffer().to_cursor();
-    //    cursor = match dp {
-    //        LineBound => {
-    //            let home = self.as_mut_buffer().line_start();
-    //            let new_cursor = cursor.saturating_sub(n);
-    //            Ok(if_else!(new_cursor > home, new_cursor, home))
-    //        }
-    //        Nobound => Ok(cursor.saturating_sub(n)),
-    //        _ => err_at!(Fatal, msg: format!("unreachable")),
-    //    }?;
+        let mut cursor = c.as_mut_buffer().to_cursor();
+        cursor = match dp {
+            LineBound => {
+                let home = c.as_mut_buffer().line_home();
+                let new_cursor = cursor.saturating_sub(n);
+                Ok(if_else!(new_cursor > home, new_cursor, home))
+            }
+            Nobound => Ok(cursor.saturating_sub(n)),
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }?;
 
-    //    self.as_mut_buffer().set_cursor(cursor);
-    //    Ok(Event::Noop)
-    //}
+        c.as_mut_buffer().set_cursor(cursor);
+        Ok(Event::Noop)
+    }
 
-    //fn mto_right(&mut self, n: usize, dp: DP) -> Result<Event> {
-    //    let b = self.as_mut_buffer();
-    //    let mut cursor = b.to_cursor();
-    //    for ch in b.chars_at(cursor).take(n) {
-    //        if dp == DP::LineBound && ch == NL {
-    //            break;
-    //        }
-    //        cursor += 1
-    //    }
+    fn mto_right(&mut self, c: &mut Context, n: usize, dp: DP) -> Result<Event> {
+        let b = c.as_mut_buffer();
+        let mut cursor = b.to_cursor();
+        for ch in b.chars_at(cursor).take(n) {
+            match dp {
+                DP::LineBound if ch == NL => break,
+                DP::Nobound => (),
+                _ => err_at!(Fatal, msg: format!("unreachable"))?,
+            }
+            cursor += 1
+        }
 
-    //    b.set_cursor(cursor);
-    //    Ok(Event::Noop)
-    //}
+        b.set_cursor(cursor);
+        Ok(Event::Noop)
+    }
 
-    //fn mto_up(&mut self, n: usize, pos: DP) -> Result<Event> {
-    //    use crate::event::DP::*;
+    fn mto_home(&mut self, c: &mut Context, pos: DP) -> Result<Event> {
+        use crate::event::DP::*;
 
-    //    let b = self.as_mut_buffer();
-    //    let mut cursor = b.to_cursor();
-    //    match b.char_to_line(cursor) {
-    //        0 => Ok(Event::Noop),
-    //        row => {
-    //            let row = row.saturating_sub(n);
-    //            cursor = {
-    //                let col = cmp::min(
-    //                    self.buf.line(row).len_chars().saturating_sub(2),
-    //                    self.to_col(),
-    //                );
-    //                self.buf.line_to_char(row) + col
-    //            };
-    //            b.set_cursor(cursor);
-    //            match pos {
-    //                Caret => self.mto_home(Caret)?,
-    //                _ => (),
-    //            };
-    //            Ok(Event::Noop)
-    //        }
-    //    }
-    //}
+        let b = c.as_mut_buffer();
+        b.set_cursor(b.line_home());
+        match pos {
+            Caret => {
+                b.skip_whitespace(Right);
+            }
+            Nope => (),
+            _ => err_at!(Fatal, msg: format!("unreachable"))?,
+        }
+        Ok(Event::Noop)
+    }
+
+    fn mto_up(&mut self, c: &mut Context, n: usize, pos: DP) -> Result<Event> {
+        use crate::event::DP::*;
+
+        let b = c.as_mut_buffer();
+        let mut cursor = b.to_cursor();
+        match b.char_to_line(cursor) {
+            0 => Ok(Event::Noop),
+            row => {
+                let row = row.saturating_sub(n);
+                cursor = {
+                    let col = {
+                        let n_chars = b.len_line(row);
+                        cmp::min(n_chars.saturating_sub(2), b.to_col())
+                    };
+                    b.line_to_char(row) + col
+                };
+                b.set_cursor(cursor);
+                match pos {
+                    Caret => self.mto_home(c, Caret),
+                    Nope => Ok(Event::Noop),
+                    _ => {
+                        err_at!(Fatal, msg: format!("unreachable"))?;
+                        Ok(Event::Noop)
+                    }
+                }
+            }
+        }
+    }
 
     //fn mto_down(&mut self, n: usize, pos: DP) -> Result<Event> {
     //    use crate::event::DP::*;
@@ -244,16 +271,6 @@ impl Text {
 
     //fn mto_cursor(&mut self, n: usize) -> Result<Event> {
     //    self.cursor = limite!(self.cursor + n, self.buf.len_chars());
-    //    Ok(Event::Noop)
-    //}
-
-    //fn mto_home(&mut self, pos: DP) -> Result<Event> {
-    //    use crate::event::DP::*;
-
-    //    self.cursor = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
-    //    if pos == Caret {
-    //        self.skip_whitespace(Right);
-    //    }
     //    Ok(Event::Noop)
     //}
 

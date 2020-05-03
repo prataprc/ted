@@ -16,7 +16,7 @@ use crate::{
     {err_at, Error, Result},
 };
 
-const NL: char = '\n';
+pub const NL: char = '\n';
 
 macro_rules! change {
     ($self:ident,$method:ident) => {
@@ -221,15 +221,25 @@ impl Buffer {
         self.to_change().to_xy_cursor()
     }
 
-    #[inline]
-    pub fn lines_at(&self, n_row: usize) -> impl Iterator<Item = RopeSlice> {
-        let change = self.to_change();
-        Iter::new_lines_at(change, n_row)
+    pub fn to_col(&self) -> usize {
+        let cursor = self.to_cursor();
+        let a_char = {
+            let change = self.to_change();
+            change.buf.line_to_char(change.buf.char_to_line(cursor))
+        };
+        cursor - a_char
     }
 
     #[inline]
-    pub fn char_to_line(&self, cursor: usize) -> usize {
-        self.to_change().buf.char_to_line(cursor)
+    pub fn len_line(&self, row: usize) -> usize {
+        let mut change = self.to_change();
+        change.buf.line(row).len_chars()
+    }
+
+    #[inline]
+    pub fn lines_at(&self, row: usize) -> impl Iterator<Item = RopeSlice> {
+        let change = self.to_change();
+        Iter::new_lines_at(change, row)
     }
 
     #[inline]
@@ -238,11 +248,16 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn line_start(&self) -> usize {
+    pub fn line_home(&self) -> usize {
         let change = self.to_change();
         change
             .buf
             .line_to_char(change.buf.char_to_line(self.to_cursor()))
+    }
+
+    #[inline]
+    pub fn char_to_line(&self, cursor: usize) -> usize {
+        self.to_change().buf.char_to_line(cursor)
     }
 
     pub fn chars_at<'a>(
@@ -252,6 +267,23 @@ impl Buffer {
     ) -> impl Iterator<Item = char> + 'a {
         let change = self.to_change();
         Iter::new_chars_at(change, char_idx)
+    }
+}
+
+impl Buffer {
+    #[inline]
+    pub fn skip_whitespace(&mut self, dp: DP) -> usize {
+        self.to_mut_change().skip_whitespace(dp)
+    }
+
+    #[inline]
+    pub fn skip_alphanumeric(&mut self, dp: DP) -> usize {
+        self.to_mut_change().skip_alphanumeric(dp)
+    }
+
+    #[inline]
+    pub fn skip_non_whitespace(&mut self, dp: DP) -> usize {
+        self.to_mut_change().skip_non_whitespace(dp)
     }
 }
 
@@ -1236,10 +1268,6 @@ impl Change {
         self.cursor - a_char
     }
 
-    fn lines_at(&self, n_row: usize) -> ropey::iter::Lines {
-        self.buf.lines_at(n_row)
-    }
-
     fn iter<'a>(&'a self, dp: DP) -> Box<dyn Iterator<Item = char> + 'a> {
         use crate::event::DP::*;
 
@@ -1282,7 +1310,11 @@ impl<'a> Iter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
     ) -> Iter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
         let iter = unsafe {
             let change: &Change = change.borrow();
-            (change as *const Change).as_ref().unwrap().lines_at(n_row)
+            (change as *const Change)
+                .as_ref()
+                .unwrap()
+                .buf
+                .lines_at(n_row)
         };
         Iter {
             _change: change,
