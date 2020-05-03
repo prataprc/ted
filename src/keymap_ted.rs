@@ -76,7 +76,7 @@ impl Ted {
             // mode commands
             Char('I', _) if m.is_empty() => ModeInsert(Caret),
             Char('i', _) if m.is_empty() => ModeInsert(Nope),
-            Char('a', _) if m.is_empty() => ModeAppend(Left),
+            Char('a', _) if m.is_empty() => ModeAppend(Right),
             Char('A', _) if m.is_empty() => ModeAppend(End),
             Char('O', _) if m.is_empty() => ModeOpen(Left),
             Char('o', _) if m.is_empty() => ModeOpen(Right),

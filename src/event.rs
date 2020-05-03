@@ -124,10 +124,10 @@ pub enum Event {
     MtoUp(DP),    // (Caret/Nope,)
     MtoDown(DP),  // (Caret/Nope,)
     MtoCol,
-    MtoRow(DP), // (Caret/Nope,)
-    MtoPercent,
     MtoHome(DP), // (Caret/Nope,)
     MtoEnd,
+    MtoRow(DP), // (Caret/Nope,)
+    MtoPercent,
     MtoCursor,
     MtoCharF(Option<char>, DP), // (ch, Left/Right)
     MtoCharT(Option<char>, DP), // (ch, Left/Right)
