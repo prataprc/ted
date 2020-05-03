@@ -3,6 +3,7 @@ use std::cmp;
 use crate::{
     buffer::NL,
     event::{Event, DP},
+    search::Search,
     window::Context,
     Error, Result,
 };
@@ -131,10 +132,10 @@ impl Text {
     fn mto_left(&mut self, c: &mut Context, n: usize, dp: DP) -> Result<Event> {
         use crate::event::DP::*;
 
-        let mut cursor = c.as_mut_buffer().to_cursor();
+        let mut cursor = c.as_buffer().to_cursor();
         cursor = match dp {
             LineBound => {
-                let home = c.as_mut_buffer().line_home();
+                let home = c.as_buffer().line_home();
                 let new_cursor = cursor.saturating_sub(n);
                 Ok(if_else!(new_cursor > home, new_cursor, home))
             }
@@ -149,7 +150,7 @@ impl Text {
     fn mto_right(&mut self, c: &mut Context, n: usize, dp: DP) -> Result<Event> {
         let b = c.as_mut_buffer();
         let mut cursor = b.to_cursor();
-        for ch in b.chars_at(cursor).take(n) {
+        for ch in b.chars_at(cursor, DP::Right)?.take(n) {
             match dp {
                 DP::LineBound if ch == NL => break,
                 DP::Nobound => (),
@@ -206,471 +207,495 @@ impl Text {
         }
     }
 
-    //fn mto_down(&mut self, n: usize, pos: DP) -> Result<Event> {
-    //    use crate::event::DP::*;
+    fn mto_down(&mut self, c: &mut Context, n: usize, pos: DP) -> Result<Event> {
+        use crate::event::DP::*;
 
-    //    let row = self.buf.char_to_line(self.cursor);
-    //    match self.buf.len_lines() {
-    //        0 => Ok(Event::Noop),
-    //        n_rows if row == n_rows => Ok(Event::Noop),
-    //        n_rows => {
-    //            let row = limite!(row.saturating_add(n), n_rows);
-    //            self.cursor = {
-    //                let col = cmp::min(
-    //                    self.buf.line(row).len_chars().saturating_sub(2),
-    //                    self.to_col(),
-    //                );
-    //                self.buf.line_to_char(row) + col
-    //            };
-    //            if pos == Caret {
-    //                self.mto_home(Caret)?;
-    //            }
-    //            Ok(Event::Noop)
-    //        }
-    //    }
-    //}
+        let b = c.as_mut_buffer();
+        let row = b.char_to_line(b.to_cursor());
+        match b.len_lines() {
+            0 => Ok(Event::Noop),
+            n_rows if row == n_rows => Ok(Event::Noop),
+            n_rows => {
+                let row = limite!(row.saturating_add(n), n_rows);
+                let cursor = {
+                    let n_chars = b.len_line(row);
+                    let col = cmp::min(n_chars.saturating_sub(2), b.to_col());
+                    b.line_to_char(row) + col
+                };
+                b.set_cursor(cursor);
+                match pos {
+                    Caret => self.mto_home(c, Caret),
+                    Nope => Ok(Event::Noop),
+                    _ => {
+                        err_at!(Fatal, msg: format!("unreachable"))?;
+                        Ok(Event::Noop)
+                    }
+                }
+            }
+        }
+    }
 
-    //fn mto_column(&mut self, n: usize) -> Result<Event> {
-    //    for ch in self.buf.chars_at(self.cursor).take(n) {
-    //        if ch == NL {
-    //            break;
-    //        }
-    //        self.cursor += 1;
-    //    }
-    //    Ok(Event::Noop)
-    //}
+    fn mto_column(&mut self, c: &mut Context, n: usize) -> Result<Event> {
+        let b = c.as_mut_buffer();
+        let n = {
+            let m = b.len_line(b.char_to_line(b.to_cursor())).saturating_sub(1);
+            cmp::min(m, n).saturating_sub(1)
+        };
+        b.set_cursor(b.line_home() + n);
+        Ok(Event::Noop)
+    }
 
-    //fn mto_row(&mut self, n: usize, pos: DP) -> Result<Event> {
-    //    let row = self.buf.char_to_line(self.cursor);
-    //    match self.buf.len_lines() {
-    //        0 => Ok(Event::Noop),
-    //        _ if n < row => self.mto_up(row - n, pos),
-    //        n_rows if n < n_rows => self.mto_up(n - row, pos),
-    //        _ => Ok(Event::Noop),
-    //    }
-    //}
+    fn mto_row(&mut self, c: &mut Context, n: usize, pos: DP) -> Result<Event> {
+        let b = c.as_buffer();
+        let row = b.char_to_line(b.to_cursor());
+        let n = n.saturating_sub(1);
+        match b.len_lines() {
+            0 => Ok(Event::Noop),
+            n_rows if n == 0 => self.mto_down(c, n_rows.saturating_sub(1), pos),
+            _ if n < row => self.mto_up(c, row - n, pos),
+            n_rows if n <= n_rows => self.mto_down(c, n - row, pos),
+            n_rows => self.mto_down(c, n_rows.saturating_sub(1), pos),
+        }
+    }
 
-    //fn mto_percent(&mut self, n: usize) -> Result<Event> {
-    //    use crate::event::DP::*;
+    fn mto_percent(&mut self, c: &mut Context, n: usize) -> Result<Event> {
+        use crate::event::DP::*;
 
-    //    let row = self.buf.char_to_line(self.cursor);
-    //    match self.buf.len_lines() {
-    //        0 => Ok(Event::Noop),
-    //        mut n_rows if n < 100 => {
-    //            n_rows -= 1;
-    //            let n = (((n_rows as f64) * (n as f64)) / (100 as f64)) as usize;
-    //            if n < row {
-    //                self.mto_up(row - n, Nope)
-    //            } else {
-    //                self.mto_down(n - row, Nope)
-    //            }
-    //        }
-    //        _ => Ok(Event::Noop),
-    //    }
-    //}
+        let b = c.as_buffer();
+        let row = b.char_to_line(b.to_cursor());
+        match b.len_lines() {
+            0 => Ok(Event::Noop),
+            mut n_rows if n < 100 => {
+                n_rows = n_rows.saturating_sub(1);
+                match (((n_rows as f64) * (n as f64)) / (100 as f64)) as usize {
+                    n if n < row => self.mto_up(c, row - n, Caret),
+                    n => self.mto_down(c, n - row, Caret),
+                }
+            }
+            n_rows => self.mto_down(c, n_rows.saturating_sub(1), Caret),
+        }
+    }
 
-    //fn mto_cursor(&mut self, n: usize) -> Result<Event> {
-    //    self.cursor = limite!(self.cursor + n, self.buf.len_chars());
-    //    Ok(Event::Noop)
-    //}
+    fn mto_cursor(&mut self, c: &mut Context, n: usize) -> Result<Event> {
+        let b = c.as_mut_buffer();
+        let cursor = b.to_cursor();
+        b.set_cursor(limite!(cursor + n, b.len_chars()));
+        Ok(Event::Noop)
+    }
 
-    //fn mto_end(&mut self) -> Result<Event> {
-    //    let mut iter = self.buf.chars_at(self.cursor);
-    //    let mut cursor = self.cursor;
-    //    loop {
-    //        match iter.next() {
-    //            Some(NL) => break (),
-    //            Some(_) => cursor += 1,
-    //            None => break (),
-    //        }
-    //    }
-    //    self.cursor = cursor;
-    //    Ok(Event::Noop)
-    //}
+    fn mto_end(&mut self, c: &mut Context) -> Result<Event> {
+        let b = c.as_mut_buffer();
+        let mut cursor = b.to_cursor();
+        {
+            let mut iter = b.chars_at(b.to_cursor(), DP::Right)?;
+            loop {
+                match iter.next() {
+                    Some(NL) => break (),
+                    Some(_) => cursor += 1,
+                    None => break (),
+                }
+            }
+        }
+        b.set_cursor(cursor);
+        Ok(Event::Noop)
+    }
 
-    //fn mto_char(&mut self, mut n: usize, evnt: Event) -> Result<Event> {
-    //    use crate::event::DP::*;
+    fn mto_char(
+        //
+        &mut self,
+        c: &mut Context,
+        mut n: usize,
+        evnt: Event,
+    ) -> Result<Event> {
+        use crate::event::DP::*;
 
-    //    let (ch, dp, pos) = match evnt {
-    //        Event::MtoCharF(Some(ch), dp) => (ch, dp, Find),
-    //        Event::MtoCharT(Some(ch), dp) => (ch, dp, Till),
-    //        _ => unreachable!(),
-    //    };
+        let (ch, dp, pos) = match evnt {
+            Event::MtoCharF(Some(ch), dp) => (ch, dp, Find),
+            Event::MtoCharT(Some(ch), dp) => (ch, dp, Till),
+            _ => unreachable!(),
+        };
 
-    //    self.cursor = match dp {
-    //        Right => {
-    //            let mut iter = self.iter(dp).enumerate();
-    //            loop {
-    //                match iter.next() {
-    //                    Some((_, NL)) => break self.cursor,
-    //                    Some((i, c)) if c == ch && n == 0 && pos == Till => {
-    //                        break self.cursor.saturating_add(i);
-    //                    }
-    //                    Some((i, c)) if c == ch && n == 0 => {
-    //                        break self.cursor.saturating_add(i - 1);
-    //                    }
-    //                    Some((_, c)) if c == ch => n -= 1,
-    //                    _ => (),
-    //                }
-    //            }
-    //        }
-    //        Left => {
-    //            let mut iter = self.iter(dp).enumerate();
-    //            loop {
-    //                match iter.next() {
-    //                    Some((_, NL)) => break self.cursor,
-    //                    Some((i, c)) if c == ch && n == 0 && pos == Till => {
-    //                        break self.cursor.saturating_add(i);
-    //                    }
-    //                    Some((i, c)) if c == ch && n == 0 => {
-    //                        break self.cursor.saturating_add(i + 1);
-    //                    }
-    //                    Some((_, c)) if c == ch => n -= 1,
-    //                    _ => (),
-    //                }
-    //            }
-    //        }
-    //        _ => unreachable!(),
-    //    };
+        let b = c.as_mut_buffer();
+        let mut cursor = b.to_cursor();
+        let home = b.line_home();
+        cursor = match dp {
+            Right => {
+                let mut iter = b.chars_at(cursor, Right)?.enumerate();
+                loop {
+                    match iter.next() {
+                        Some((_, NL)) => break cursor,
+                        Some((i, c)) if c == ch && n == 0 && pos == Find => {
+                            break cursor.saturating_add(i);
+                        }
+                        Some((i, c)) if c == ch && n == 0 => {
+                            break cursor.saturating_add(i.saturating_sub(1));
+                        }
+                        Some((_, c)) if c == ch => n -= 1,
+                        _ => (),
+                    }
+                }
+            }
+            Left => {
+                let mut iter = b.chars_at(cursor, Left)?.enumerate();
+                loop {
+                    match iter.next() {
+                        Some((_, NL)) => break cursor,
+                        Some((i, c)) if c == ch && n == 0 && pos == Find => {
+                            break cursor.saturating_sub(i + 1);
+                        }
+                        Some((i, c)) if c == ch && n == 0 => {
+                            break cursor.saturating_sub(i);
+                        }
+                        Some((_, c)) if c == ch => n -= 1,
+                        _ => (),
+                    }
+                }
+            }
+            _ => unreachable!(),
+        };
 
-    //    Ok(Event::Noop)
-    //}
+        b.set_cursor(if_else!(cursor > home, cursor, home));
+        Ok(Event::Noop)
+    }
 
-    //fn mto_words(&mut self, n: usize, evnt: Event) -> Result<Event> {
-    //    use crate::event::{Event::*, DP::*};
+    fn mto_words(
+        //
+        &mut self,
+        c: &mut Context,
+        n: usize,
+        evnt: Event,
+    ) -> Result<Event> {
+        use crate::event::{Event::*, DP::*};
 
-    //    match evnt {
-    //        MtoWord(Left, pos) => {
-    //            for _ in 0..n {
-    //                let n = self.skip_whitespace(Left);
-    //                match pos {
-    //                    End if n == 0 => {
-    //                        self.skip_alphanumeric(Left);
-    //                        self.mto_right(1, Nobound)?;
-    //                    }
-    //                    End => {
-    //                        self.skip_alphanumeric(Left);
-    //                        self.mto_right(1, Nobound)?;
-    //                    }
-    //                    Start if n == 0 => {
-    //                        self.skip_alphanumeric(Left);
-    //                        self.skip_whitespace(Left);
-    //                    }
-    //                    Start => (),
-    //                    _ => unreachable!(),
-    //                }
-    //            }
-    //            Ok(Event::Noop)
-    //        }
-    //        MtoWord(Right, pos) => {
-    //            for _ in 0..n {
-    //                let n = self.skip_whitespace(Right);
-    //                match pos {
-    //                    End if n == 0 => {
-    //                        self.skip_alphanumeric(Right);
-    //                        self.mto_left(1, Nobound)?;
-    //                    }
-    //                    End => {
-    //                        self.skip_alphanumeric(Right);
-    //                        self.mto_left(1, Nobound)?;
-    //                    }
-    //                    Start if n == 0 => {
-    //                        self.skip_alphanumeric(Right);
-    //                        self.skip_whitespace(Right);
-    //                    }
-    //                    Start => (),
-    //                    _ => unreachable!(),
-    //                }
-    //            }
-    //            Ok(Event::Noop)
-    //        }
-    //        _ => err_at!(Fatal, msg: format!("unreachable")),
-    //    }
-    //}
+        match evnt {
+            MtoWord(Left, pos) => {
+                for _ in 0..n {
+                    let n = c.as_mut_buffer().skip_whitespace(Left);
+                    match pos {
+                        End if n == 0 => {
+                            c.as_mut_buffer().skip_alphanumeric(Left);
+                            self.mto_right(c, 1, Nobound)?;
+                        }
+                        End => {
+                            c.as_mut_buffer().skip_alphanumeric(Left);
+                            self.mto_right(c, 1, Nobound)?;
+                        }
+                        Start if n == 0 => {
+                            c.as_mut_buffer().skip_alphanumeric(Left);
+                            c.as_mut_buffer().skip_whitespace(Left);
+                        }
+                        Start => (),
+                        _ => unreachable!(),
+                    }
+                }
+                Ok(Event::Noop)
+            }
+            MtoWord(Right, pos) => {
+                for _ in 0..n {
+                    let n = c.as_mut_buffer().skip_whitespace(Right);
+                    match pos {
+                        End if n == 0 => {
+                            c.as_mut_buffer().skip_alphanumeric(Right);
+                            self.mto_left(c, 1, Nobound)?;
+                        }
+                        End => {
+                            c.as_mut_buffer().skip_alphanumeric(Right);
+                            self.mto_left(c, 1, Nobound)?;
+                        }
+                        Start if n == 0 => {
+                            c.as_mut_buffer().skip_alphanumeric(Right);
+                            c.as_mut_buffer().skip_whitespace(Right);
+                        }
+                        Start => (),
+                        _ => unreachable!(),
+                    }
+                }
+                Ok(Event::Noop)
+            }
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }
+    }
 
-    //fn mto_wwords(&mut self, n: usize, evnt: Event) -> Result<Event> {
-    //    use crate::event::{Event::*, DP::*};
+    fn mto_wwords(
+        //
+        &mut self,
+        c: &mut Context,
+        n: usize,
+        evnt: Event,
+    ) -> Result<Event> {
+        use crate::event::{Event::*, DP::*};
 
-    //    match evnt {
-    //        MtoWWord(Left, pos) => {
-    //            for _ in 0..n {
-    //                let n = self.skip_whitespace(Left);
-    //                match pos {
-    //                    Start if n == 0 => {
-    //                        self.skip_non_whitespace(Left);
-    //                        self.mto_right(1, Nobound)?;
-    //                    }
-    //                    Start => {
-    //                        self.skip_non_whitespace(Left);
-    //                        self.mto_right(1, Nobound)?;
-    //                    }
-    //                    End if n == 0 => {
-    //                        self.skip_non_whitespace(Left);
-    //                        self.skip_whitespace(Left);
-    //                    }
-    //                    End => (),
-    //                    _ => unreachable!(),
-    //                }
-    //            }
-    //            Ok(Event::Noop)
-    //        }
-    //        MtoWWord(Right, pos) => {
-    //            for _ in 0..n {
-    //                let n = self.skip_whitespace(Right);
-    //                match pos {
-    //                    End if n == 0 => {
-    //                        self.skip_non_whitespace(Right);
-    //                        self.mto_left(1, Nobound)?;
-    //                    }
-    //                    End => {
-    //                        self.skip_non_whitespace(Right);
-    //                        self.mto_left(1, Nobound)?;
-    //                    }
-    //                    Start if n == 0 => {
-    //                        self.skip_non_whitespace(Right);
-    //                        self.skip_whitespace(Right);
-    //                    }
-    //                    Start => (),
-    //                    _ => unreachable!(),
-    //                }
-    //            }
-    //            Ok(Event::Noop)
-    //        }
-    //        _ => err_at!(Fatal, msg: format!("unreachable")),
-    //    }
-    //}
+        match evnt {
+            MtoWWord(Left, pos) => {
+                for _ in 0..n {
+                    let n = c.as_mut_buffer().skip_whitespace(Left);
+                    match pos {
+                        Start if n == 0 => {
+                            c.as_mut_buffer().skip_non_whitespace(Left);
+                            self.mto_right(c, 1, Nobound)?;
+                        }
+                        Start => {
+                            c.as_mut_buffer().skip_non_whitespace(Left);
+                            self.mto_right(c, 1, Nobound)?;
+                        }
+                        End if n == 0 => {
+                            c.as_mut_buffer().skip_non_whitespace(Left);
+                            c.as_mut_buffer().skip_whitespace(Left);
+                        }
+                        End => (),
+                        _ => unreachable!(),
+                    }
+                }
+                Ok(Event::Noop)
+            }
+            MtoWWord(Right, pos) => {
+                for _ in 0..n {
+                    let n = c.as_mut_buffer().skip_whitespace(Right);
+                    match pos {
+                        End if n == 0 => {
+                            c.as_mut_buffer().skip_non_whitespace(Right);
+                            self.mto_left(c, 1, Nobound)?;
+                        }
+                        End => {
+                            c.as_mut_buffer().skip_non_whitespace(Right);
+                            self.mto_left(c, 1, Nobound)?;
+                        }
+                        Start if n == 0 => {
+                            c.as_mut_buffer().skip_non_whitespace(Right);
+                            c.as_mut_buffer().skip_whitespace(Right);
+                        }
+                        Start => (),
+                        _ => unreachable!(),
+                    }
+                }
+                Ok(Event::Noop)
+            }
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }
+    }
 
-    //fn mto_sentence(&mut self, mut n: usize, e: Event) -> Result<Event> {
-    //    use crate::event::{Event::*, DP::*};
+    fn mto_sentence(
+        //
+        &mut self,
+        c: &mut Context,
+        mut n: usize,
+        e: Event,
+    ) -> Result<Event> {
+        use crate::event::{Event::*, DP::*};
 
-    //    let is_ws = |ch: char| ch.is_whitespace();
+        let is_ws = |ch: char| ch.is_whitespace();
 
-    //    let mut pch: Option<char> = None;
-    //    self.cursor = match e {
-    //        MtoSentence(Left) => {
-    //            let mut iter = self.iter(Left).enumerate();
-    //            Ok(loop {
-    //                pch = match (iter.next(), pch) {
-    //                    (Some((i, '.')), Some(pch)) if is_ws(pch) => {
-    //                        if n > 1 {
-    //                            n -= 1;
-    //                        } else {
-    //                            break self.cursor.saturating_sub(i);
-    //                        }
-    //                        Some('.')
-    //                    }
-    //                    (Some((i, NL)), Some(NL)) => {
-    //                        if n > 1 {
-    //                            n -= 1;
-    //                        } else {
-    //                            break self.cursor.saturating_sub(i);
-    //                        }
-    //                        Some(NL)
-    //                    }
-    //                    (Some((_, ch)), _) => Some(ch),
-    //                    (None, _) => break 0,
-    //                };
-    //            })
-    //        }
-    //        MtoSentence(Right) => {
-    //            let mut iter = self.iter(Right).enumerate();
-    //            Ok(loop {
-    //                pch = match (pch, iter.next()) {
-    //                    (Some('.'), Some((i, ch))) if is_ws(ch) => {
-    //                        if n > 1 {
-    //                            n -= 1;
-    //                        } else {
-    //                            break self.cursor.saturating_add(i);
-    //                        }
-    //                        Some('.')
-    //                    }
-    //                    (Some(NL), Some((i, NL))) => {
-    //                        if n > 1 {
-    //                            n -= 1;
-    //                        } else {
-    //                            break self.cursor.saturating_add(i);
-    //                        }
-    //                        Some(NL)
-    //                    }
-    //                    (_, Some((_, ch))) => Some(ch),
-    //                    (_, None) => {
-    //                        break self.buf.len_chars().saturating_sub(1);
-    //                    }
-    //                };
-    //            })
-    //        }
-    //        _ => err_at!(Fatal, msg: format!("unreachable")),
-    //    }?;
+        let b = c.as_mut_buffer();
+        let mut cursor = b.to_cursor();
+        let mut pch: Option<char> = None;
+        cursor = match e {
+            MtoSentence(Left) => {
+                let mut iter = b.chars_at(cursor, Left)?.enumerate();
+                Ok(loop {
+                    pch = match (iter.next(), pch) {
+                        (Some((i, '.')), Some(pch)) if is_ws(pch) => {
+                            if n > 1 {
+                                n -= 1;
+                            } else {
+                                break cursor.saturating_sub(i);
+                            }
+                            Some('.')
+                        }
+                        (Some((i, NL)), Some(NL)) => {
+                            if n > 1 {
+                                n -= 1;
+                            } else {
+                                break cursor.saturating_sub(i);
+                            }
+                            Some(NL)
+                        }
+                        (Some((_, ch)), _) => Some(ch),
+                        (None, _) => break 0,
+                    };
+                })
+            }
+            MtoSentence(Right) => {
+                let mut iter = b.chars_at(cursor, Right)?.enumerate();
+                Ok(loop {
+                    pch = match (pch, iter.next()) {
+                        (Some('.'), Some((i, ch))) if is_ws(ch) => {
+                            if n > 1 {
+                                n -= 1;
+                            } else {
+                                break cursor.saturating_add(i);
+                            }
+                            Some('.')
+                        }
+                        (Some(NL), Some((i, NL))) => {
+                            if n > 1 {
+                                n -= 1;
+                            } else {
+                                break cursor.saturating_add(i);
+                            }
+                            Some(NL)
+                        }
+                        (_, Some((_, ch))) => Some(ch),
+                        (_, None) => {
+                            break b.len_chars().saturating_sub(1);
+                        }
+                    };
+                })
+            }
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }?;
 
-    //    self.skip_whitespace(Right);
+        b.set_cursor(cursor);
+        b.skip_whitespace(Right);
 
-    //    Ok(Event::Noop)
-    //}
+        Ok(Event::Noop)
+    }
 
-    //fn mto_para(&mut self, mut n: usize, evnt: Event) -> Result<Event> {
-    //    use crate::event::{Event::*, DP::*};
+    fn mto_para(
+        //
+        &mut self,
+        c: &mut Context,
+        mut n: usize,
+        evnt: Event,
+    ) -> Result<Event> {
+        use crate::event::{Event::*, DP::*};
 
-    //    let row = self.buf.char_to_line(self.cursor);
-    //    self.cursor = match evnt {
-    //        MtoPara(Left) => {
-    //            let mut iter = self.iter_line(Left).enumerate();
-    //            let cursor = loop {
-    //                match iter.next() {
-    //                    Some((i, line)) => match line.chars().next() {
-    //                        Some(NL) if n == 0 => {
-    //                            break self.buf.line_to_char(row - (i + 1));
-    //                        }
-    //                        Some(NL) => n -= 1,
-    //                        Some(_) => (),
-    //                        None => break self.buf.line_to_char(row - (i + 1)),
-    //                    },
-    //                    None => break 0,
-    //                }
-    //            };
-    //            Ok(cursor)
-    //        }
-    //        MtoPara(Right) => {
-    //            let mut iter = self.iter_line(Right).enumerate();
-    //            let cursor = loop {
-    //                match iter.next() {
-    //                    Some((i, line)) => match line.chars().next() {
-    //                        Some(NL) if n == 0 => {
-    //                            break self.buf.line_to_char(row + i);
-    //                        }
-    //                        Some(NL) => n -= 1,
-    //                        Some(_) => (),
-    //                        None => break self.buf.line_to_char(row + i),
-    //                    },
-    //                    None => break self.buf.len_chars().saturating_sub(1),
-    //                }
-    //            };
-    //            Ok(cursor)
-    //        }
-    //        _ => err_at!(Fatal, msg: format!("unreachable")),
-    //    }?;
+        let b = c.as_mut_buffer();
+        let mut cursor = b.to_cursor();
+        let row = b.char_to_line(cursor);
+        cursor = match evnt {
+            MtoPara(Left) => {
+                let mut iter = b.lines_at(row, Left)?.enumerate();
+                let cursor = loop {
+                    match iter.next() {
+                        Some((i, line)) => match line.chars().next() {
+                            Some(NL) if n == 0 => {
+                                break b.line_to_char(row - (i + 1));
+                            }
+                            Some(NL) => n -= 1,
+                            Some(_) => (),
+                            None => break b.line_to_char(row - (i + 1)),
+                        },
+                        None => break 0,
+                    }
+                };
+                Ok(cursor)
+            }
+            MtoPara(Right) => {
+                let mut iter = b.lines_at(row, Right)?.enumerate();
+                let cursor = loop {
+                    match iter.next() {
+                        Some((i, line)) => match line.chars().next() {
+                            Some(NL) if n == 0 => {
+                                break b.line_to_char(row + i);
+                            }
+                            Some(NL) => n -= 1,
+                            Some(_) => (),
+                            None => break b.line_to_char(row + i),
+                        },
+                        None => break b.len_chars().saturating_sub(1),
+                    }
+                };
+                Ok(cursor)
+            }
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }?;
 
-    //    Ok(Event::Noop)
-    //}
+        b.set_cursor(cursor);
+        Ok(Event::Noop)
+    }
 
-    //fn mto_bracket(&mut self, mut n: usize, e: Event) -> Result<Event> {
-    //    use crate::event::{Event::*, DP::*};
+    fn mto_bracket(
+        //
+        &mut self,
+        c: &mut Context,
+        mut n: usize,
+        e: Event,
+    ) -> Result<Event> {
+        use crate::event::{Event::*, DP::*};
 
-    //    let mut m = 0;
-    //    let mut cursor = self.cursor;
-    //    match e {
-    //        MtoBracket(yin, yan, Left) => {
-    //            let mut iter = self.iter(Left).enumerate();
-    //            cursor -= loop {
-    //                match iter.next() {
-    //                    Some((_, ch)) if ch == yin && m > 0 => m -= 1,
-    //                    Some((i, ch)) if ch == yin && n == 0 => break i + 1,
-    //                    Some((_, ch)) if ch == yin => n -= 1,
-    //                    Some((_, ch)) if ch == yan => m += 1,
-    //                    Some(_) => (),
-    //                    None => break 0,
-    //                }
-    //            };
-    //        }
-    //        MtoBracket(yin, yan, Right) => {
-    //            let mut iter = self.iter(Right).enumerate();
-    //            cursor += {
-    //                loop {
-    //                    match iter.next() {
-    //                        Some((_, ch)) if ch == yin && m > 0 => m -= 1,
-    //                        Some((i, ch)) if ch == yin && n == 0 => break i,
-    //                        Some((_, ch)) if ch == yin => n -= 1,
-    //                        Some((_, ch)) if ch == yan => m += 1,
-    //                        Some(_) => (),
-    //                        None => break 0,
-    //                    }
-    //                }
-    //            };
-    //        }
-    //        _ => err_at!(Fatal, msg: format!("unreachable"))?,
-    //    }
+        let mut m = 0;
+        let b = c.as_mut_buffer();
+        let mut cursor = b.to_cursor();
+        match e {
+            MtoBracket(yin, yan, Left) => {
+                let mut iter = b.chars_at(cursor, Left)?.enumerate();
+                cursor -= loop {
+                    match iter.next() {
+                        Some((_, ch)) if ch == yin && m > 0 => m -= 1,
+                        Some((i, ch)) if ch == yin && n == 0 => break i + 1,
+                        Some((_, ch)) if ch == yin => n -= 1,
+                        Some((_, ch)) if ch == yan => m += 1,
+                        Some(_) => (),
+                        None => break 0,
+                    }
+                };
+            }
+            MtoBracket(yin, yan, Right) => {
+                let mut iter = b.chars_at(cursor, Right)?.enumerate();
+                cursor += {
+                    loop {
+                        match iter.next() {
+                            Some((_, ch)) if ch == yin && m > 0 => m -= 1,
+                            Some((i, ch)) if ch == yin && n == 0 => break i,
+                            Some((_, ch)) if ch == yin => n -= 1,
+                            Some((_, ch)) if ch == yan => m += 1,
+                            Some(_) => (),
+                            None => break 0,
+                        }
+                    }
+                };
+            }
+            _ => err_at!(Fatal, msg: format!("unreachable"))?,
+        }
 
-    //    self.cursor = cursor;
-    //    Ok(Event::Noop)
-    //}
+        b.set_cursor(cursor);
+        Ok(Event::Noop)
+    }
 
-    //fn mto_pattern(&mut self, n: usize, evnt: Event) -> Result<Event> {
-    //    use crate::event::{Event::*, DP::*};
+    fn mto_pattern(
+        //
+        &mut self,
+        c: &mut Context,
+        n: usize,
+        evnt: Event,
+    ) -> Result<Event> {
+        use crate::event::{Event::*, DP::*};
 
-    //    let (pattern, dp) = match evnt {
-    //        MtoPattern(Some(pattern), dp) => Ok((pattern, dp)),
-    //        _ => err_at!(Fatal, msg: format!("unreachable")),
-    //    }?;
+        let (pattern, dp) = match evnt {
+            MtoPattern(Some(pattern), dp) => Ok((pattern, dp)),
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }?;
 
-    //    let text = self.buf.to_string();
-    //    let search = Search::new(&pattern, &text, dp)?;
-    //    let byte_off = self.buf.char_to_byte(self.cursor);
+        let b = c.as_mut_buffer();
+        let search = {
+            let text = b.to_string();
+            Search::new(&pattern, &text, dp)?
+        };
+        let mut cursor = b.to_cursor();
+        let byte_off = b.char_to_byte(cursor);
 
-    //    let n = n.saturating_sub(1);
-    //    self.cursor = match dp {
-    //        Left => {
-    //            let item = search.rev(byte_off).skip(n).next();
-    //            match item {
-    //                Some((s, _)) => Ok(s),
-    //                None => Ok(self.cursor),
-    //            }
-    //        }
-    //        Right => {
-    //            let item = search.iter(byte_off).skip(n).next();
-    //            match item {
-    //                Some((s, _)) => Ok(s),
-    //                None => Ok(self.cursor),
-    //            }
-    //        }
-    //        _ => err_at!(Fatal, msg: format!("unreachable")),
-    //    }?;
+        let n = n.saturating_sub(1);
+        cursor = match dp {
+            Left => {
+                let item = search.rev(byte_off).skip(n).next();
+                match item {
+                    Some((s, _)) => Ok(s),
+                    None => Ok(cursor),
+                }
+            }
+            Right => {
+                let item = search.iter(byte_off).skip(n).next();
+                match item {
+                    Some((s, _)) => Ok(s),
+                    None => Ok(cursor),
+                }
+            }
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }?;
 
-    //    Ok(Event::Noop)
-    //}
-
-    //fn skip_whitespace(&mut self, dp: DP) -> usize {
-    //    use crate::event::DP::*;
-
-    //    let mut n = 0;
-    //    let n = loop {
-    //        match self.iter(dp).next() {
-    //            Some(ch) if ch.is_whitespace() => n += 1,
-    //            Some(_) => break n,
-    //            None => break n,
-    //        }
-    //    };
-    //    self.cursor = if_else!(dp == Right, self.cursor + n, self.cursor - n);
-    //    n
-    //}
-
-    //fn skip_non_whitespace(&mut self, dp: DP) -> usize {
-    //    use crate::event::DP::*;
-
-    //    let mut n = 0;
-    //    let n = loop {
-    //        match self.iter(dp).next() {
-    //            Some(ch) if ch.is_whitespace() => n += 1,
-    //            Some(_) => break n,
-    //            None => break n,
-    //        }
-    //    };
-    //    self.cursor = if_else!(dp == Right, self.cursor + n, self.cursor - n);
-    //    n
-    //}
-
-    //fn skip_alphanumeric(&mut self, dp: DP) -> usize {
-    //    use crate::event::DP::*;
-
-    //    let mut n = 0;
-    //    let n = loop {
-    //        match self.iter(dp).next() {
-    //            Some(ch) if ch.is_alphanumeric() => n += 1,
-    //            Some(_) => break n,
-    //            None => break n,
-    //        }
-    //    };
-    //    self.cursor = if_else!(dp == Right, self.cursor + n, self.cursor - n);
-    //    n
-    //}
+        b.set_cursor(cursor);
+        Ok(Event::Noop)
+    }
 
     //fn fwd_match_group(&mut self) {
     //    self.cursor = {

@@ -231,15 +231,42 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn len_line(&self, row: usize) -> usize {
-        let mut change = self.to_change();
-        change.buf.line(row).len_chars()
+    pub fn len_lines(&self) -> usize {
+        let change = self.to_change();
+        change.buf.len_lines()
     }
 
     #[inline]
-    pub fn lines_at(&self, row: usize) -> impl Iterator<Item = RopeSlice> {
+    pub fn lines_at<'a>(
+        //
+        &'a self,
+        r: usize,
+        dp: DP,
+    ) -> Result<Box<dyn Iterator<Item = RopeSlice> + 'a>> {
         let change = self.to_change();
-        Iter::new_lines_at(change, row)
+        match dp {
+            DP::Right => {
+                let iter = unsafe {
+                    let change: &Change = change.borrow();
+                    (change as *const Change).as_ref().unwrap().buf.lines_at(r)
+                };
+                Ok(Box::new(Iter {
+                    _change: change,
+                    iter,
+                }))
+            }
+            DP::Left => {
+                let iter = unsafe {
+                    let change: &Change = change.borrow();
+                    (change as *const Change).as_ref().unwrap().buf.lines_at(r)
+                };
+                Ok(Box::new(ReverseIter {
+                    _change: Some(change),
+                    iter,
+                }))
+            }
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }
     }
 
     #[inline]
@@ -260,13 +287,61 @@ impl Buffer {
         self.to_change().buf.char_to_line(cursor)
     }
 
+    #[inline]
+    pub fn char_to_byte(&self, cursor: usize) -> usize {
+        self.to_change().buf.char_to_byte(cursor)
+    }
+
     pub fn chars_at<'a>(
         //
         &'a self,
-        char_idx: usize,
-    ) -> impl Iterator<Item = char> + 'a {
+        n: usize,
+        dp: DP,
+    ) -> Result<Box<dyn Iterator<Item = char> + 'a>> {
         let change = self.to_change();
-        Iter::new_chars_at(change, char_idx)
+        match dp {
+            DP::Right => {
+                let iter = unsafe {
+                    let change: &Change = change.borrow();
+                    let r: &Rope = {
+                        let c = (change as *const Change).as_ref().unwrap();
+                        c.as_ref()
+                    };
+                    r.chars_at(n)
+                };
+                Ok(Box::new(Iter {
+                    _change: change,
+                    iter,
+                }))
+            }
+            DP::Left => {
+                let iter = unsafe {
+                    let change: &Change = change.borrow();
+                    let r: &Rope = {
+                        let c = (change as *const Change).as_ref().unwrap();
+                        c.as_ref()
+                    };
+                    r.chars_at(n)
+                };
+                Ok(Box::new(ReverseIter {
+                    _change: Some(change),
+                    iter,
+                }))
+            }
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }
+    }
+
+    #[inline]
+    pub fn len_line(&self, row: usize) -> usize {
+        let change = self.to_change();
+        change.buf.line(row).len_chars()
+    }
+
+    #[inline]
+    pub fn len_chars(&self) -> usize {
+        let change = self.to_change();
+        change.buf.len_chars()
     }
 }
 
@@ -1273,7 +1348,10 @@ impl Change {
 
         let chars = self.buf.chars_at(self.cursor);
         match dp {
-            Left => Box::new(ReverseIter::new(chars)),
+            Left => Box::new(ReverseIter {
+                _change: None,
+                iter: chars,
+            }),
             Right => Box::new(chars),
             _ => unreachable!(),
         }
@@ -1288,7 +1366,10 @@ impl Change {
 
         let lines = self.buf.lines_at(self.buf.char_to_line(self.cursor));
         match dp {
-            Left => Box::new(ReverseIter::new(lines)),
+            Left => Box::new(ReverseIter {
+                _change: None,
+                iter: lines,
+            }),
             Right => Box::new(lines),
             _ => unreachable!(),
         }
@@ -1301,41 +1382,6 @@ where
 {
     _change: cell::Ref<'a, Change>, // holding a reference.
     iter: I,
-}
-
-impl<'a> Iter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
-    fn new_lines_at(
-        change: cell::Ref<'a, Change>,
-        n_row: usize,
-    ) -> Iter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
-        let iter = unsafe {
-            let change: &Change = change.borrow();
-            (change as *const Change)
-                .as_ref()
-                .unwrap()
-                .buf
-                .lines_at(n_row)
-        };
-        Iter {
-            _change: change,
-            iter,
-        }
-    }
-
-    fn new_chars_at(
-        change: cell::Ref<'a, Change>,
-        char_idx: usize,
-    ) -> Iter<'a, ropey::iter::Chars<'a>, char> {
-        let iter = unsafe {
-            let change: &Change = change.borrow();
-            let r: &Rope = (change as *const Change).as_ref().unwrap().as_ref();
-            r.chars_at(char_idx)
-        };
-        Iter {
-            _change: change,
-            iter,
-        }
-    }
 }
 
 impl<'a> Iterator for Iter<'a, ropey::iter::Chars<'a>, char> {
@@ -1354,23 +1400,15 @@ impl<'a> Iterator for Iter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
     }
 }
 
-struct ReverseIter<I, T>
+struct ReverseIter<'a, I, T>
 where
     I: Iterator<Item = T>,
 {
+    _change: Option<cell::Ref<'a, Change>>, // holding a reference.
     iter: I,
 }
 
-impl<I, T> ReverseIter<I, T>
-where
-    I: Iterator<Item = T>,
-{
-    fn new(iter: I) -> ReverseIter<I, T> {
-        ReverseIter { iter }
-    }
-}
-
-impl<'a> Iterator for ReverseIter<ropey::iter::Chars<'a>, char> {
+impl<'a> Iterator for ReverseIter<'a, ropey::iter::Chars<'a>, char> {
     type Item = char;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1378,7 +1416,7 @@ impl<'a> Iterator for ReverseIter<ropey::iter::Chars<'a>, char> {
     }
 }
 
-impl<'a> Iterator for ReverseIter<ropey::iter::Lines<'a>, RopeSlice<'a>> {
+impl<'a> Iterator for ReverseIter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
     type Item = RopeSlice<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
