@@ -7,11 +7,11 @@ pub mod util;
 pub mod buffer;
 pub mod config;
 pub mod event;
-pub mod ftype;
+pub mod ftype_text;
+pub mod ftypes;
 pub mod keymap;
 pub mod keymap_ted;
 pub mod location;
-pub mod plugin;
 mod search;
 pub mod stats;
 #[macro_use]

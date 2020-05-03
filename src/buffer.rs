@@ -4,29 +4,20 @@ use std::{
     borrow::Borrow,
     cell::{self, RefCell},
     cmp, io, mem,
+    ops::Bound,
     rc::{self, Rc},
 };
 
 use crate::{
     event::{Event, DP},
-    ftype::FType,
+    ftypes::FType,
     keymap::Keymap,
     location::Location,
-    search::Search,
     window::Context,
     {err_at, Error, Result},
 };
 
 pub const NL: char = '\n';
-
-macro_rules! change {
-    ($self:ident,$method:ident) => {
-        $self.to_mut_change().$method()
-    };
-    ($self:ident,$method:ident, $($s:expr),*) => {
-        $self.to_mut_change().$method($($s),*)
-    };
-}
 
 // all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
@@ -372,7 +363,7 @@ impl Buffer {
 
     #[inline]
     pub fn insert_char(&mut self, ch: char) -> Result<()> {
-        let change = match self.inner {
+        let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
         };
@@ -383,7 +374,7 @@ impl Buffer {
 
     #[inline]
     pub fn backspace(&mut self, n: usize) -> Result<()> {
-        let change = match self.inner {
+        let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
         };
@@ -394,7 +385,7 @@ impl Buffer {
 
     #[inline]
     pub fn remove_at(&mut self, f: Bound<usize>, t: Bound<usize>) -> Result<()> {
-        let change = match self.inner {
+        let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
         };
@@ -418,18 +409,30 @@ impl Buffer {
         };
         c.as_mut_buffer().set_event_prefix(prefix);
 
-        let mut ftype = {
-            let b = c.as_mut_buffer();
-            mem::replace(&mut b.ftype, Default::default());
+        let evnt = {
+            let mut ftype = {
+                let b = c.as_mut_buffer();
+                mem::replace(&mut b.ftype, Default::default())
+            };
+            let evnt = ftype.on_event(c, evnt)?;
+            c.as_mut_buffer().ftype = ftype;
+            evnt
         };
-        ftype.on_event(c, event);
-        c.as_mut_buffer().ftype = ftype;
+        Ok(evnt)
     }
 
-    fn mode_insert(&mut self) -> Result<()> {
+    pub fn mode_insert(&mut self) -> Result<()> {
         self.inner = match mem::replace(&mut self.inner, Default::default()) {
             Inner::Normal(nb) => Inner::Insert(nb.into()),
             inner @ Inner::Insert(_) => inner,
+        };
+        Ok(())
+    }
+
+    pub fn mode_normal(&mut self) -> Result<()> {
+        self.inner = match mem::replace(&mut self.inner, Default::default()) {
+            Inner::Insert(ib) => Inner::Normal(ib.into()),
+            inner @ Inner::Normal(_) => inner,
         };
         Ok(())
     }
@@ -619,15 +622,15 @@ impl Change {
     }
 
     fn remove_at(&mut self, from: Bound<usize>, to: Bound<usize>) -> Result<()> {
-        use std::ops::Bound::{Included, Excluded, Unbound};
+        use std::ops::Bound::{Excluded, Included, Unbounded};
 
         let n = self.buf.len_chars();
-        let from = match from => {
+        let from = match from {
             Included(from) => cmp::min(from, n.saturating_sub(1)),
             Excluded(from) => cmp::min(from.saturating_add(1), n),
             Unbounded => 0,
         };
-        let to = match to = {
+        let to = match to {
             Included(to) => cmp::min(to.saturating_add(1), n),
             Excluded(to) => cmp::min(to, n),
             Unbounded => n,
@@ -726,11 +729,6 @@ impl Change {
 }
 
 impl Change {
-    fn to_col(&self) -> usize {
-        let a_char = self.buf.line_to_char(self.buf.char_to_line(self.cursor));
-        self.cursor - a_char
-    }
-
     fn iter<'a>(&'a self, dp: DP) -> Box<dyn Iterator<Item = char> + 'a> {
         use crate::event::DP::*;
 
@@ -741,24 +739,6 @@ impl Change {
                 iter: chars,
             }),
             Right => Box::new(chars),
-            _ => unreachable!(),
-        }
-    }
-
-    fn iter_line<'a>(
-        //
-        &'a self,
-        dp: DP,
-    ) -> Box<dyn Iterator<Item = RopeSlice> + 'a> {
-        use crate::event::DP::*;
-
-        let lines = self.buf.lines_at(self.buf.char_to_line(self.cursor));
-        match dp {
-            Left => Box::new(ReverseIter {
-                _change: None,
-                iter: lines,
-            }),
-            Right => Box::new(lines),
             _ => unreachable!(),
         }
     }

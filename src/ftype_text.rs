@@ -1,4 +1,4 @@
-use std::cmp;
+use std::{cmp, ops::Bound};
 
 use crate::{
     buffer::NL,
@@ -7,53 +7,6 @@ use crate::{
     window::Context,
     Error, Result,
 };
-
-#[derive(Clone)]
-pub struct FType {
-    p: FT,
-    fallback: FT,
-}
-
-impl Default for FType {
-    fn default() -> FType {
-        FType {
-            p: Default::default(),
-            fallback: Default::default(),
-        }
-    }
-}
-
-impl FType {
-    pub fn new(p: FT, fallback: FT) -> FType {
-        FType { p, fallback }
-    }
-
-    pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
-        match self.p.on_event(c, evnt)? {
-            Event::Noop => Ok(Event::Noop),
-            evnt => self.fallback.on_event(c, evnt),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub enum FT {
-    Text(Text),
-}
-
-impl Default for FT {
-    fn default() -> FT {
-        FT::Text(Default::default())
-    }
-}
-
-impl FT {
-    fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
-        match self {
-            FT::Text(t) => t.on_event(c, evnt),
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct Text {
@@ -80,7 +33,7 @@ impl Text {
     }
 
     fn on_n_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
-        use crate::event::{Event::*, DP::*};
+        use crate::event::Event::*;
 
         // switch to insert mode.
         let evnt = match evnt {
@@ -95,52 +48,52 @@ impl Text {
         let evnt = match evnt {
             Noop => Noop,
             // execute motion command.
-            MtoLeft(dp) => self.mto_left(1, dp)?,
-            MtoRight(dp) => self.mto_right(1, dp)?,
-            MtoUp(dp) => self.mto_up(1, dp)?,
-            MtoDown(dp) => self.mto_down(1, dp)?,
-            MtoCol => self.mto_column(1)?,
-            MtoHome(dp) => self.mto_home(dp)?,
-            MtoEnd => self.mto_end()?,
-            MtoRow(dp) => self.mto_row(1, dp)?,
-            MtoPercent => self.mto_percent(1)?,
-            MtoCursor => self.mto_cursor(1)?,
-            e @ MtoCharF(_, _) => self.mto_char(1, e)?,
-            e @ MtoCharT(_, _) => self.mto_char(1, e)?,
-            e @ MtoWord(_, _) => self.mto_words(1, e)?,
-            e @ MtoWWord(_, _) => self.mto_wwords(1, e)?,
-            e @ MtoSentence(_) => self.mto_sentence(1, e)?,
-            e @ MtoPara(_) => self.mto_para(1, e)?,
-            e @ MtoBracket(_, _, _) => self.mto_bracket(1, e)?,
-            e @ MtoPattern(Some(_), _) => self.mto_pattern(1, e)?,
-            N(n, box MtoLeft(dp)) => self.mto_left(n, dp)?,
-            N(n, box MtoRight(dp)) => self.mto_right(n, dp)?,
-            N(n, box MtoUp(dp)) => self.mto_up(n, dp)?,
-            N(n, box MtoDown(dp)) => self.mto_down(n, dp)?,
-            N(n, box MtoCol) => self.mto_column(n)?,
-            N(_, box MtoHome(dp)) => self.mto_home(dp)?,
-            N(_, box MtoEnd) => self.mto_end()?,
-            N(n, box MtoRow(dp)) => self.mto_row(n, dp)?,
-            N(n, box MtoPercent) => self.mto_percent(n)?,
-            N(n, box MtoCursor) => self.mto_cursor(n)?,
-            N(n, e @ box MtoCharF(_, _)) => self.mto_char(n, *e)?,
-            N(n, e @ box MtoCharT(_, _)) => self.mto_char(n, *e)?,
-            N(n, e @ box MtoWord(_, _)) => self.mto_words(n, *e)?,
-            N(n, e @ box MtoWWord(_, _)) => self.mto_wwords(n, *e)?,
-            N(n, e @ box MtoSentence(_)) => self.mto_sentence(n, *e)?,
-            N(n, e @ box MtoPara(_)) => self.mto_para(n, *e)?,
-            N(n, e @ box MtoBracket(_, _, _)) => self.mto_bracket(n, *e)?,
-            N(n, e @ box MtoPattern(Some(_), _)) => self.mto_pattern(n, *e)?,
+            MtoLeft(dp) => self.mto_left(c, 1, dp)?,
+            MtoRight(dp) => self.mto_right(c, 1, dp)?,
+            MtoUp(dp) => self.mto_up(c, 1, dp)?,
+            MtoDown(dp) => self.mto_down(c, 1, dp)?,
+            MtoCol => self.mto_column(c, 1)?,
+            MtoHome(dp) => self.mto_home(c, dp)?,
+            MtoEnd => self.mto_end(c)?,
+            MtoRow(dp) => self.mto_row(c, 1, dp)?,
+            MtoPercent => self.mto_percent(c, 1)?,
+            MtoCursor => self.mto_cursor(c, 1)?,
+            e @ MtoCharF(_, _) => self.mto_char(c, 1, e)?,
+            e @ MtoCharT(_, _) => self.mto_char(c, 1, e)?,
+            e @ MtoWord(_, _) => self.mto_words(c, 1, e)?,
+            e @ MtoWWord(_, _) => self.mto_wwords(c, 1, e)?,
+            e @ MtoSentence(_) => self.mto_sentence(c, 1, e)?,
+            e @ MtoPara(_) => self.mto_para(c, 1, e)?,
+            e @ MtoBracket(_, _, _) => self.mto_bracket(c, 1, e)?,
+            e @ MtoPattern(Some(_), _) => self.mto_pattern(c, 1, e)?,
+            N(n, box MtoLeft(dp)) => self.mto_left(c, n, dp)?,
+            N(n, box MtoRight(dp)) => self.mto_right(c, n, dp)?,
+            N(n, box MtoUp(dp)) => self.mto_up(c, n, dp)?,
+            N(n, box MtoDown(dp)) => self.mto_down(c, n, dp)?,
+            N(n, box MtoCol) => self.mto_column(c, n)?,
+            N(_, box MtoHome(dp)) => self.mto_home(c, dp)?,
+            N(_, box MtoEnd) => self.mto_end(c)?,
+            N(n, box MtoRow(dp)) => self.mto_row(c, n, dp)?,
+            N(n, box MtoPercent) => self.mto_percent(c, n)?,
+            N(n, box MtoCursor) => self.mto_cursor(c, n)?,
+            N(n, e @ box MtoCharF(_, _)) => self.mto_char(c, n, *e)?,
+            N(n, e @ box MtoCharT(_, _)) => self.mto_char(c, n, *e)?,
+            N(n, e @ box MtoWord(_, _)) => self.mto_words(c, n, *e)?,
+            N(n, e @ box MtoWWord(_, _)) => self.mto_wwords(c, n, *e)?,
+            N(n, e @ box MtoSentence(_)) => self.mto_sentence(c, n, *e)?,
+            N(n, e @ box MtoPara(_)) => self.mto_para(c, n, *e)?,
+            N(n, e @ box MtoBracket(_, _, _)) => self.mto_bracket(c, n, *e)?,
+            N(n, e @ box MtoPattern(Some(_), _)) => self.mto_pattern(c, n, *e)?,
             evnt => evnt,
         };
 
         Ok(evnt)
     }
 
-    fn on_i_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
-        use crate::event::Event::*;
+    fn on_i_event(&mut self, c: &mut Context, mut evnt: Event) -> Result<Event> {
+        use crate::event::{Event::*, DP::*};
 
-        evnt = match self.ex_event(c, e)? {
+        evnt = match self.ex_i_event(c, evnt)? {
             // execute mode switching commands
             ModeInsert(pos) => {
                 self.insert_repeat = 0;
@@ -154,21 +107,21 @@ impl Text {
                 if pos == End {
                     self.mto_end(c)?;
                 }
-                self.mto_right(c, 1, Nobound);
+                self.mto_right(c, 1, Nobound)?;
                 Noop
             }
             ModeOpen(Left) => {
                 self.insert_repeat = 0;
-                self.mto_home(c, Nope);
-                b.insert_char(NL)?;
-                self.mto_left(c, 1, Nobound);
-                Noop,
+                self.mto_home(c, Nope)?;
+                c.as_mut_buffer().insert_char(NL)?;
+                self.mto_left(c, 1, Nobound)?;
+                Noop
             }
             ModeOpen(Right) => {
                 self.insert_repeat = 0;
                 self.mto_end(c)?;
                 self.mto_right(c, 1, Nobound)?;
-                b.insert_char(NL)?;
+                c.as_mut_buffer().insert_char(NL)?;
                 Noop
             }
             // mode command with repeat
@@ -179,31 +132,31 @@ impl Text {
                 }
                 Noop
             }
-            N(n, box ModeInsert(pos)) => Noop,
+            N(_, box ModeInsert(_)) => Noop,
             N(n, box ModeAppend(pos)) if n > 0 => {
                 self.insert_repeat = n - 1;
                 if pos == End {
                     self.mto_end(c)?;
                 }
-                self.mto_right(c, 1, Nobound);
+                self.mto_right(c, 1, Nobound)?;
                 Noop
             }
-            N(n, box ModeAppend(pos)) => Noop,
+            N(_, box ModeAppend(_)) => Noop,
             N(n, box ModeOpen(Left)) if n > 0 => {
                 self.insert_repeat = n - 1;
-                self.mto_home(c, Nope);
-                b.insert_char(NL)?;
-                self.mto_left(c, 1, Nobound);
-                Noop,
+                self.mto_home(c, Nope)?;
+                c.as_mut_buffer().insert_char(NL)?;
+                self.mto_left(c, 1, Nobound)?;
+                Noop
             }
             N(n, box ModeOpen(Right)) if n > 0 => {
                 self.insert_repeat = n - 1;
                 self.mto_end(c)?;
                 self.mto_right(c, 1, Nobound)?;
-                b.insert_char(NL)?;
+                c.as_mut_buffer().insert_char(NL)?;
                 Noop
             }
-            N(n, box ModeOpen(Right)) => Noop,
+            N(_, box ModeOpen(_)) => Noop,
             evnt => {
                 self.last_inserts.push(evnt.clone());
                 evnt
@@ -214,45 +167,44 @@ impl Text {
     }
 
     fn ex_i_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
-        let insert_only = c.as_mut_buffer().insert_only;
-        let b = c.as_mut_buffer();
+        use crate::event::{Event::*, DP::*};
+
         let evnt = match evnt {
             // movement
-            MtoLeft(dp) => self.mto_left(c, 1, dp),
-            MtoRight(dp) => self.mto_right(c, 1, dp),
-            MtoUp(dp) => self.mto_up(c, 1, dp),
-            MtoDown(dp) => self.mto_down(c, 1, dp),
-            MtoHome(dp) => self.mto_home(c, dp),
-            MtoEnd => self.mto_end(c),
+            MtoLeft(dp) => self.mto_left(c, 1, dp)?,
+            MtoRight(dp) => self.mto_right(c, 1, dp)?,
+            MtoUp(dp) => self.mto_up(c, 1, dp)?,
+            MtoDown(dp) => self.mto_down(c, 1, dp)?,
+            MtoHome(dp) => self.mto_home(c, dp)?,
+            MtoEnd => self.mto_end(c)?,
             // Handle mode events.
             Esc => {
                 self.repeat(c)?;
-                self.mto_left(1, LineBound)?;
-                b.mode_normal()?;
-                Noop,
+                self.mto_left(c, 1, LineBound)?;
+                c.as_mut_buffer().mode_normal()?;
+                Noop
             }
-            Esc => Ok(Noop),
             // on going insert
             Char(ch, _) => {
-                b.insert_char(ch)?;
+                c.as_mut_buffer().insert_char(ch)?;
                 Noop
             }
             Backspace => {
-                b.backspace(1)?;
+                c.as_mut_buffer().backspace(1)?;
                 Noop
             }
             Enter => {
-                b.insert_char(NL)?;
+                c.as_mut_buffer().insert_char(NL)?;
                 Noop
             }
             Tab => {
-                b.insert_char('\t')?;
+                c.as_mut_buffer().insert_char('\t')?;
                 Noop
             }
             Delete => {
-                let from = Bound::Included(b.to_cursor());
+                let from = Bound::Included(c.as_mut_buffer().to_cursor());
                 let to = from.clone();
-                b.remove_at(from, to)?;
+                c.as_mut_buffer().remove_at(from, to)?;
                 Noop
             }
             evnt => evnt,
@@ -270,7 +222,11 @@ impl Text {
                 Char(_, _) | Enter | Tab | Backspace | Delete => true,
                 _ => false,
             });
-            if valid { evnts } else { vec![] }
+            if valid {
+                evnts
+            } else {
+                vec![]
+            }
         };
 
         for _ in 0..self.insert_repeat {
@@ -283,7 +239,6 @@ impl Text {
         self.last_inserts = last_inserts;
         Ok(())
     }
-
 }
 
 impl Text {
