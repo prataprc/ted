@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use ropey::{self, Rope, RopeSlice};
 
 use std::{
@@ -6,6 +7,7 @@ use std::{
     cmp, io, mem,
     ops::Bound,
     rc::{self, Rc},
+    sync::Mutex,
 };
 
 use crate::{
@@ -19,9 +21,14 @@ use crate::{
 
 pub const NL: char = '\n';
 
+lazy_static! {
+    static ref BUFFER_NUM: Mutex<usize> = Mutex::new(0);
+}
+
 // all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
 pub struct Buffer {
+    pub num: usize, // buffer number
     pub location: Location,
     pub read_only: bool,
     pub insert_only: bool,
@@ -46,30 +53,16 @@ impl Default for Inner {
     }
 }
 
-impl Default for Buffer {
-    fn default() -> Buffer {
-        Buffer {
-            location: Default::default(),
-            read_only: false,
-            insert_only: false,
-            evnt_mto_char: Event::Noop,
-            evnt_mto_patt: Event::Noop,
-            last_inserts: Default::default(),
-            keymap: Default::default(),
-            ftype: Default::default(),
-
-            inner: Default::default(),
-        }
-    }
-}
-
 impl Buffer {
     pub fn from_reader<R>(data: R) -> Result<Buffer>
     where
         R: io::Read,
     {
         let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
+        let mut num = BUFFER_NUM.lock().unwrap();
+        *num = *num + 1;
         Ok(Buffer {
+            num: *num,
             location: Default::default(),
             read_only: false,
             insert_only: false,
@@ -154,12 +147,20 @@ impl Buffer {
 }
 
 impl Buffer {
+    #[inline]
     pub fn is_read_only(&self) -> bool {
         self.read_only
     }
 
+    #[inline]
     pub fn is_insert_only(&self) -> bool {
         self.insert_only
+    }
+
+    #[inline]
+    pub fn is_modified(&self) -> bool {
+        let change = self.to_change();
+        change.parent.is_some() || !change.children.is_empty()
     }
 
     #[inline]
@@ -178,6 +179,17 @@ impl Buffer {
         }
     }
 
+    #[inline]
+    pub fn to_num(&self) -> usize {
+        self.num
+    }
+
+    #[inline]
+    pub fn to_file_type(&self) -> String {
+        self.ftype.to_type_name()
+    }
+
+    #[inline]
     pub fn to_location(&self) -> Location {
         self.location.clone()
     }

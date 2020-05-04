@@ -42,25 +42,25 @@ macro_rules! limite {
 
 #[macro_export]
 macro_rules! err_at {
-    ($v:ident, msg:$msg:expr) => {
+    ($v:ident, msg:$m:expr) => {
         //
-        Err(Error::$v(format!("{}:{} {}", file!(), line!(), $msg)))
+        Err(Error::$v(format!("{}:{} {}", file!(), line!(), $m)))
     };
     ($v:ident, $e:expr) => {
         match $e {
             Ok(val) => Ok(val),
             Err(err) => {
-                let msg = format!("{}:{} err:{}", file!(), line!(), err);
-                Err(Error::$v(msg))
+                let m = format!("{}:{} err:{:?}", file!(), line!(), err);
+                Err(Error::$v(m))
             }
         }
     };
-    ($v:ident, $e:expr, $msg:expr) => {
+    ($v:ident, $e:expr, $m:expr) => {
         match $e {
             Ok(val) => Ok(val),
             Err(err) => {
-                let msg = format!("{}:{} {} err:{}", file!(), line!(), $msg, err);
-                Err(Error::$v(msg))
+                let m = format!("{}:{} {} err:{:?}", file!(), line!(), $m, err);
+                Err(Error::$v(m))
             }
         }
     };

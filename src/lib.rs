@@ -45,3 +45,9 @@ impl fmt::Display for Error {
         }
     }
 }
+
+impl fmt::Debug for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(f, "{}", self)
+    }
+}

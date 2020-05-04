@@ -26,6 +26,10 @@ impl FType {
             evnt => self.fallback.on_event(c, evnt),
         }
     }
+
+    pub fn to_type_name(&self) -> String {
+        self.p.to_type_name()
+    }
 }
 
 #[derive(Clone)]
@@ -43,6 +47,12 @@ impl FT {
     fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
         match self {
             FT::Text(t) => t.on_event(c, evnt),
+        }
+    }
+
+    fn to_type_name(&self) -> String {
+        match self {
+            FT::Text(t) => t.to_type_name(),
         }
     }
 }

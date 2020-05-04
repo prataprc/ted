@@ -118,10 +118,7 @@ impl WindowEdit {
         self.old_bc = new_bc;
 
         let mut stdout = io::stdout();
-        let (col, mut row) = {
-            let (c, r) = self.coord.to_origin();
-            (c - 1, r - 1)
-        };
+        let (col, mut row) = self.coord.to_origin_cursor();
 
         let buf = s.as_buffer(&self.buffer_id);
 
@@ -169,6 +166,11 @@ impl WindowEdit {
 }
 
 impl WindowEdit {
+    #[inline]
+    pub fn to_buffer_id(&self) -> String {
+        self.buffer_id.clone()
+    }
+
     #[inline]
     pub fn to_cursor(&self) -> Cursor {
         let mut cursor = self.coord.to_top_left() + self.cursor;

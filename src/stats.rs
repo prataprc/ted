@@ -26,7 +26,7 @@ impl Latency {
         if self.max == Duration::from_nanos(0) || self.max < duration {
             self.max = duration
         }
-        let off: usize = (duration.as_nanos() / 100_000) as usize;
+        let off: usize = (duration.as_nanos() / 10_000_000) as usize;
         self.durations[off] += 1;
     }
 

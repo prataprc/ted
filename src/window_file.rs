@@ -1,7 +1,7 @@
 use crossterm::queue;
 
 use std::{
-    fmt,
+    ffi, fmt,
     io::{self, Write},
     iter::FromIterator,
     result,
@@ -67,6 +67,50 @@ impl WindowFile {
         }
     }
 
+    #[inline]
+    fn to_origin(&self) -> (u16, u16) {
+        self.coord.to_origin()
+    }
+
+    fn status_line(&self, s: &State) -> Span {
+        let alt: ffi::OsString = "--display-error--".into();
+        let (hgt, wth) = self.coord.to_size();
+        let b = s.as_buffer(&self.we.to_buffer_id());
+
+        let l_name = {
+            let loc = b.to_location();
+            loc.to_long_string().unwrap_or(alt.clone())
+        };
+        let s_name = {
+            let loc = b.to_location();
+            loc.to_short_string().unwrap_or(alt.clone())
+        };
+        let fstt = {
+            let mut ss = vec![];
+            if b.is_read_only() {
+                ss.push("read-only")
+            } else if b.is_insert_only() {
+                ss.push("insert-only")
+            } else if b.is_modified() {
+                ss.push("modified")
+            }
+            ss.join(", ")
+        };
+        let ft = b.to_file_type();
+
+        let long_ver = format!("{:?} {} [{}]", l_name, fstt, ft);
+        let shrt_ver = format!("{:?} {} [{}]", s_name, fstt, ft);
+        let n = long_ver.chars().collect::<Vec<char>>().len();
+
+        let (col, mut row) = self.coord.to_origin_cursor();
+        row += hgt - 1;
+        span!(
+            (col, row),
+            "{}",
+            if_else!(n > (wth as usize), shrt_ver, long_ver)
+        )
+    }
+
     fn do_refresh(&mut self, s: &State) -> Result<()> {
         use std::iter::repeat;
 
@@ -94,11 +138,6 @@ impl WindowFile {
 }
 
 impl WindowFile {
-    #[inline]
-    fn to_origin(&self) -> (u16, u16) {
-        self.coord.to_origin()
-    }
-
     #[inline]
     pub fn to_cursor(&self) -> Cursor {
         self.we.to_cursor()

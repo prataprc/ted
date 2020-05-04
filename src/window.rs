@@ -140,6 +140,15 @@ impl State {
     pub fn to_window_cursor(&self) -> Cursor {
         self.window.to_cursor()
     }
+
+    pub fn to_buffer_num(&self, id: String) -> Option<usize> {
+        for b in self.buffers.iter() {
+            if b.to_id() == id {
+                return Some(b.to_num());
+            }
+        }
+        None
+    }
 }
 
 impl State {
@@ -295,6 +304,11 @@ impl Coord {
     #[inline]
     pub fn to_origin(&self) -> (u16, u16) {
         (self.col, self.row)
+    }
+
+    #[inline]
+    pub fn to_origin_cursor(&self) -> (u16, u16) {
+        (self.col - 1, self.row - 1)
     }
 
     #[inline]

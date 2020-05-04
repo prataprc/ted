@@ -24,6 +24,10 @@ impl Default for Text {
 }
 
 impl Text {
+    pub fn to_type_name(&self) -> String {
+        "txt".to_string()
+    }
+
     pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
         match c.as_buffer().to_mode() {
             "insert" => self.on_i_event(c, evnt),

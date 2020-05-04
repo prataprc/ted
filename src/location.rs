@@ -1,7 +1,7 @@
 use dirs;
 use lazy_static::lazy_static;
 
-use std::{ffi, fmt, iter::FromIterator, path, result, sync::Mutex};
+use std::{env, ffi, fmt, iter::FromIterator, path, result, sync::Mutex};
 
 use crate::{Error, Result};
 
@@ -20,7 +20,7 @@ impl Location {
     pub fn new_anonymous() -> Location {
         let mut count = ANONYMOUS_COUNT.lock().unwrap();
         *count = *count + 1;
-        Location::Anonymous(format!("anonymous-{}", count))
+        Location::Anonymous(format!("newfile-{}", count))
     }
 
     pub fn new_disk(loc: &ffi::OsStr) -> Location {
@@ -30,44 +30,47 @@ impl Location {
         }
     }
 
-    pub fn to_short_string(&self) -> Result<String> {
+    pub fn to_short_string(&self) -> Result<ffi::OsString> {
         match self {
-            Location::Anonymous(s) => Ok(s.clone()),
-            Location::Disk(s) => Self::shrink_home(s),
+            Location::Anonymous(_) => Ok("[no name]".to_string().into()),
+            Location::Disk(s) => Self::shrink_home(&Self::shrink_cwd(s)?),
         }
     }
 
-    pub fn to_long_string(&self) -> Result<String> {
+    pub fn to_long_string(&self) -> Result<ffi::OsString> {
         match self {
-            Location::Anonymous(s) => Ok(s.clone()),
-            Location::Disk(s) => err_at!(
-                FailConvert,
-                s.to_os_string()
-                    .into_string()
-                    .map_err(|_| Error::FailConvert("".to_string()))
-            ),
+            Location::Anonymous(_) => Ok("[no name]".to_string().into()),
+            Location::Disk(s) => Ok(s.to_os_string()),
         }
     }
 
-    fn shrink_home(s: &ffi::OsStr) -> Result<String> {
-        let res = match dirs::home_dir() {
+    fn shrink_home(s: &ffi::OsStr) -> Result<ffi::OsString> {
+        match dirs::home_dir() {
             Some(home) => {
                 let pb: path::PathBuf = s.to_os_string().into();
                 if pb.starts_with(&home) {
                     let mut shrnk = path::PathBuf::new();
                     shrnk.push(&home);
                     shrnk.push(err_at!(FailConvert, pb.strip_prefix(&home))?);
-                    shrnk.into_os_string().into_string()
+                    Ok(shrnk.into_os_string())
                 } else {
-                    pb.into_os_string().into_string()
+                    Ok(pb.into_os_string())
                 }
             }
-            None => s.to_os_string().into_string(),
-        };
-        err_at!(
-            FailConvert,
-            res.map_err(|_| Error::FailConvert("".to_string()))
-        )
+            None => Ok(s.to_os_string()),
+        }
+    }
+
+    fn shrink_cwd(s: &ffi::OsStr) -> Result<ffi::OsString> {
+        let cwd = err_at!(Fatal, env::current_dir())?;
+        let pb: path::PathBuf = s.to_os_string().into();
+        if pb.starts_with(&cwd) {
+            let mut shrnk = path::PathBuf::new();
+            shrnk.push(err_at!(FailConvert, pb.strip_prefix(&cwd))?);
+            Ok(shrnk.into_os_string())
+        } else {
+            Ok(pb.into_os_string())
+        }
     }
 
     fn canonicalize(loc: String) -> path::PathBuf {
