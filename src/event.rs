@@ -1,6 +1,6 @@
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
-use std::{convert::TryFrom, ffi, fs, ops::Bound, path};
+use std::{convert::TryFrom, ffi, fs, path};
 
 use crate::{location::Location, Error, Result};
 
@@ -150,10 +150,7 @@ pub enum Mto {
 }
 
 #[derive(Clone)]
-enum N {}
-
-#[derive(Clone)]
-enum Ted {
+pub enum Ted {
     NewBuffer,
     OpenFiles { flocs: Vec<Location> },
     UseBuffer { buffer_id: String },
@@ -180,10 +177,10 @@ pub enum Event {
     Op(usize, Opr), // (n, op-event)
     Md(Mod),        // (n, mode-event)
     Mt(Mto),        // (n, motion-event)
+    Td(Ted),
     List(Vec<Event>),
-    Ted(Ted),
     // other events
-    F(u8, KeyModifiers),
+    FKey(u8, KeyModifiers),
     BackTab,
     Noop,
 }
@@ -196,32 +193,33 @@ impl Default for Event {
 
 impl From<TermEvent> for Event {
     fn from(evnt: TermEvent) -> Event {
-        use {Event::*, DP::*};
+        use Event::*;
 
         match evnt {
             TermEvent::Key(KeyEvent { code, modifiers: m }) => {
                 let ctrl = m.contains(KeyModifiers::CONTROL);
+                let empty = m.is_empty();
                 match code {
                     //
-                    KeyCode::Backspace if m.is_empty() => Backspace,
-                    KeyCode::Enter if m.is_empty() => Enter,
-                    KeyCode::Tab if m.is_empty() => Tab,
-                    KeyCode::Delete if m.is_empty() => Delete,
-                    KeyCode::Char(ch) if m.is_empty() => Char(ch, m),
+                    KeyCode::Backspace if empty => Backspace,
+                    KeyCode::Enter if empty => Enter,
+                    KeyCode::Tab if empty => Tab,
+                    KeyCode::Delete if empty => Delete,
+                    KeyCode::Char(ch) if empty => Char(ch, m),
                     //
-                    KeyCode::BackTab if m.is_empty() => BackTab,
-                    KeyCode::F(f) if m.is_empty() => F(f, m),
+                    KeyCode::BackTab if empty => BackTab,
+                    KeyCode::F(f) if empty => F(f, m),
                     //
                     KeyCode::Char('[') if ctrl => Esc,
-                    KeyCode::Esc if m.is_empty() => Esc,
-                    KeyCode::Insert => Md(Mod::Insert(1, Nope)),
+                    KeyCode::Esc if empty => Esc,
+                    KeyCode::Insert => Md(Mod::Insert(1, DP::Nope)),
                     //
-                    KeyCode::Left if m.is_empty() => Mt(Mto::Left(1, LineBound)),
-                    KeyCode::Right if m.is_empty() => Mt(Mto::Right(1, LineBound)),
-                    KeyCode::Up if m.is_empty() => Mt(Mto::Up(1, Nope)),
-                    KeyCode::Down if m.is_empty() => Mt(Mto::Down(1, Nope)),
-                    KeyCode::Home if m.is_empty() => Mt(Mto::Home(1, Nope)),
-                    KeyCode::End if m.is_empty() => Mt(Mto::End),
+                    KeyCode::Left if empty => Mt(Mto::Left(1, DP::LineBound)),
+                    KeyCode::Right if empty => Mt(Mto::Right(1, DP::LineBound)),
+                    KeyCode::Up if empty => Mt(Mto::Up(1, DP::Nope)),
+                    KeyCode::Down if empty => Mt(Mto::Down(1, DP::Nope)),
+                    KeyCode::Home if empty => Mt(Mto::Home(1, DP::Nope)),
+                    KeyCode::End if empty => Mt(Mto::End),
                     KeyCode::Null => Noop,
                     _ => Event::Noop,
                 }
@@ -246,21 +244,21 @@ impl From<Vec<Event>> for Event {
 
 impl Mto {
     pub fn transform(self, dp: DP) -> Result<Self> {
-        use {Mto::*, DP::*};
+        use Mto::*;
 
         match (self, dp) {
-            (CharF(ch, DP::Left), DP::Right) => Ok(CharF(ch, Left)),
-            (CharF(ch, DP::Left), DP::Left) => Ok(CharF(ch, Right)),
-            (CharF(ch, DP::Right), DP::Right) => Ok(CharF(ch, Right)),
-            (CharF(ch, DP::Right), DP::Left) => Ok(CharF(ch, Left)),
-            (CharT(ch, DP::Left), DP::Right) => Ok(CharT(ch, Left)),
-            (CharT(ch, DP::Left), DP::Left) => Ok(CharT(ch, Right)),
-            (CharT(ch, DP::Right), DP::Right) => Ok(CharT(ch, Right)),
-            (CharT(ch, DP::Right), DP::Left) => Ok(CharT(ch, Left)),
-            (Pattern(ch, DP::Left), DP::Right) => Ok(Pattern(ch, Left)),
-            (Pattern(ch, DP::Left), DP::Left) => Ok(Pattern(ch, Right)),
-            (Pattern(ch, DP::Right), DP::Right) => Ok(Pattern(ch, Right)),
-            (Pattern(ch, DP::Right), DP::Left) => Ok(Pattern(ch, Left)),
+            (CharF(ch, DP::Left), DP::Right) => Ok(CharF(ch, DP::Left)),
+            (CharF(ch, DP::Left), DP::Left) => Ok(CharF(ch, DP::Right)),
+            (CharF(ch, DP::Right), DP::Right) => Ok(CharF(ch, DP::Right)),
+            (CharF(ch, DP::Right), DP::Left) => Ok(CharF(ch, DP::Left)),
+            (CharT(ch, DP::Left), DP::Right) => Ok(CharT(ch, DP::Left)),
+            (CharT(ch, DP::Left), DP::Left) => Ok(CharT(ch, DP::Right)),
+            (CharT(ch, DP::Right), DP::Right) => Ok(CharT(ch, DP::Right)),
+            (CharT(ch, DP::Right), DP::Left) => Ok(CharT(ch, DP::Left)),
+            (Pattern(ch, DP::Left), DP::Right) => Ok(Pattern(ch, DP::Left)),
+            (Pattern(ch, DP::Left), DP::Left) => Ok(Pattern(ch, DP::Right)),
+            (Pattern(ch, DP::Right), DP::Right) => Ok(Pattern(ch, DP::Right)),
+            (Pattern(ch, DP::Right), DP::Left) => Ok(Pattern(ch, DP::Left)),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
@@ -276,8 +274,6 @@ impl Event {
     }
 
     pub fn is_insert(&self) -> bool {
-        use Event::*;
-
         match self {
             Mod::Insert(_) | Mod::Append(_) | Mod::Open(_) => true,
             _ => false,

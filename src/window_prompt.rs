@@ -125,9 +125,9 @@ impl WindowPrompt {
                 self.input.pop();
                 Event::Noop
             }
-            Event::Enter => Event::PromptReply {
+            Event::Enter => Event::Td(Ted::PromptReply {
                 input: self.input.clone(),
-            },
+            }),
             Event::Char(ch, _m) => {
                 self.input.push(ch);
                 Event::Noop

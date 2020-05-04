@@ -2,7 +2,7 @@ use std::{cmp, ops::Bound};
 
 use crate::{
     buffer::NL,
-    event::{Event, DP},
+    event::{Event, Mod, Mto, DP},
     search::Search,
     window::Context,
     Error, Result,
@@ -54,7 +54,7 @@ impl Text {
             Noop => Noop,
             // execute motion command.
             Mt(Mto::Left(n, dp)) => self.mto_left(c, n, dp)?,
-            Mt(Mto::Right(n, dp) => self.mto_right(c, n, dp)?,
+            Mt(Mto::Right(n, dp)) => self.mto_right(c, n, dp)?,
             Mt(Mto::Up(n, dp)) => self.mto_up(c, n, dp)?,
             Mt(Mto::Down(n, dp)) => self.mto_down(c, n, dp)?,
             Mt(Mto::Col(n)) => self.mto_column(c, n)?,
@@ -72,14 +72,6 @@ impl Text {
             Mt(e @ Mto::Para(_, _)) => self.mto_para(c, e)?,
             Mt(e @ Mto::Bracket(_, _, _, _)) => self.mto_bracket(c, e)?,
             Mt(e @ Mto::Pattern(_, Some(_), _)) => self.mto_pattern(c, e)?,
-            N(n, e @ box MtoCharF(_, _)) => self.mto_char(c, n, *e)?,
-            N(n, e @ box MtoCharT(_, _)) => self.mto_char(c, n, *e)?,
-            N(n, e @ box MtoWord(_, _)) => self.mto_words(c, n, *e)?,
-            N(n, e @ box MtoWWord(_, _)) => self.mto_wwords(c, n, *e)?,
-            N(n, e @ box MtoSentence(_)) => self.mto_sentence(c, n, *e)?,
-            N(n, e @ box MtoPara(_)) => self.mto_para(c, n, *e)?,
-            N(n, e @ box MtoBracket(_, _, _)) => self.mto_bracket(c, n, *e)?,
-            N(n, e @ box MtoPattern(Some(_), _)) => self.mto_pattern(c, n, *e)?,
             evnt => evnt,
         };
 
@@ -87,72 +79,41 @@ impl Text {
     }
 
     fn on_i_event(&mut self, c: &mut Context, mut evnt: Event) -> Result<Event> {
-        use crate::event::{Event::*, DP::*};
+        use crate::event::Event::*;
 
         evnt = match self.ex_i_event(c, evnt)? {
-            // execute mode switching commands
-            ModeInsert(pos) => {
-                self.insert_repeat = 0;
-                if pos == Caret {
-                    self.mto_home(c, Caret)?;
+            Md(Mod::Insert(n, pos)) if n > 0 => {
+                self.insert_repeat = n - 1;
+                if pos == DP::Caret {
+                    self.mto_home(c, DP::Caret)?;
                 }
                 Noop
             }
-            ModeAppend(pos) => {
-                self.insert_repeat = 0;
-                if pos == End {
+            Md(Mod::Insert(_, _)) => Noop,
+            Md(Mod::Append(n, pos)) if n > 0 => {
+                self.insert_repeat = n - 1;
+                if pos == DP::End {
                     self.mto_end(c)?;
                 }
-                self.mto_right(c, 1, Nobound)?;
+                self.mto_right(c, 1, DP::Nobound)?;
                 Noop
             }
-            ModeOpen(Left) => {
-                self.insert_repeat = 0;
-                self.mto_home(c, Nope)?;
-                c.as_mut_buffer().insert_char(NL)?;
-                self.mto_left(c, 1, Nobound)?;
-                Noop
-            }
-            ModeOpen(Right) => {
-                self.insert_repeat = 0;
-                self.mto_end(c)?;
-                self.mto_right(c, 1, Nobound)?;
-                c.as_mut_buffer().insert_char(NL)?;
-                Noop
-            }
-            // mode command with repeat
-            N(n, box ModeInsert(pos)) if n > 0 => {
+            Md(Mod::Append(_, _)) => Noop,
+            Md(Mod::Open(n, Left)) if n > 0 => {
                 self.insert_repeat = n - 1;
-                if pos == Caret {
-                    self.mto_home(c, Caret)?;
-                }
-                Noop
-            }
-            N(_, box ModeInsert(_)) => Noop,
-            N(n, box ModeAppend(pos)) if n > 0 => {
-                self.insert_repeat = n - 1;
-                if pos == End {
-                    self.mto_end(c)?;
-                }
-                self.mto_right(c, 1, Nobound)?;
-                Noop
-            }
-            N(_, box ModeAppend(_)) => Noop,
-            N(n, box ModeOpen(Left)) if n > 0 => {
-                self.insert_repeat = n - 1;
-                self.mto_home(c, Nope)?;
+                self.mto_home(c, DP::Nope)?;
                 c.as_mut_buffer().insert_char(NL)?;
-                self.mto_left(c, 1, Nobound)?;
+                self.mto_left(c, 1, DP::Nobound)?;
                 Noop
             }
-            N(n, box ModeOpen(Right)) if n > 0 => {
+            Md(Mod::Open(n, DP::Right)) if n > 0 => {
                 self.insert_repeat = n - 1;
                 self.mto_end(c)?;
-                self.mto_right(c, 1, Nobound)?;
+                self.mto_right(c, 1, DP::Nobound)?;
                 c.as_mut_buffer().insert_char(NL)?;
                 Noop
             }
-            N(_, box ModeOpen(_)) => Noop,
+            Md(Mod::Open(_, _)) => Noop,
             evnt => {
                 self.last_inserts.push(evnt.clone());
                 evnt
@@ -163,20 +124,20 @@ impl Text {
     }
 
     fn ex_i_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
-        use crate::event::{Event::*, DP::*};
+        use crate::event::Event::*;
 
         let evnt = match evnt {
             // movement
-            MtoLeft(dp) => self.mto_left(c, 1, dp)?,
-            MtoRight(dp) => self.mto_right(c, 1, dp)?,
-            MtoUp(dp) => self.mto_up(c, 1, dp)?,
-            MtoDown(dp) => self.mto_down(c, 1, dp)?,
-            MtoHome(dp) => self.mto_home(c, dp)?,
+            Mto::Left(n, dp) => self.mto_left(c, n, dp)?,
+            Mto::Right(n, dp) => self.mto_right(c, n, dp)?,
+            Mto::Up(n, dp) => self.mto_up(c, n, dp)?,
+            Mto::Down(n, dp) => self.mto_down(c, n, dp)?,
+            Mto::Home(dp) => self.mto_home(c, dp)?,
             MtoEnd => self.mto_end(c)?,
             // Handle mode events.
             Esc => {
                 self.repeat(c)?;
-                self.mto_left(c, 1, LineBound)?;
+                self.mto_left(c, 1, DP::LineBound)?;
                 c.as_mut_buffer().mode_normal()?;
                 Noop
             }
@@ -239,16 +200,14 @@ impl Text {
 
 impl Text {
     fn mto_left(&mut self, c: &mut Context, n: usize, dp: DP) -> Result<Event> {
-        use crate::event::DP::*;
-
         let mut cursor = c.as_buffer().to_cursor();
         cursor = match dp {
-            LineBound => {
+            DP::LineBound => {
                 let home = c.as_buffer().line_home();
                 let new_cursor = cursor.saturating_sub(n);
                 Ok(if_else!(new_cursor > home, new_cursor, home))
             }
-            Nobound => Ok(cursor.saturating_sub(n)),
+            DP::Nobound => Ok(cursor.saturating_sub(n)),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }?;
 
@@ -273,23 +232,19 @@ impl Text {
     }
 
     fn mto_home(&mut self, c: &mut Context, pos: DP) -> Result<Event> {
-        use crate::event::DP::*;
-
         let b = c.as_mut_buffer();
         b.set_cursor(b.line_home());
         match pos {
-            Caret => {
-                b.skip_whitespace(Right);
+            DP::Caret => {
+                b.skip_whitespace(DP::Right);
             }
-            Nope => (),
+            DP::Nope => (),
             _ => err_at!(Fatal, msg: format!("unreachable"))?,
         }
         Ok(Event::Noop)
     }
 
     fn mto_up(&mut self, c: &mut Context, n: usize, pos: DP) -> Result<Event> {
-        use crate::event::DP::*;
-
         let b = c.as_mut_buffer();
         let mut cursor = b.to_cursor();
         match b.char_to_line(cursor) {
@@ -305,8 +260,8 @@ impl Text {
                 };
                 b.set_cursor(cursor);
                 match pos {
-                    Caret => self.mto_home(c, Caret),
-                    Nope => Ok(Event::Noop),
+                    DP::Caret => self.mto_home(c, DP::Caret),
+                    DP::Nope => Ok(Event::Noop),
                     _ => {
                         err_at!(Fatal, msg: format!("unreachable"))?;
                         Ok(Event::Noop)
@@ -317,8 +272,6 @@ impl Text {
     }
 
     fn mto_down(&mut self, c: &mut Context, n: usize, pos: DP) -> Result<Event> {
-        use crate::event::DP::*;
-
         let b = c.as_mut_buffer();
         let row = b.char_to_line(b.to_cursor());
         match b.len_lines() {
@@ -333,8 +286,8 @@ impl Text {
                 };
                 b.set_cursor(cursor);
                 match pos {
-                    Caret => self.mto_home(c, Caret),
-                    Nope => Ok(Event::Noop),
+                    DP::Caret => self.mto_home(c, DP::Caret),
+                    DP::Nope => Ok(Event::Noop),
                     _ => {
                         err_at!(Fatal, msg: format!("unreachable"))?;
                         Ok(Event::Noop)
@@ -368,8 +321,6 @@ impl Text {
     }
 
     fn mto_percent(&mut self, c: &mut Context, n: usize) -> Result<Event> {
-        use crate::event::DP::*;
-
         let b = c.as_buffer();
         let row = b.char_to_line(b.to_cursor());
         match b.len_lines() {
@@ -377,11 +328,11 @@ impl Text {
             mut n_rows if n < 100 => {
                 n_rows = n_rows.saturating_sub(1);
                 match (((n_rows as f64) * (n as f64)) / (100 as f64)) as usize {
-                    n if n < row => self.mto_up(c, row - n, Caret),
-                    n => self.mto_down(c, n - row, Caret),
+                    n if n < row => self.mto_up(c, row - n, DP::Caret),
+                    n => self.mto_down(c, n - row, DP::Caret),
                 }
             }
-            n_rows => self.mto_down(c, n_rows.saturating_sub(1), Caret),
+            n_rows => self.mto_down(c, n_rows.saturating_sub(1), DP::Caret),
         }
     }
 
@@ -411,12 +362,10 @@ impl Text {
     }
 
     fn mto_char(&mut self, c: &mut Context, evnt: Mto) -> Result<Event> {
-        use crate::event::DP::*;
-
         self.find_char = evnt.clone();
         let (mut n, ch, dp, pos) = match evnt {
-            Mto::CharF(n, Some(ch), dp) => (n, ch, dp, Find),
-            Mto::CharT(n, Some(ch), dp) => (n, ch, dp, Till),
+            Mto::CharF(n, Some(ch), dp) => (n, ch, dp, DP::Find),
+            Mto::CharT(n, Some(ch), dp) => (n, ch, dp, DP::Till),
             _ => unreachable!(),
         };
 
@@ -424,12 +373,12 @@ impl Text {
         let mut cursor = b.to_cursor();
         let home = b.line_home();
         cursor = match dp {
-            Right => {
-                let mut iter = b.chars_at(cursor, Right)?.enumerate();
+            DP::Right => {
+                let mut iter = b.chars_at(cursor, DP::Right)?.enumerate();
                 loop {
                     match iter.next() {
                         Some((_, NL)) => break cursor,
-                        Some((i, c)) if c == ch && n == 0 && pos == Find => {
+                        Some((i, c)) if c == ch && n == 0 && pos == DP::Find => {
                             break cursor.saturating_add(i);
                         }
                         Some((i, c)) if c == ch && n == 0 => {
@@ -445,7 +394,7 @@ impl Text {
                 loop {
                     match iter.next() {
                         Some((_, NL)) => break cursor,
-                        Some((i, c)) if c == ch && n == 0 && pos == Find => {
+                        Some((i, c)) if c == ch && n == 0 && pos == DP::Find => {
                             break cursor.saturating_sub(i + 1);
                         }
                         Some((i, c)) if c == ch && n == 0 => {
@@ -464,20 +413,18 @@ impl Text {
     }
 
     fn mto_words(&mut self, c: &mut Context, evnt: Mto) -> Result<Event> {
-        use crate::event::{Event::*, DP::*};
-
         match evnt {
             Mto::Word(n, Left, pos) => {
                 for _ in 0..n {
                     let n = c.as_mut_buffer().skip_whitespace(Left);
                     match pos {
-                        End if n == 0 => {
+                        DP::End if n == 0 => {
                             c.as_mut_buffer().skip_alphanumeric(Left);
-                            self.mto_right(c, 1, Nobound)?;
+                            self.mto_right(c, 1, DP::Nobound)?;
                         }
-                        End => {
+                        DP::End => {
                             c.as_mut_buffer().skip_alphanumeric(Left);
-                            self.mto_right(c, 1, Nobound)?;
+                            self.mto_right(c, 1, DP::Nobound)?;
                         }
                         Start if n == 0 => {
                             c.as_mut_buffer().skip_alphanumeric(Left);
@@ -489,21 +436,21 @@ impl Text {
                 }
                 Ok(Event::Noop)
             }
-            Mto::Word(n, Right, pos) => {
+            Mto::Word(n, DP::Right, pos) => {
                 for _ in 0..n {
-                    let n = c.as_mut_buffer().skip_whitespace(Right);
+                    let n = c.as_mut_buffer().skip_whitespace(DP::Right);
                     match pos {
-                        End if n == 0 => {
-                            c.as_mut_buffer().skip_alphanumeric(Right);
-                            self.mto_left(c, 1, Nobound)?;
+                        DP::End if n == 0 => {
+                            c.as_mut_buffer().skip_alphanumeric(DP::Right);
+                            self.mto_left(c, 1, DP::Nobound)?;
                         }
-                        End => {
-                            c.as_mut_buffer().skip_alphanumeric(Right);
-                            self.mto_left(c, 1, Nobound)?;
+                        DP::End => {
+                            c.as_mut_buffer().skip_alphanumeric(DP::Right);
+                            self.mto_left(c, 1, DP::Nobound)?;
                         }
                         Start if n == 0 => {
-                            c.as_mut_buffer().skip_alphanumeric(Right);
-                            c.as_mut_buffer().skip_whitespace(Right);
+                            c.as_mut_buffer().skip_alphanumeric(DP::Right);
+                            c.as_mut_buffer().skip_whitespace(DP::Right);
                         }
                         Start => (),
                         _ => unreachable!(),
@@ -516,8 +463,6 @@ impl Text {
     }
 
     fn mto_wwords(&mut self, c: &mut Context, evnt: Mto) -> Result<Event> {
-        use crate::event::{Event::*, DP::*};
-
         match evnt {
             Mto::WWord(n, Left, pos) => {
                 for _ in 0..n {
@@ -525,37 +470,37 @@ impl Text {
                     match pos {
                         Start if n == 0 => {
                             c.as_mut_buffer().skip_non_whitespace(Left);
-                            self.mto_right(c, 1, Nobound)?;
+                            self.mto_right(c, 1, DP::Nobound)?;
                         }
                         Start => {
                             c.as_mut_buffer().skip_non_whitespace(Left);
-                            self.mto_right(c, 1, Nobound)?;
+                            self.mto_right(c, 1, DP::Nobound)?;
                         }
-                        End if n == 0 => {
+                        DP::End if n == 0 => {
                             c.as_mut_buffer().skip_non_whitespace(Left);
                             c.as_mut_buffer().skip_whitespace(Left);
                         }
-                        End => (),
+                        DP::End => (),
                         _ => unreachable!(),
                     }
                 }
                 Ok(Event::Noop)
             }
-            Mto::WWord(n, Right, pos) => {
+            Mto::WWord(n, DP::Right, pos) => {
                 for _ in 0..n {
-                    let n = c.as_mut_buffer().skip_whitespace(Right);
+                    let n = c.as_mut_buffer().skip_whitespace(DP::Right);
                     match pos {
-                        End if n == 0 => {
-                            c.as_mut_buffer().skip_non_whitespace(Right);
-                            self.mto_left(c, 1, Nobound)?;
+                        DP::End if n == 0 => {
+                            c.as_mut_buffer().skip_non_whitespace(DP::Right);
+                            self.mto_left(c, 1, DP::Nobound)?;
                         }
-                        End => {
-                            c.as_mut_buffer().skip_non_whitespace(Right);
-                            self.mto_left(c, 1, Nobound)?;
+                        DP::End => {
+                            c.as_mut_buffer().skip_non_whitespace(DP::Right);
+                            self.mto_left(c, 1, DP::Nobound)?;
                         }
                         Start if n == 0 => {
-                            c.as_mut_buffer().skip_non_whitespace(Right);
-                            c.as_mut_buffer().skip_whitespace(Right);
+                            c.as_mut_buffer().skip_non_whitespace(DP::Right);
+                            c.as_mut_buffer().skip_whitespace(DP::Right);
                         }
                         Start => (),
                         _ => unreachable!(),
@@ -568,8 +513,6 @@ impl Text {
     }
 
     fn mto_sentence(&mut self, c: &mut Context, e: Mto) -> Result<Event> {
-        use crate::event::{Event::*, DP::*};
-
         let is_ws = |ch: char| ch.is_whitespace();
 
         let b = c.as_mut_buffer();
@@ -601,8 +544,8 @@ impl Text {
                     };
                 })
             }
-            Mto::Sentence(mut n, Right) => {
-                let mut iter = b.chars_at(cursor, Right)?.enumerate();
+            Mto::Sentence(mut n, DP::Right) => {
+                let mut iter = b.chars_at(cursor, DP::Right)?.enumerate();
                 Ok(loop {
                     pch = match (pch, iter.next()) {
                         (Some('.'), Some((i, ch))) if is_ws(ch) => {
@@ -632,13 +575,13 @@ impl Text {
         }?;
 
         b.set_cursor(cursor);
-        b.skip_whitespace(Right);
+        b.skip_whitespace(DP::Right);
 
         Ok(Event::Noop)
     }
 
     fn mto_para(&mut self, c: &mut Context, evnt: Mto) -> Result<Event> {
-        use crate::event::{Event::*, DP::*};
+        use crate::event::Event::*;
 
         let b = c.as_mut_buffer();
         let mut cursor = b.to_cursor();
@@ -661,8 +604,8 @@ impl Text {
                 };
                 Ok(cursor)
             }
-            Mto::Para(mut n, Right) => {
-                let mut iter = b.lines_at(row, Right)?.enumerate();
+            Mto::Para(mut n, DP::Right) => {
+                let mut iter = b.lines_at(row, DP::Right)?.enumerate();
                 let cursor = loop {
                     match iter.next() {
                         Some((i, line)) => match line.chars().next() {
@@ -686,7 +629,7 @@ impl Text {
     }
 
     fn mto_bracket(&mut self, c: &mut Context, e: Mto) -> Result<Event> {
-        use crate::event::{Event::*, DP::*};
+        use crate::event::Event::*;
 
         let mut m = 0;
         let b = c.as_mut_buffer();
@@ -705,8 +648,8 @@ impl Text {
                     }
                 };
             }
-            Mto::Bracket(mut n, yin, yan, Right) => {
-                let mut iter = b.chars_at(cursor, Right)?.enumerate();
+            Mto::Bracket(mut n, yin, yan, DP::Right) => {
+                let mut iter = b.chars_at(cursor, DP::Right)?.enumerate();
                 cursor += {
                     loop {
                         match iter.next() {
@@ -728,7 +671,7 @@ impl Text {
     }
 
     fn mto_pattern(&mut self, c: &mut Context, evnt: Mto) -> Result<Event> {
-        use crate::event::{Event::*, DP::*};
+        use crate::event::Event::*;
 
         let (n, pattern, dp) = match evnt {
             Mto::Pattern(n, Some(pattern), dp) => Ok((n, pattern, dp)),
@@ -752,7 +695,7 @@ impl Text {
                     None => Ok(cursor),
                 }
             }
-            Right => {
+            DP::Right => {
                 let item = search.iter(byte_off).skip(n).next();
                 match item {
                     Some((s, _)) => Ok(s),

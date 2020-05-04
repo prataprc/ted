@@ -656,8 +656,6 @@ impl Change {
 
 impl Change {
     fn skip_whitespace(&mut self, dp: DP) -> usize {
-        use crate::event::DP::*;
-
         let mut n = 0;
         let n = loop {
             match self.iter(dp).next() {
@@ -666,13 +664,11 @@ impl Change {
                 None => break n,
             }
         };
-        self.cursor = if_else!(dp == Right, self.cursor + n, self.cursor - n);
+        self.cursor = if_else!(dp == DP::Right, self.cursor + n, self.cursor - n);
         n
     }
 
     fn skip_non_whitespace(&mut self, dp: DP) -> usize {
-        use crate::event::DP::*;
-
         let mut n = 0;
         let n = loop {
             match self.iter(dp).next() {
@@ -681,13 +677,11 @@ impl Change {
                 None => break n,
             }
         };
-        self.cursor = if_else!(dp == Right, self.cursor + n, self.cursor - n);
+        self.cursor = if_else!(dp == DP::Right, self.cursor + n, self.cursor - n);
         n
     }
 
     fn skip_alphanumeric(&mut self, dp: DP) -> usize {
-        use crate::event::DP::*;
-
         let mut n = 0;
         let n = loop {
             match self.iter(dp).next() {
@@ -696,7 +690,7 @@ impl Change {
                 None => break n,
             }
         };
-        self.cursor = if_else!(dp == Right, self.cursor + n, self.cursor - n);
+        self.cursor = if_else!(dp == DP::Right, self.cursor + n, self.cursor - n);
         n
     }
 
@@ -742,15 +736,13 @@ impl Change {
 
 impl Change {
     fn iter<'a>(&'a self, dp: DP) -> Box<dyn Iterator<Item = char> + 'a> {
-        use crate::event::DP::*;
-
         let chars = self.buf.chars_at(self.cursor);
         match dp {
-            Left => Box::new(ReverseIter {
+            DP::Left => Box::new(ReverseIter {
                 _change: None,
                 iter: chars,
             }),
-            Right => Box::new(chars),
+            DP::Right => Box::new(chars),
             _ => unreachable!(),
         }
     }

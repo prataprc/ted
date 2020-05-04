@@ -184,7 +184,7 @@ impl WindowEdit {
 
     pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         match evnt {
-            Event::UseBuffer { buffer_id } => {
+            Event::Td(Ted::UseBuffer { buffer_id }) => {
                 self.buffer_id = buffer_id;
                 Ok(Event::Noop)
             }

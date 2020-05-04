@@ -169,7 +169,7 @@ impl WindowFile {
                     (b.to_id(), b)
                 };
                 s.add_buffer(buffer);
-                Event::UseBuffer { buffer_id }
+                Event::Td(Ted::UseBuffer { buffer_id })
             }
             evnt => evnt,
         };
