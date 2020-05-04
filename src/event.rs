@@ -1,6 +1,6 @@
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
-use std::{convert::TryFrom, ffi, fs, path};
+use std::{convert::TryFrom, ffi, fs, ops::Bound, path};
 
 use crate::{location::Location, Error, Result};
 
@@ -101,74 +101,91 @@ pub enum DP {
 }
 
 #[derive(Clone)]
-pub enum Event {
-    Noop,
-    // Return events
-    List(Vec<Event>),
-    // Modal commands
-    ModeEsc,
-    ModeInsert(DP), // (Nope/Caret,)
-    ModeAppend(DP), // (Right/End,)
-    ModeOpen(DP),   // (Left/Right,)
-    // Input events
-    F(u8, KeyModifiers),
-    BackTab,
-    Dec(Vec<char>),
-    // Prefix commands
-    N(usize, Box<Event>), // (n, event)
-    G(Box<Event>),
-    B(DP), // (Left/Right,)
-    // Operation commands
-    OpChange,
-    OpDelete,
-    OpYank,
-    OpSwapcase,
-    OpLowercase,
-    OpUppercase,
-    OpFilter,
-    OpEqual,
-    OpFormat,
-    OpEncode,
-    OpRShift,
-    OpLShift,
-    OpFold,
-    OpFunc,
-    // Motion events
-    MtoLeft(DP),  // (LineBound/Nobound,)
-    MtoRight(DP), // (LineBound/Nobound,)
-    MtoUp(DP),    // (Caret/Nope,)
-    MtoDown(DP),  // (Caret/Nope,)
-    MtoCol,
-    MtoHome(DP), // (Caret/Nope,)
-    MtoEnd,
-    MtoRow(DP), // (Caret/Nope,)
-    MtoPercent,
-    MtoCursor,
-    MtoCharF(Option<char>, DP), // (ch, Left/Right)
-    MtoCharT(Option<char>, DP), // (ch, Left/Right)
-    MtoCharR(DP),               // repeat MtoCharF/MtoCharT (Left/Right,)
-    MtoWord(DP, DP),            // (Left/Right, Start/End)
-    MtoWWord(DP, DP),           // (Left/Right, Start/End)
-    MtoSentence(DP),            // (Left/Right,)
-    MtoPara(DP),                // (Left/Right,)
-    MtoBracket(char, char, DP), // (yin, yan, Left/Right)
-    MtoChar(char),
-    MtoPattern(Option<String>, DP), // (pattern, Left/Right)
-    // Insert events
-    Backspace,
-    Char(char, KeyModifiers),
-    Delete,
-    Enter,
-    Tab,
+pub enum Opr {
+    Change(usize, Mto),    // (n, motion-command)
+    Delete(usize, Mto),    // (n, motion-command)
+    Yank(usize, Mto),      // (n, motion-command)
+    Swapcase(usize, Mto),  // (n, motion-command)
+    Lowercase(usize, Mto), // (n, motion-command)
+    Uppercase(usize, Mto), // (n, motion-command)
+    Filter(usize, Mto),    // (n, motion-command)
+    Equal(usize, Mto),     // (n, motion-command)
+    Format(usize, Mto),    // (n, motion-command)
+    Encode(usize, Mto),    // (n, motion-command)
+    RShift(usize, Mto),    // (n, motion-command)
+    LShift(usize, Mto),    // (n, motion-command)
+    Fold(usize, Mto),      // (n, motion-command)
+    Func(usize, Mto),      // (n, motion-command)
+}
+
+#[derive(Clone)]
+pub enum Mod {
     Esc,
-    // Status events
-    StatusFile,
-    StatusCursor,
-    // Application events
+    Insert(usize, DP), // (n, Nope/Caret)
+    Append(usize, DP), // (n, Right/End)
+    Open(usize, DP),   // (n, Left/Right)
+}
+
+#[derive(Clone)]
+pub enum Mto {
+    Left(usize, DP),  // (n, LineBound/Nobound)
+    Right(usize, DP), // (n, LineBound/Nobound)
+    Up(usize, DP),    // (n, Caret/Nope)
+    Down(usize, DP),  // (n, Caret/Nope)
+    Col(usize),       // (n,)
+    Home(DP),         // (n, Caret/Nope)
+    End,
+    Row(usize, DP),                     // (n, Caret/Nope)
+    Percent(usize),                     // (n,)
+    Cursor(usize),                      // (n,)
+    CharF(usize, Option<char>, DP),     // (n, ch, Left/Right)
+    CharT(usize, Option<char>, DP),     // (n, ch, Left/Right)
+    CharR(usize, DP),                   // repeat CharF/CharT (n, Left/Right)
+    Word(usize, DP, DP),                // (n, Left/Right, Start/End)
+    WWord(usize, DP, DP),               // (n, Left/Right, Start/End)
+    Sentence(usize, DP),                // (n, Left/Right)
+    Para(usize, DP),                    // (n, Left/Right)
+    Bracket(usize, char, char, DP),     // (n, yin, yan, Left/Right)
+    Pattern(usize, Option<String>, DP), // (n, pattern, Left/Right)
+}
+
+#[derive(Clone)]
+enum N {}
+
+#[derive(Clone)]
+enum Ted {
     NewBuffer,
     OpenFiles { flocs: Vec<Location> },
     UseBuffer { buffer_id: String },
     PromptReply { input: String },
+    StatusFile,
+    StatusCursor,
+}
+
+#[derive(Clone)]
+pub enum Event {
+    // Insert events
+    Backspace,
+    Enter,
+    Tab,
+    Delete,
+    Esc,
+    Char(char, KeyModifiers),
+    // folded events
+    B(usize, DP),   // (n, Left/Right)
+    G(usize),       // (n,)
+    F(usize, DP),   // (n, Left/Right)
+    T(usize, DP),   // (n, Left/Right)
+    N(usize),       // (n,)
+    Op(usize, Opr), // (n, op-event)
+    Md(Mod),        // (n, mode-event)
+    Mt(Mto),        // (n, motion-event)
+    List(Vec<Event>),
+    Ted(Ted),
+    // other events
+    F(u8, KeyModifiers),
+    BackTab,
+    Noop,
 }
 
 impl Default for Event {
@@ -179,8 +196,7 @@ impl Default for Event {
 
 impl From<TermEvent> for Event {
     fn from(evnt: TermEvent) -> Event {
-        use Event::*;
-        use DP::*;
+        use {Event::*, DP::*};
 
         match evnt {
             TermEvent::Key(KeyEvent { code, modifiers: m }) => {
@@ -198,14 +214,14 @@ impl From<TermEvent> for Event {
                     //
                     KeyCode::Char('[') if ctrl => Esc,
                     KeyCode::Esc if m.is_empty() => Esc,
-                    KeyCode::Insert => ModeInsert(Nope),
+                    KeyCode::Insert => Md(Mod::Insert(1, Nope)),
                     //
-                    KeyCode::Left if m.is_empty() => MtoLeft(LineBound),
-                    KeyCode::Right if m.is_empty() => MtoRight(LineBound),
-                    KeyCode::Up if m.is_empty() => MtoUp(Nope),
-                    KeyCode::Down if m.is_empty() => MtoDown(Nope),
-                    KeyCode::Home if m.is_empty() => MtoHome(Nope),
-                    KeyCode::End if m.is_empty() => MtoEnd,
+                    KeyCode::Left if m.is_empty() => Mt(Mto::Left(1, LineBound)),
+                    KeyCode::Right if m.is_empty() => Mt(Mto::Right(1, LineBound)),
+                    KeyCode::Up if m.is_empty() => Mt(Mto::Up(1, Nope)),
+                    KeyCode::Down if m.is_empty() => Mt(Mto::Down(1, Nope)),
+                    KeyCode::Home if m.is_empty() => Mt(Mto::Home(1, Nope)),
+                    KeyCode::End if m.is_empty() => Mt(Mto::End),
                     KeyCode::Null => Noop,
                     _ => Event::Noop,
                 }
@@ -228,24 +244,23 @@ impl From<Vec<Event>> for Event {
     }
 }
 
-impl Event {
+impl Mto {
     pub fn transform(self, dp: DP) -> Result<Self> {
-        use Event::*;
-        use DP::*;
+        use {Mto::*, DP::*};
 
         match (self, dp) {
-            (MtoCharF(ch, DP::Left), DP::Right) => Ok(MtoCharF(ch, Left)),
-            (MtoCharF(ch, DP::Left), DP::Left) => Ok(MtoCharF(ch, Right)),
-            (MtoCharF(ch, DP::Right), DP::Right) => Ok(MtoCharF(ch, Right)),
-            (MtoCharF(ch, DP::Right), DP::Left) => Ok(MtoCharF(ch, Left)),
-            (MtoCharT(ch, DP::Left), DP::Right) => Ok(MtoCharT(ch, Left)),
-            (MtoCharT(ch, DP::Left), DP::Left) => Ok(MtoCharT(ch, Right)),
-            (MtoCharT(ch, DP::Right), DP::Right) => Ok(MtoCharT(ch, Right)),
-            (MtoCharT(ch, DP::Right), DP::Left) => Ok(MtoCharT(ch, Left)),
-            (MtoPattern(ch, DP::Left), DP::Right) => Ok(MtoPattern(ch, Left)),
-            (MtoPattern(ch, DP::Left), DP::Left) => Ok(MtoPattern(ch, Right)),
-            (MtoPattern(ch, DP::Right), DP::Right) => Ok(MtoPattern(ch, Right)),
-            (MtoPattern(ch, DP::Right), DP::Left) => Ok(MtoPattern(ch, Left)),
+            (CharF(ch, DP::Left), DP::Right) => Ok(CharF(ch, Left)),
+            (CharF(ch, DP::Left), DP::Left) => Ok(CharF(ch, Right)),
+            (CharF(ch, DP::Right), DP::Right) => Ok(CharF(ch, Right)),
+            (CharF(ch, DP::Right), DP::Left) => Ok(CharF(ch, Left)),
+            (CharT(ch, DP::Left), DP::Right) => Ok(CharT(ch, Left)),
+            (CharT(ch, DP::Left), DP::Left) => Ok(CharT(ch, Right)),
+            (CharT(ch, DP::Right), DP::Right) => Ok(CharT(ch, Right)),
+            (CharT(ch, DP::Right), DP::Left) => Ok(CharT(ch, Left)),
+            (Pattern(ch, DP::Left), DP::Right) => Ok(Pattern(ch, Left)),
+            (Pattern(ch, DP::Left), DP::Left) => Ok(Pattern(ch, Right)),
+            (Pattern(ch, DP::Right), DP::Right) => Ok(Pattern(ch, Right)),
+            (Pattern(ch, DP::Right), DP::Left) => Ok(Pattern(ch, Left)),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
@@ -264,7 +279,7 @@ impl Event {
         use Event::*;
 
         match self {
-            ModeInsert(_) | ModeAppend(_) | ModeOpen(_) => true,
+            Mod::Insert(_) | Mod::Append(_) | Mod::Open(_) => true,
             _ => false,
         }
     }

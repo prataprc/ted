@@ -4,28 +4,6 @@ use std::iter::FromIterator;
 
 use crate::{window::Context, Error, Event, Result};
 
-macro_rules! want_char {
-    ($prefix:expr) => {{
-        use crate::event::Event::*;
-
-        match $prefix {
-            B(_) | MtoCharF(_, _) | MtoCharT(_, _) => true,
-            _ => false,
-        }
-    }};
-}
-
-macro_rules! g_prefix {
-    ($prefix:expr) => {{
-        use crate::event::Event::*;
-
-        match $prefix {
-            G(_) => true,
-            _ => false,
-        }
-    }};
-}
-
 macro_rules! parse_n {
     ($ns:expr) => {
         err_at!(
@@ -71,120 +49,158 @@ impl Ted {
         };
 
         let m = evnt.to_modifiers();
+        let empty = m.is_empty();
         let ctrl = m == KeyModifiers::CONTROL;
-        let wc = want_char!(prefix);
-        let gp = g_prefix!(prefix);
 
-        let evnt = match evnt {
-            // find char
-            Char(ch, _) if wc && m.is_empty() => MtoChar(ch),
-            // g-prefix
-            Char('g', _) if gp && m.is_empty() => MtoRow(Caret),
-            Char('e', _) if gp && m.is_empty() => MtoWord(Left, End),
-            Char('E', _) if gp && m.is_empty() => MtoWWord(Left, End),
-            Char('o', _) if gp && m.is_empty() => MtoCursor,
-            Char('I', _) if gp && m.is_empty() => ModeInsert(Nope),
-            // mode commands
-            Char('I', _) if m.is_empty() => ModeInsert(Caret),
-            Char('i', _) if m.is_empty() => ModeInsert(Nope),
-            Char('a', _) if m.is_empty() => ModeAppend(Right),
-            Char('A', _) if m.is_empty() => ModeAppend(End),
-            Char('O', _) if m.is_empty() => ModeOpen(Left),
-            Char('o', _) if m.is_empty() => ModeOpen(Right),
-            // move commands
-            Backspace if m.is_empty() => MtoLeft(Nobound),
-            Char('h', _) if m.is_empty() => MtoLeft(LineBound),
-            Char(' ', _) if m.is_empty() => MtoRight(LineBound),
-            Char(' ', _) if m.is_empty() => MtoRight(Nobound),
-            Char('l', _) if m.is_empty() => MtoRight(LineBound),
-            Char('-', _) if m.is_empty() => MtoUp(Caret),
-            Char('j', _) if m.is_empty() => MtoUp(Nope),
-            Char('k', _) if m.is_empty() => MtoDown(Nope),
-            Char('+', _) if m.is_empty() => MtoDown(Caret),
-            Enter if m.is_empty() => MtoDown(Caret),
-            Char('|', _) if m.is_empty() => MtoCol,
-            Char('G', _) if m.is_empty() => MtoRow(Caret),
-            Char('%', _) if m.is_empty() => MtoPercent,
-            Char('0', _) if m.is_empty() => MtoHome(Nope),
-            Char('^', _) if m.is_empty() => MtoHome(Caret),
-            Char('$', _) if m.is_empty() => MtoEnd,
-            Char('F', _) if m.is_empty() => MtoCharF(None, Left),
-            Char('f', _) if m.is_empty() => MtoCharF(None, Right),
-            Char('T', _) if m.is_empty() => MtoCharT(None, Left),
-            Char('t', _) if m.is_empty() => MtoCharT(None, Right),
-            Char('b', _) if m.is_empty() => MtoWord(Left, Start),
-            Char('B', _) if m.is_empty() => MtoWWord(Left, Start),
-            Char('e', _) if m.is_empty() => MtoWord(Right, End),
-            Char('E', _) if m.is_empty() => MtoWWord(Right, End),
-            Char('{', _) if m.is_empty() => MtoPara(Left),
-            Char('}', _) if m.is_empty() => MtoPara(Right),
-            Char('(', _) if m.is_empty() => MtoSentence(Left),
-            Char(')', _) if m.is_empty() => MtoSentence(Right),
-            Char('w', _) if m.is_empty() => MtoWord(Right, Start),
-            Char('W', _) if m.is_empty() => MtoWWord(Right, Start),
-            Char(';', _) if m.is_empty() => MtoCharR(Right),
-            Char(',', _) if m.is_empty() => MtoCharR(Left),
-            Char('n', _) if m.is_empty() => MtoPattern(None, Right),
-            Char('N', _) if m.is_empty() => MtoPattern(None, Left),
-            // prefix event
-            Char('g', _) if m.is_empty() => G(Box::new(Noop)),
-            Char('[', _) if m.is_empty() => B(Left),
-            Char(']', _) if m.is_empty() => B(Right),
-            //
-            Char(ch @ '0'..='9', _) if m.is_empty() => Dec(vec![ch]),
+        let evnt = match prefix {
+            Noop if empty => match evnt {
+                Backspace => (Noop, Mt(Mto::Left(1, Nobound))),
+                Enter => (Noop, Mt(MtoDown(1, Caret))),
+                Char('h', _) => (Noop, Mt(Mto::Left(1, LineBound))),
+                Char(' ', _) => (Noop, Mt(Mto::Right(1, Nobound))),
+                Char('l', _) => (Noop, Mt(Mto::Right(1, LineBound))),
+                Char('-', _) => (Noop, Mt(Mto::Up(1, Caret))),
+                Char('j', _) => (Noop, Mt(Mto::Up(1, Nope))),
+                Char('k', _) => (Noop, Mt(Mto::Down(1, Nope))),
+                Char('+', _) => (Noop, Mt(Mto::Down(1, Caret))),
+                Char('|', _) => (Noop, Mt(Mto::Col(1))),
+                Char('G', _) => (Noop, Mt(Mto::Row(1, Caret))),
+                Char('%', _) => (Noop, Mt(Mto::Percent(1))),
+                Char('0', _) => (Noop, Mt(Mto::Home(Nope))),
+                Char('^', _) => (Noop, Mt(Mto::Home(Caret)),
+                Char('$', _) => (Noop, Mt(Mto::End)),
+                Char('F', _) => (Noop, Mt(Mto::CharF(1, None, Left))),
+                Char('f', _) => (Noop, Mt(Mto::CharF(1, None, Right))),
+                Char('T', _) => (Noop, Mt(Mto::CharT(1, None, Left))),
+                Char('t', _) => (Noop, Mt(Mto::CharT(1, None, Right))),
+                Char('b', _) => (Noop, Mt(Mto::Word(1, Left, Start))),
+                Char('B', _) => (Noop, Mt(Mto::WWord(1, Left, Start))),
+                Char('e', _) => (Noop, Mt(Mto::Word(1, Right, End))),
+                Char('E', _) => (Noop, Mt(Mto::WWord(1, Right, End))),
+                Char('{', _) => (Noop, Mt(Mto::Para(1, Left))),
+                Char('}', _) => (Noop, Mt(Mto::Para(1, Right))),
+                Char('(', _) => (Noop, Mt(Mto::Sentence(1, Left))),
+                Char(')', _) => (Noop, Mt(Mto::Sentence(1, Right))),
+                Char('w', _) => (Noop, Mt(Mto::Word(1, Right, Start))),
+                Char('W', _) => (Noop, Mt(Mto::WWord(1, Right, Start))),
+                Char(';', _) => (Noop, Mt(Mto::CharR(1, Right))),
+                Char(',', _) => (Noop, Mt(Mto::CharR(1, Left))),
+                Char('n', _) => (Noop, Mt(Mto::Pattern(1, None, Right))),
+                Char('N', _) => (Noop, Mt(Mto::Pattern(1, None, Left))),
+                //
+                Char('I', _) => (Noop, Md(Mod::Insert(1, Caret))),
+                Char('i', _) => (Noop, Md(Mod::Insert(1, Nope))),
+                Char('a', _) => (Noop, Md(Mod::Append(1, Right))),
+                Char('A', _) => (Noop, Md(Mod::Append(1, End))),
+                Char('O', _) => (Noop, Md(Mod::Open(1, Left))),
+                Char('o', _) => (Noop, Md(Mod::Open(1, Right))),
+                Md(Mod::Insert(n, p)) => (Noop, Md(Mod::Insert(n, p))),
+                //
+                Char('[', _) => (B(1, Left), Noop),
+                Char(']', _) => (B(1, Right), Noop),
+                Char('g', _) => (G(1), Noop),
+                Char('f', _) => (F(1, Right), Noop),
+                Char('F', _) => (F(1, Left), Noop),
+                Char('t', _) => (T(1, Right), Noop),
+                Char('T', _) => (T(1, Left), Noop),
+                Char('[', _) => (B(1, Left), Noop),
+                Char(']', _) => (B(1, Right), Noop),
+                Char('g', _) => (G(1), Noop),
+                Char('f', _) => (F(1, Right), Noop),
+                Char('F', _) => (F(1, Left), Noop),
+                Char('t', _) => (T(1, Right), Noop),
+                Char('T', _) => (T(1, Left), Noop),
+                Char(ch @ '0'..='9', _) => (N(parse_n!(ch)?), Noop),
+                _ => (Noop, Noop),
+            },
+            B(n, d) if empty => match evnt {
+                Char('(', _) => (Noop, Mt(Mto::Bracket(n, '(', ')', d))),
+                Char(')', _) => (Noop, Mt(Mto::Bracket(n, ')', '(', d))),
+                Char('{', _) => (Noop, Mt(Mto::Bracket(n, '{', '}', d))),
+                Char('}', _) => (Noop, Mt(Mto::Bracket(n, '}', '{', d))),
+                _ => (Noop, Noop),
+            },
+            G(n) if empty => match evnt {
+                Char('g', _) => (Noop, Mt(Mto::Row(n, Caret))),
+                Char('e', _) => (Noop, Mt(Mto::Word(n, Left, End))),
+                Char('E', _) => (Noop, Mt(Mto::WWord(n, Left, End))),
+                Char('o', _) => (Noop, Mt(Mto::Cursor(n))),
+                Char('I', _) => (Noop, Mt(Mod::Insert(n))),
+                _ => (Noop, Noop),
+            },
+            F(n, d) if empty => match evnt {
+                Char(ch, _) => (Noop, Mt(Mto::CharF(n, Some(ch), d))),
+                _ => (Noop, Noop),
+            },
+            T(n, d) if empty => match evnt {
+                Char(ch, _) => (Noop, Mt(Mto::CharT(n, Some(ch), d))),
+                _ => (Noop, Noop),
+            },
+            N(n) if empty => match evnt {
+                Backspace => (Noop, Mt(Mto::Left(n, Nobound))),
+                Enter => (Noop, Mt(MtoDown(n, Caret))),
+                Char('h', _) => (Noop, Mt(Mto::Left(n, LineBound))),
+                Char(' ', _) => (Noop, Mt(Mto::Right(n, Nobound))),
+                Char('l', _) => (Noop, Mt(Mto::Right(n, LineBound))),
+                Char('-', _) => (Noop, Mt(Mto::Up(n, Caret))),
+                Char('j', _) => (Noop, Mt(Mto::Up(n, Nope))),
+                Char('k', _) => (Noop, Mt(Mto::Down(n, Nope))),
+                Char('+', _) => (Noop, Mt(Mto::Down(n, Caret))),
+                Char('|', _) => (Noop, Mt(Mto::Col(n))),
+                Char('G', _) => (Noop, Mt(Mto::Row(n, Caret))),
+                Char('%', _) => (Noop, Mt(Mto::Percent(n))),
+                Char('0', _) => (Noop, Mt(Mto::Home(Nope))),
+                Char('^', _) => (Noop, Mt(Mto::Home(Caret)),
+                Char('$', _) => (Noop, Mt(Mto::End)),
+                Char('F', _) => (Noop, Mt(Mto::CharF(n, None, Left))),
+                Char('f', _) => (Noop, Mt(Mto::CharF(n, None, Right))),
+                Char('T', _) => (Noop, Mt(Mto::CharT(n, None, Left))),
+                Char('t', _) => (Noop, Mt(Mto::CharT(n, None, Right))),
+                Char('b', _) => (Noop, Mt(Mto::Word(n, Left, Start))),
+                Char('B', _) => (Noop, Mt(Mto::WWord(n, Left, Start))),
+                Char('e', _) => (Noop, Mt(Mto::Word(n, Right, End))),
+                Char('E', _) => (Noop, Mt(Mto::WWord(n, Right, End))),
+                Char('{', _) => (Noop, Mt(Mto::Para(n, Left))),
+                Char('}', _) => (Noop, Mt(Mto::Para(n, Right))),
+                Char('(', _) => (Noop, Mt(Mto::Sentence(n, Left))),
+                Char(')', _) => (Noop, Mt(Mto::Sentence(n, Right))),
+                Char('w', _) => (Noop, Mt(Mto::Word(n, Right, Start))),
+                Char('W', _) => (Noop, Mt(Mto::WWord(n, Right, Start))),
+                Char(';', _) => (Noop, Mt(Mto::CharR(n, Right))),
+                Char(',', _) => (Noop, Mt(Mto::CharR(n, Left))),
+                Char('n', _) => (Noop, Mt(Mto::Pattern(n, None, Right))),
+                Char('N', _) => (Noop, Mt(Mto::Pattern(n, None, Left))),
+                //
+                Char('I', _) => (Noop, Md(Mod::Insert(n, Caret))),
+                Char('i', _) => (Noop, Md(Mod::Insert(n, Nope))),
+                Char('a', _) => (Noop, Md(Mod::Append(n, Right))),
+                Char('A', _) => (Noop, Md(Mod::Append(n, End))),
+                Char('O', _) => (Noop, Md(Mod::Open(n, Left))),
+                Char('o', _) => (Noop, Md(Mod::Open(n, Right))),
+                Md(Mod::Insert(m, p)) => (Noop, Md(Mod::Insert(n * m, p))),
+                //
+                Char('[', _) => (B(n, Left), Noop),
+                Char(']', _) => (B(n, Right), Noop),
+                Char('g', _) => (G(n), Noop),
+                Char('f', _) => (F(n, Right), Noop),
+                Char('F', _) => (F(n, Left), Noop),
+                Char('t', _) => (T(n, Right), Noop),
+                Char('T', _) => (T(n, Left), Noop),
+                Char('[', _) => (B(n, Left), Noop),
+                Char(']', _) => (B(n, Right), Noop),
+                Char('g', _) => (G(n), Noop),
+                Char('f', _) => (F(n, Right), Noop),
+                Char('F', _) => (F(n, Left), Noop),
+                Char('t', _) => (T(n, Right), Noop),
+                Char('T', _) => (T(n, Left), Noop),
+                Char(ch @ '0'..='9', _)) => (N((n * 10) + parse_n!(ch)?), Noop),
+                _ => (Noop, Noop),
+            }
             // control commands
-            Char('g', _) if ctrl => StatusFile,
-            evnt => evnt,
-        };
-
-        let (prefix, evnt) = match (prefix, evnt) {
-            // Simple Move Prefix
-            (Noop, e @ MtoCharF(_, _)) => (e, Noop),
-            (Noop, e @ MtoCharT(_, _)) => (e, Noop),
-            // N prefix
-            (Noop, Dec(ns)) => (Dec(ns), Noop),
-            (Dec(mut ns), Dec(ms)) => {
-                ns.extend(&ms);
-                (Dec(ns), Noop)
+            Noop | N(_) => match evnt {
+                Char('g', _) if ctrl => StatusFile,
             }
-            // N-G-prefix
-            (N(n, box G(_)), e @ MtoRow(_)) => (Noop, N(n, Box::new(e))),
-            (N(n, box G(_)), e @ MtoWord(_, _)) => (Noop, N(n, Box::new(e))),
-            (N(n, box G(_)), e @ MtoWWord(_, _)) => (Noop, N(n, Box::new(e))),
-            (N(n, box G(_)), e @ MtoCursor) => (Noop, N(n, Box::new(e))),
-            (N(n, box G(_)), e @ ModeInsert(_)) => (Noop, N(n, Box::new(e))),
-            // N-B-prefix
-            (N(n, box B(dp)), MtoChar(ch)) => match ch {
-                '(' => (Noop, N(n, Box::new(MtoBracket('(', ')', dp)))),
-                ')' => (Noop, N(n, Box::new(MtoBracket(')', '(', dp)))),
-                '{' => (Noop, N(n, Box::new(MtoBracket('{', '}', dp)))),
-                '}' => (Noop, N(n, Box::new(MtoBracket('}', '{', dp)))),
-                _ => unreachable!(),
-            },
-            (N(n, box MtoCharF(None, dp)), MtoChar(ch)) => {
-                let f_prefix = Box::new(MtoCharF(Some(ch), dp));
-                (N(n, f_prefix), Noop)
-            }
-            (N(n, box MtoCharT(None, dp)), MtoChar(ch)) => {
-                let f_prefix = Box::new(MtoCharT(Some(ch), dp));
-                (N(n, f_prefix), Noop)
-            }
-            (N(_, _), _) => {
-                err_at!(Fatal, msg: format!("unreachable"))?;
-                (Noop, Noop)
-            }
-            // Commands
-            (Dec(mut ns), MtoCharR(dp)) => match fc {
-                Noop => (Noop, Noop),
-                fc => (N(parse_n!(ns)?, Box::new(fc.transform(dp)?)), Noop),
-            },
-            (Dec(mut ns), MtoPattern(None, dp)) => match pn {
-                Noop => (Noop, Noop),
-                pn => (N(parse_n!(ns)?, Box::new(pn.transform(dp)?)), Noop),
-            },
-            (Dec(mut ns), e) => (N(parse_n!(ns)?, Box::new(e)), Noop),
-            (Noop, e) => (Noop, N(1, Box::new(e))),
-            (prefix, e) => (prefix, e),
+            prefix => (prefix, evnt),
         };
 
         Ok((prefix, evnt))

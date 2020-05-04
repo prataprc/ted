@@ -10,6 +10,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Text {
+    find_char: Event,
     insert_repeat: usize,
     last_inserts: Vec<Event>,
 }
@@ -41,10 +42,10 @@ impl Text {
 
         // switch to insert mode.
         let evnt = match evnt {
-            N(n, evnt) if n > 1 && evnt.is_insert() => {
+            Md(n, mode) if n > 1 => {
                 let b = c.as_mut_buffer();
                 b.mode_insert()?;
-                return self.on_i_event(c, N(n, evnt));
+                return self.on_i_event(c, Md(n, mode));
             }
             evnt => evnt,
         };
@@ -52,34 +53,25 @@ impl Text {
         let evnt = match evnt {
             Noop => Noop,
             // execute motion command.
-            MtoLeft(dp) => self.mto_left(c, 1, dp)?,
-            MtoRight(dp) => self.mto_right(c, 1, dp)?,
-            MtoUp(dp) => self.mto_up(c, 1, dp)?,
-            MtoDown(dp) => self.mto_down(c, 1, dp)?,
-            MtoCol => self.mto_column(c, 1)?,
-            MtoHome(dp) => self.mto_home(c, dp)?,
-            MtoEnd => self.mto_end(c)?,
-            MtoRow(dp) => self.mto_row(c, 1, dp)?,
-            MtoPercent => self.mto_percent(c, 1)?,
-            MtoCursor => self.mto_cursor(c, 1)?,
-            e @ MtoCharF(_, _) => self.mto_char(c, 1, e)?,
-            e @ MtoCharT(_, _) => self.mto_char(c, 1, e)?,
-            e @ MtoWord(_, _) => self.mto_words(c, 1, e)?,
-            e @ MtoWWord(_, _) => self.mto_wwords(c, 1, e)?,
-            e @ MtoSentence(_) => self.mto_sentence(c, 1, e)?,
-            e @ MtoPara(_) => self.mto_para(c, 1, e)?,
-            e @ MtoBracket(_, _, _) => self.mto_bracket(c, 1, e)?,
-            e @ MtoPattern(Some(_), _) => self.mto_pattern(c, 1, e)?,
-            N(n, box MtoLeft(dp)) => self.mto_left(c, n, dp)?,
-            N(n, box MtoRight(dp)) => self.mto_right(c, n, dp)?,
-            N(n, box MtoUp(dp)) => self.mto_up(c, n, dp)?,
-            N(n, box MtoDown(dp)) => self.mto_down(c, n, dp)?,
-            N(n, box MtoCol) => self.mto_column(c, n)?,
-            N(_, box MtoHome(dp)) => self.mto_home(c, dp)?,
-            N(_, box MtoEnd) => self.mto_end(c)?,
-            N(n, box MtoRow(dp)) => self.mto_row(c, n, dp)?,
-            N(n, box MtoPercent) => self.mto_percent(c, n)?,
-            N(n, box MtoCursor) => self.mto_cursor(c, n)?,
+            Mt(Mto::Left(n, dp)) => self.mto_left(c, n, dp)?,
+            Mt(Mto::Right(n, dp) => self.mto_right(c, n, dp)?,
+            Mt(Mto::Up(n, dp)) => self.mto_up(c, n, dp)?,
+            Mt(Mto::Down(n, dp)) => self.mto_down(c, n, dp)?,
+            Mt(Mto::Col(n)) => self.mto_column(c, n)?,
+            Mt(Mto::Home(dp)) => self.mto_home(c, dp)?,
+            Mt(Mto::End) => self.mto_end(c)?,
+            Mt(Mto::Row(n, dp)) => self.mto_row(c, n, dp)?,
+            Mt(Mto::Percent(n)) => self.mto_percent(c, n)?,
+            Mt(Mto::Cursor(n)) => self.mto_cursor(c, n)?,
+            Mt(e @ Mto::CharF(_, _, _)) => self.mto_char(c, e)?,
+            Mt(e @ Mto::CharT(_, _, _)) => self.mto_char(c, e)?,
+            Mt(e @ Mto::CharR(_, _)) => self.mto_char(c, e)?,
+            Mt(e @ Mto::Word(_, _, _)) => self.mto_words(c, e)?,
+            Mt(e @ Mto::WWord(_, _, _)) => self.mto_wwords(c, e)?,
+            Mt(e @ Mto::Sentence(_, _)) => self.mto_sentence(c, e)?,
+            Mt(e @ Mto::Para(_, _)) => self.mto_para(c, e)?,
+            Mt(e @ Mto::Bracket(_, _, _, _)) => self.mto_bracket(c, e)?,
+            Mt(e @ Mto::Pattern(_, Some(_), _)) => self.mto_pattern(c, e)?,
             N(n, e @ box MtoCharF(_, _)) => self.mto_char(c, n, *e)?,
             N(n, e @ box MtoCharT(_, _)) => self.mto_char(c, n, *e)?,
             N(n, e @ box MtoWord(_, _)) => self.mto_words(c, n, *e)?,
@@ -418,18 +410,13 @@ impl Text {
         Ok(Event::Noop)
     }
 
-    fn mto_char(
-        //
-        &mut self,
-        c: &mut Context,
-        mut n: usize,
-        evnt: Event,
-    ) -> Result<Event> {
+    fn mto_char(&mut self, c: &mut Context, evnt: Mto) -> Result<Event> {
         use crate::event::DP::*;
 
-        let (ch, dp, pos) = match evnt {
-            Event::MtoCharF(Some(ch), dp) => (ch, dp, Find),
-            Event::MtoCharT(Some(ch), dp) => (ch, dp, Till),
+        self.find_char = evnt.clone();
+        let (mut n, ch, dp, pos) = match evnt {
+            Mto::CharF(n, Some(ch), dp) => (n, ch, dp, Find),
+            Mto::CharT(n, Some(ch), dp) => (n, ch, dp, Till),
             _ => unreachable!(),
         };
 
@@ -476,17 +463,11 @@ impl Text {
         Ok(Event::Noop)
     }
 
-    fn mto_words(
-        //
-        &mut self,
-        c: &mut Context,
-        n: usize,
-        evnt: Event,
-    ) -> Result<Event> {
+    fn mto_words(&mut self, c: &mut Context, evnt: Mto) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         match evnt {
-            MtoWord(Left, pos) => {
+            Mto::Word(n, Left, pos) => {
                 for _ in 0..n {
                     let n = c.as_mut_buffer().skip_whitespace(Left);
                     match pos {
@@ -508,7 +489,7 @@ impl Text {
                 }
                 Ok(Event::Noop)
             }
-            MtoWord(Right, pos) => {
+            Mto::Word(n, Right, pos) => {
                 for _ in 0..n {
                     let n = c.as_mut_buffer().skip_whitespace(Right);
                     match pos {
@@ -534,17 +515,11 @@ impl Text {
         }
     }
 
-    fn mto_wwords(
-        //
-        &mut self,
-        c: &mut Context,
-        n: usize,
-        evnt: Event,
-    ) -> Result<Event> {
+    fn mto_wwords(&mut self, c: &mut Context, evnt: Mto) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         match evnt {
-            MtoWWord(Left, pos) => {
+            Mto::WWord(n, Left, pos) => {
                 for _ in 0..n {
                     let n = c.as_mut_buffer().skip_whitespace(Left);
                     match pos {
@@ -566,7 +541,7 @@ impl Text {
                 }
                 Ok(Event::Noop)
             }
-            MtoWWord(Right, pos) => {
+            Mto::WWord(n, Right, pos) => {
                 for _ in 0..n {
                     let n = c.as_mut_buffer().skip_whitespace(Right);
                     match pos {
@@ -592,13 +567,7 @@ impl Text {
         }
     }
 
-    fn mto_sentence(
-        //
-        &mut self,
-        c: &mut Context,
-        mut n: usize,
-        e: Event,
-    ) -> Result<Event> {
+    fn mto_sentence(&mut self, c: &mut Context, e: Mto) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         let is_ws = |ch: char| ch.is_whitespace();
@@ -607,7 +576,7 @@ impl Text {
         let mut cursor = b.to_cursor();
         let mut pch: Option<char> = None;
         cursor = match e {
-            MtoSentence(Left) => {
+            Mto::Sentence(mut n, Left) => {
                 let mut iter = b.chars_at(cursor, Left)?.enumerate();
                 Ok(loop {
                     pch = match (iter.next(), pch) {
@@ -632,7 +601,7 @@ impl Text {
                     };
                 })
             }
-            MtoSentence(Right) => {
+            Mto::Sentence(mut n, Right) => {
                 let mut iter = b.chars_at(cursor, Right)?.enumerate();
                 Ok(loop {
                     pch = match (pch, iter.next()) {
@@ -668,20 +637,14 @@ impl Text {
         Ok(Event::Noop)
     }
 
-    fn mto_para(
-        //
-        &mut self,
-        c: &mut Context,
-        mut n: usize,
-        evnt: Event,
-    ) -> Result<Event> {
+    fn mto_para(&mut self, c: &mut Context, evnt: Mto) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         let b = c.as_mut_buffer();
         let mut cursor = b.to_cursor();
         let row = b.char_to_line(cursor);
         cursor = match evnt {
-            MtoPara(Left) => {
+            Mto::Para(mut n, Left) => {
                 let mut iter = b.lines_at(row, Left)?.enumerate();
                 let cursor = loop {
                     match iter.next() {
@@ -698,7 +661,7 @@ impl Text {
                 };
                 Ok(cursor)
             }
-            MtoPara(Right) => {
+            Mto::Para(mut n, Right) => {
                 let mut iter = b.lines_at(row, Right)?.enumerate();
                 let cursor = loop {
                     match iter.next() {
@@ -722,20 +685,14 @@ impl Text {
         Ok(Event::Noop)
     }
 
-    fn mto_bracket(
-        //
-        &mut self,
-        c: &mut Context,
-        mut n: usize,
-        e: Event,
-    ) -> Result<Event> {
+    fn mto_bracket(&mut self, c: &mut Context, e: Mto) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
         let mut m = 0;
         let b = c.as_mut_buffer();
         let mut cursor = b.to_cursor();
         match e {
-            MtoBracket(yin, yan, Left) => {
+            Mto::Bracket(mut n, yin, yan, Left) => {
                 let mut iter = b.chars_at(cursor, Left)?.enumerate();
                 cursor -= loop {
                     match iter.next() {
@@ -748,7 +705,7 @@ impl Text {
                     }
                 };
             }
-            MtoBracket(yin, yan, Right) => {
+            Mto::Bracket(mut n, yin, yan, Right) => {
                 let mut iter = b.chars_at(cursor, Right)?.enumerate();
                 cursor += {
                     loop {
@@ -770,17 +727,11 @@ impl Text {
         Ok(Event::Noop)
     }
 
-    fn mto_pattern(
-        //
-        &mut self,
-        c: &mut Context,
-        n: usize,
-        evnt: Event,
-    ) -> Result<Event> {
+    fn mto_pattern(&mut self, c: &mut Context, evnt: Mto) -> Result<Event> {
         use crate::event::{Event::*, DP::*};
 
-        let (pattern, dp) = match evnt {
-            MtoPattern(Some(pattern), dp) => Ok((pattern, dp)),
+        let (n, pattern, dp) = match evnt {
+            Mto::Pattern(n, Some(pattern), dp) => Ok((n, pattern, dp)),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }?;
 
