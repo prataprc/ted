@@ -146,6 +146,9 @@ pub enum Event {
     Enter,
     Tab,
     Esc,
+    // Status events
+    StatusFile,
+    StatusCursor,
     // Application events
     NewBuffer,
     OpenFiles { flocs: Vec<Location> },

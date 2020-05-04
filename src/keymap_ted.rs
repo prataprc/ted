@@ -1,3 +1,5 @@
+use crossterm::event::KeyModifiers;
+
 use std::iter::FromIterator;
 
 use crate::{window::Context, Error, Event, Result};
@@ -45,11 +47,21 @@ impl Ted {
         }
     }
 
-    fn insert_fold(&mut self, _: &Context, evnt: Event) -> Result<(Event, Event)> {
+    fn insert_fold(
+        //
+        &mut self,
+        _: &Context,
+        evnt: Event,
+    ) -> Result<(Event, Event)> {
         Ok((Event::Noop, evnt))
     }
 
-    fn normal_fold(&mut self, c: &Context, evnt: Event) -> Result<(Event, Event)> {
+    fn normal_fold(
+        //
+        &mut self,
+        c: &Context,
+        evnt: Event,
+    ) -> Result<(Event, Event)> {
         use crate::event::{Event::*, DP::*};
 
         let prefix = c.to_event_prefix();
@@ -59,6 +71,7 @@ impl Ted {
         };
 
         let m = evnt.to_modifiers();
+        let ctrl = m == KeyModifiers::CONTROL;
         let wc = want_char!(prefix);
         let gp = g_prefix!(prefix);
 
@@ -71,8 +84,6 @@ impl Ted {
             Char('E', _) if gp && m.is_empty() => MtoWWord(Left, End),
             Char('o', _) if gp && m.is_empty() => MtoCursor,
             Char('I', _) if gp && m.is_empty() => ModeInsert(Nope),
-            //
-            Char(ch @ '0'..='9', _) if m.is_empty() => Dec(vec![ch]),
             // mode commands
             Char('I', _) if m.is_empty() => ModeInsert(Caret),
             Char('i', _) if m.is_empty() => ModeInsert(Nope),
@@ -119,6 +130,10 @@ impl Ted {
             Char('g', _) if m.is_empty() => G(Box::new(Noop)),
             Char('[', _) if m.is_empty() => B(Left),
             Char(']', _) if m.is_empty() => B(Right),
+            //
+            Char(ch @ '0'..='9', _) if m.is_empty() => Dec(vec![ch]),
+            // control commands
+            Char('g', _) if ctrl => StatusFile,
             evnt => evnt,
         };
 

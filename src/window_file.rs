@@ -27,6 +27,7 @@ use crate::{
 #[derive(Clone, Default)]
 pub struct WindowFile {
     coord: Coord, // x window coord.
+    show_statusfile: bool,
     we: WindowEdit,
     // cached parameters.
     we_hgt: i16,
@@ -45,6 +46,7 @@ impl WindowFile {
         let we = WindowEdit::new(coord.clone());
         WindowFile {
             coord,
+            show_statusfile: false,
             we,
             we_hgt: 0,
             we_wth: 0,
@@ -72,7 +74,7 @@ impl WindowFile {
         self.coord.to_origin()
     }
 
-    fn status_line(&self, s: &State) -> Span {
+    fn status_line(&self, s: &State) -> Result<Span> {
         let alt: ffi::OsString = "--display-error--".into();
         let (hgt, wth) = self.coord.to_size();
         let b = s.as_buffer(&self.we.to_buffer_id());
@@ -104,11 +106,11 @@ impl WindowFile {
 
         let (col, mut row) = self.coord.to_origin_cursor();
         row += hgt - 1;
-        span!(
+        Ok(span!(
             (col, row),
             "{}",
             if_else!(n > (wth as usize), shrt_ver, long_ver)
-        )
+        ))
     }
 
     fn do_refresh(&mut self, s: &State) -> Result<()> {
@@ -145,12 +147,22 @@ impl WindowFile {
 
     pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
         self.do_refresh(s)?;
-        self.we.on_refresh(s)
+        self.we.on_refresh(s)?;
+        if self.show_statusfile {
+            let mut stdout = io::stdout();
+            let span = self.status_line(s)?;
+            err_at!(Fatal, queue!(stdout, span))?;
+            self.show_statusfile = false;
+        }
+
+        Ok(())
     }
 
     pub fn on_event(&mut self, s: &mut State, mut evnt: Event) -> Result<Event> {
+        use crate::event::Event::*;
+
         evnt = match evnt {
-            Event::NewBuffer => {
+            NewBuffer => {
                 let (buffer_id, buffer) = {
                     let mut b = Buffer::empty()?;
                     b.set_location(Default::default());
@@ -161,6 +173,13 @@ impl WindowFile {
             }
             evnt => evnt,
         };
-        self.we.on_event(s, evnt)
+
+        match self.we.on_event(s, evnt)? {
+            StatusFile => {
+                self.show_statusfile = true;
+                Ok(Noop)
+            }
+            evnt => Ok(evnt),
+        }
     }
 }

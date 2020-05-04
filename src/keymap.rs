@@ -12,7 +12,12 @@ impl Default for Keymap {
 }
 
 impl Keymap {
-    pub fn fold(&mut self, c: &mut Context, evnt: Event) -> Result<(Event, Event)> {
+    pub fn fold(
+        //
+        &mut self,
+        c: &mut Context,
+        evnt: Event,
+    ) -> Result<(Event, Event)> {
         match self {
             Keymap::Ted(km) => km.fold(c, evnt),
         }
