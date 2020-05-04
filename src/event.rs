@@ -105,19 +105,34 @@ pub enum Event {
     Noop,
     // Return events
     List(Vec<Event>),
-    // Input events
-    F(u8, KeyModifiers),
-    BackTab,
-    // Commands
-    Dec(Vec<char>),
-    N(usize, Box<Event>), // (n, event)
-    G(Box<Event>),
-    B(DP), // (Left/Right,)
-    // Modal events
+    // Modal commands
     ModeEsc,
     ModeInsert(DP), // (Nope/Caret,)
     ModeAppend(DP), // (Right/End,)
     ModeOpen(DP),   // (Left/Right,)
+    // Input events
+    F(u8, KeyModifiers),
+    BackTab,
+    Dec(Vec<char>),
+    // Prefix commands
+    N(usize, Box<Event>), // (n, event)
+    G(Box<Event>),
+    B(DP), // (Left/Right,)
+    // Operation commands
+    OpChange,
+    OpDelete,
+    OpYank,
+    OpSwapcase,
+    OpLowercase,
+    OpUppercase,
+    OpFilter,
+    OpEqual,
+    OpFormat,
+    OpEncode,
+    OpRShift,
+    OpLShift,
+    OpFold,
+    OpFunc,
     // Motion events
     MtoLeft(DP),  // (LineBound/Nobound,)
     MtoRight(DP), // (LineBound/Nobound,)
