@@ -147,6 +147,8 @@ pub enum Mto {
     Para(usize, DP),                    // (n, Left/Right)
     Bracket(usize, char, char, DP),     // (n, yin, yan, Left/Right)
     Pattern(usize, Option<String>, DP), // (n, pattern, Left/Right)
+    PatternR(usize, DP),                // repeat pattern (n, Left/Right)
+    None,
 }
 
 #[derive(Clone)]
@@ -193,7 +195,8 @@ impl Default for Event {
 
 impl From<TermEvent> for Event {
     fn from(evnt: TermEvent) -> Event {
-        use Event::*;
+        use Event::{BackTab, Backspace, Char, Delete, Enter, Esc, FKey};
+        use Event::{Md, Mt, Tab};
 
         match evnt {
             TermEvent::Key(KeyEvent { code, modifiers: m }) => {
@@ -208,7 +211,7 @@ impl From<TermEvent> for Event {
                     KeyCode::Char(ch) if empty => Char(ch, m),
                     //
                     KeyCode::BackTab if empty => BackTab,
-                    KeyCode::F(f) if empty => F(f, m),
+                    KeyCode::F(f) if empty => FKey(f, m),
                     //
                     KeyCode::Char('[') if ctrl => Esc,
                     KeyCode::Esc if empty => Esc,
@@ -218,9 +221,9 @@ impl From<TermEvent> for Event {
                     KeyCode::Right if empty => Mt(Mto::Right(1, DP::LineBound)),
                     KeyCode::Up if empty => Mt(Mto::Up(1, DP::Nope)),
                     KeyCode::Down if empty => Mt(Mto::Down(1, DP::Nope)),
-                    KeyCode::Home if empty => Mt(Mto::Home(1, DP::Nope)),
+                    KeyCode::Home if empty => Mt(Mto::Home(DP::Nope)),
                     KeyCode::End if empty => Mt(Mto::End),
-                    KeyCode::Null => Noop,
+                    KeyCode::Null => Event::Noop,
                     _ => Event::Noop,
                 }
             }
@@ -243,22 +246,26 @@ impl From<Vec<Event>> for Event {
 }
 
 impl Mto {
-    pub fn transform(self, dp: DP) -> Result<Self> {
-        use Mto::*;
+    pub fn transform(self, m: usize, dp: DP) -> Result<Self> {
+        use {
+            Mto::{CharF, CharT, Pattern},
+            DP::{Left, Right},
+        };
 
         match (self, dp) {
-            (CharF(ch, DP::Left), DP::Right) => Ok(CharF(ch, DP::Left)),
-            (CharF(ch, DP::Left), DP::Left) => Ok(CharF(ch, DP::Right)),
-            (CharF(ch, DP::Right), DP::Right) => Ok(CharF(ch, DP::Right)),
-            (CharF(ch, DP::Right), DP::Left) => Ok(CharF(ch, DP::Left)),
-            (CharT(ch, DP::Left), DP::Right) => Ok(CharT(ch, DP::Left)),
-            (CharT(ch, DP::Left), DP::Left) => Ok(CharT(ch, DP::Right)),
-            (CharT(ch, DP::Right), DP::Right) => Ok(CharT(ch, DP::Right)),
-            (CharT(ch, DP::Right), DP::Left) => Ok(CharT(ch, DP::Left)),
-            (Pattern(ch, DP::Left), DP::Right) => Ok(Pattern(ch, DP::Left)),
-            (Pattern(ch, DP::Left), DP::Left) => Ok(Pattern(ch, DP::Right)),
-            (Pattern(ch, DP::Right), DP::Right) => Ok(Pattern(ch, DP::Right)),
-            (Pattern(ch, DP::Right), DP::Left) => Ok(Pattern(ch, DP::Left)),
+            (CharF(_, ch, Left), Right) => Ok(CharF(m, ch, Left)),
+            (CharF(_, ch, Left), Left) => Ok(CharF(m, ch, Right)),
+            (CharF(_, ch, Right), Right) => Ok(CharF(m, ch, Right)),
+            (CharF(_, ch, Right), Left) => Ok(CharF(m, ch, Left)),
+            (CharT(_, ch, Left), Right) => Ok(CharT(m, ch, Left)),
+            (CharT(_, ch, Left), Left) => Ok(CharT(m, ch, Right)),
+            (CharT(_, ch, Right), Right) => Ok(CharT(m, ch, Right)),
+            (CharT(_, ch, Right), Left) => Ok(CharT(m, ch, Left)),
+            (Pattern(_, ch, Left), Right) => Ok(Pattern(m, ch, Left)),
+            (Pattern(_, ch, Left), Left) => Ok(Pattern(m, ch, Right)),
+            (Pattern(_, ch, Right), Right) => Ok(Pattern(m, ch, Right)),
+            (Pattern(_, ch, Right), Left) => Ok(Pattern(m, ch, Left)),
+            (Mto::None, _) => Ok(Mto::None),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
@@ -267,15 +274,20 @@ impl Mto {
 impl Event {
     pub fn to_modifiers(&self) -> KeyModifiers {
         match self {
-            Event::F(_, modifiers) => modifiers.clone(),
+            Event::FKey(_, modifiers) => modifiers.clone(),
             Event::Char(_, modifiers) => modifiers.clone(),
             _ => KeyModifiers::empty(),
         }
     }
 
     pub fn is_insert(&self) -> bool {
+        use {
+            Event::Md,
+            Mod::{Append, Insert, Open},
+        };
+
         match self {
-            Mod::Insert(_) | Mod::Append(_) | Mod::Open(_) => true,
+            Md(Insert(_, _)) | Md(Append(_, _)) | Md(Open(_, _)) => true,
             _ => false,
         }
     }

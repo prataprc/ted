@@ -32,8 +32,6 @@ pub struct Buffer {
     pub location: Location,
     pub read_only: bool,
     pub insert_only: bool,
-    pub evnt_mto_char: Event,
-    pub evnt_mto_patt: Event,
     pub last_inserts: Vec<Event>,
     pub keymap: Keymap,
     pub ftype: FType,
@@ -66,8 +64,6 @@ impl Buffer {
             location: Default::default(),
             read_only: false,
             insert_only: false,
-            evnt_mto_char: Event::Noop,
-            evnt_mto_patt: Event::Noop,
             last_inserts: Default::default(),
             keymap: Default::default(),
             ftype: Default::default(),
@@ -202,14 +198,6 @@ impl Buffer {
                 evnt_prefix.clone()
             }
         }
-    }
-
-    pub fn to_mto_char(&self) -> Event {
-        self.evnt_mto_char.clone()
-    }
-
-    pub fn to_mto_pattern(&self) -> Event {
-        self.evnt_mto_patt.clone()
     }
 
     pub fn to_inserts(&self) -> Vec<Event> {

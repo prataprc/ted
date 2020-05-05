@@ -12,7 +12,7 @@ use std::{
 
 use crate::{
     buffer::Buffer,
-    event::{Event, DP},
+    event::{Event, Ted, DP},
     window::{Context, Coord, Cursor, Span, State},
     Error, Result,
 };

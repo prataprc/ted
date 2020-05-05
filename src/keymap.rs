@@ -1,8 +1,8 @@
-use crate::{event::Event, keymap_ted::Ted, window::Context, Result};
+use crate::{event::Event, keymap_ted::KeyTed, window::Context, Result};
 
 #[derive(Clone)]
 pub enum Keymap {
-    Ted(Ted),
+    Ted(KeyTed),
 }
 
 impl Default for Keymap {

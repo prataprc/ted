@@ -22,11 +22,12 @@ use std::{
 
 use ted::{
     err_at,
+    event::{Event, Ted},
     location::Location,
     stats,
     window::{Coord, Cursor, State, Window},
     window_file::WindowFile,
-    Config, Error, Event, Result,
+    Config, Error, Result,
 };
 
 #[derive(Debug, StructOpt)]
@@ -90,14 +91,14 @@ impl Application {
         };
 
         let evnt = if opts.files.len() == 0 {
-            Event::NewBuffer
+            Event::Td(Ted::NewBuffer)
         } else {
             let mut flocs = vec![];
             for f in opts.files.clone().into_iter() {
                 let f: ffi::OsString = f.into();
                 flocs.push(Location::new_disk(&f));
             }
-            Event::OpenFiles { flocs }
+            Event::Td(Ted::OpenFiles { flocs })
         };
 
         app.event_loop(evnt)

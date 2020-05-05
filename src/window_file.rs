@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     buffer::Buffer,
-    event::Event,
+    event::{Event, Ted},
     window::{Coord, Cursor, Span, State},
     window_edit::WindowEdit,
     Error, Result,
@@ -159,10 +159,10 @@ impl WindowFile {
     }
 
     pub fn on_event(&mut self, s: &mut State, mut evnt: Event) -> Result<Event> {
-        use crate::event::Event::*;
+        use crate::event::Event::Td;
 
         evnt = match evnt {
-            NewBuffer => {
+            Td(Ted::NewBuffer) => {
                 let (buffer_id, buffer) = {
                     let mut b = Buffer::empty()?;
                     b.set_location(Default::default());
@@ -175,9 +175,9 @@ impl WindowFile {
         };
 
         match self.we.on_event(s, evnt)? {
-            StatusFile => {
+            Td(Ted::StatusFile) => {
                 self.show_statusfile = true;
-                Ok(Noop)
+                Ok(Event::Noop)
             }
             evnt => Ok(evnt),
         }

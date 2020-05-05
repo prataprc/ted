@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    event::{self, Event},
+    event::{self, Event, Ted},
     window::{Coord, Cursor, Span, State},
     Error, Result,
 };
