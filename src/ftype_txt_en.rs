@@ -1,3 +1,5 @@
+use tree_sitter as ts;
+
 use std::{cmp, ops::Bound};
 
 use crate::{
@@ -8,8 +10,13 @@ use crate::{
     Error, Result,
 };
 
-#[derive(Clone)]
+extern "C" {
+    fn tree_sitter_txt_en() -> ts::Language;
+}
+
 pub struct Text {
+    parser: ts::Parser,
+    tree: Option<ts::Tree>,
     mto_find_char: Mto,
     mto_pattern: Mto,
     insert_repeat: usize,
@@ -18,11 +25,40 @@ pub struct Text {
 
 impl Default for Text {
     fn default() -> Text {
+        let parser = {
+            let mut p = ts::Parser::new();
+            let language = unsafe { tree_sitter_txt_en() };
+            p.set_language(language).unwrap();
+            p
+        };
+
         Text {
+            parser,
+            tree: None,
             insert_repeat: Default::default(),
             last_inserts: Default::default(),
             mto_find_char: Mto::None,
             mto_pattern: Mto::None,
+        }
+    }
+}
+
+impl Clone for Text {
+    fn clone(&self) -> Text {
+        let parser = {
+            let mut p = ts::Parser::new();
+            let language = unsafe { tree_sitter_txt_en() };
+            p.set_language(language).unwrap();
+            p
+        };
+
+        Text {
+            parser,
+            tree: None,
+            insert_repeat: self.insert_repeat.clone(),
+            last_inserts: self.last_inserts.clone(),
+            mto_find_char: self.mto_find_char.clone(),
+            mto_pattern: self.mto_pattern.clone(),
         }
     }
 }
@@ -39,28 +75,39 @@ impl Text {
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
+}
+
+impl Text {
+    fn to_insert_n(evnt: Event) -> (Option<usize>, Event) {
+        use crate::event::Event::Md;
+
+        match evnt {
+            Md(Mod::Insert(n, dp)) => (Some(n), Md(Mod::Insert(n, dp))),
+            Md(Mod::Append(n, dp)) => (Some(n), Md(Mod::Append(n, dp))),
+            Md(Mod::Open(n, dp)) => (Some(n), Md(Mod::Open(n, dp))),
+            _ => (None, evnt),
+        }
+    }
 
     fn on_n_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
-        use crate::event::Event::{Md, Mt};
+        use crate::event::Event::Mt;
+
+        self.tree = match self.tree.take() {
+            tree @ Some(_) => tree,
+            None => {
+                let b = c.as_mut_buffer();
+                self.parser.parse(&b.to_string(), None)
+            }
+        };
 
         // switch to insert mode.
-        let evnt = match evnt {
-            Md(Mod::Insert(n, dp)) if n > 1 => {
+        let evnt = match Self::to_insert_n(evnt) {
+            (Some(n), evnt) if n > 1 => {
                 let b = c.as_mut_buffer();
                 b.mode_insert()?;
-                return self.on_i_event(c, Md(Mod::Insert(n, dp)));
+                return self.on_i_event(c, evnt);
             }
-            Md(Mod::Append(n, dp)) if n > 1 => {
-                let b = c.as_mut_buffer();
-                b.mode_insert()?;
-                return self.on_i_event(c, Md(Mod::Append(n, dp)));
-            }
-            Md(Mod::Open(n, dp)) if n > 1 => {
-                let b = c.as_mut_buffer();
-                b.mode_insert()?;
-                return self.on_i_event(c, Md(Mod::Open(n, dp)));
-            }
-            evnt => evnt,
+            (_, evnt) => evnt,
         };
 
         let evnt = match evnt {

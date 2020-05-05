@@ -59,7 +59,7 @@ impl Buffer {
         let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
         let mut num = BUFFER_NUM.lock().unwrap();
         *num = *num + 1;
-        Ok(Buffer {
+        let b = Buffer {
             num: *num,
             location: Default::default(),
             read_only: false,
@@ -69,7 +69,9 @@ impl Buffer {
             ftype: Default::default(),
 
             inner: Inner::Normal(NormalBuffer::new(buf)),
-        })
+        };
+
+        Ok(b)
     }
 
     pub fn empty() -> Result<Buffer> {

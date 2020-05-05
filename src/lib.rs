@@ -7,7 +7,7 @@ pub mod util;
 pub mod buffer;
 pub mod config;
 pub mod event;
-pub mod ftype_text;
+pub mod ftype_txt_en;
 pub mod ftypes;
 pub mod keymap;
 pub mod keymap_ted;

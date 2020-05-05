@@ -1,0 +1,95 @@
+{
+  "name": "txt_en",
+  "rules": {
+    "source_file": {
+      "type": "REPEAT",
+      "content": {
+        "type": "SYMBOL",
+        "name": "sentence"
+      }
+    },
+    "sentence": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "sentence_line"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "sentence_fin"
+        }
+      ]
+    },
+    "sentence_line": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "word"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "nl"
+        }
+      ]
+    },
+    "sentence_fin": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "word"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "dot"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "nl"
+        }
+      ]
+    },
+    "word": {
+      "type": "PATTERN",
+      "value": "[^\\s\\.]+"
+    },
+    "wword": {
+      "type": "PATTERN",
+      "value": "[^\\s\\.]+(\\.[^\\s\\.]+)*"
+    },
+    "dot": {
+      "type": "PATTERN",
+      "value": "\\."
+    },
+    "nl": {
+      "type": "PATTERN",
+      "value": "(\\x0a\\x0d)|(\\x0d\\x0a)|\\x0a"
+    },
+    "ws": {
+      "type": "PATTERN",
+      "value": "[\\x09\\x0b\\x0c\\x0d\\x20]+"
+    }
+  },
+  "extras": [
+    {
+      "type": "PATTERN",
+      "value": "\\s"
+    }
+  ],
+  "conflicts": [],
+  "externals": [],
+  "inline": [],
+  "supertypes": []
+}
+

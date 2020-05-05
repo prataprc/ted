@@ -1,0 +1,90 @@
+[
+  {
+    "type": "sentence",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "sentence_fin",
+          "named": true
+        },
+        {
+          "type": "sentence_line",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "sentence_fin",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "dot",
+          "named": true
+        },
+        {
+          "type": "nl",
+          "named": true
+        },
+        {
+          "type": "word",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "sentence_line",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "nl",
+          "named": true
+        },
+        {
+          "type": "word",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "source_file",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "sentence",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "dot",
+    "named": true
+  },
+  {
+    "type": "nl",
+    "named": true
+  },
+  {
+    "type": "word",
+    "named": true
+  }
+]
