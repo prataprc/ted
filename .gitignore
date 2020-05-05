@@ -9,3 +9,4 @@ Cargo.lock
 .vimsession
 .vim_session
 core
+ts/txt_en/src
