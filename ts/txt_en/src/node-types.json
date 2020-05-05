@@ -35,7 +35,7 @@
           "named": true
         },
         {
-          "type": "word",
+          "type": "wordws",
           "named": true
         }
       ]
@@ -54,7 +54,7 @@
           "named": true
         },
         {
-          "type": "word",
+          "type": "wordws",
           "named": true
         }
       ]
@@ -76,6 +76,29 @@
     }
   },
   {
+    "type": "wordws",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "word",
+          "named": true
+        },
+        {
+          "type": "ws",
+          "named": true
+        },
+        {
+          "type": "wword",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "dot",
     "named": true
   },
@@ -85,6 +108,14 @@
   },
   {
     "type": "word",
+    "named": true
+  },
+  {
+    "type": "ws",
+    "named": true
+  },
+  {
+    "type": "wword",
     "named": true
   }
 ]
