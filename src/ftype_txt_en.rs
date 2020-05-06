@@ -1,6 +1,10 @@
 use tree_sitter as ts;
 
-use crate::{event::Event, window::Context, Error, Result};
+use crate::{
+    event::Event,
+    window::{Context, Span, Spanline},
+    Error, Result,
+};
 
 extern "C" {
     fn tree_sitter_txt_en() -> ts::Language;
@@ -66,7 +70,7 @@ impl Text {
         let evnt = match evnt {
             Event::Noop => Event::Noop,
             Td(Ted::StatusCursor { spans }) if spans.len() > 1 => Td(Ted::StatusCursor { spans }),
-            Td(Ted::StatusCursor { .. }) => todo!(),
+            Td(Ted::StatusCursor { .. }) => self.to_status_cursor(c, evnt),
             evnt => evnt,
         };
 
@@ -75,5 +79,14 @@ impl Text {
 
     fn on_i_event(&mut self, _: &mut Context, evnt: Event) -> Result<Event> {
         Ok(evnt)
+    }
+
+    fn to_status_cursor(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+        let sl: Spanline = Default::default();
+        // at_byte
+        // at_char
+        // at_word
+        // at_sent
+        // at_para
     }
 }
