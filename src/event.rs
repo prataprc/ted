@@ -100,7 +100,7 @@ pub enum DP {
     Nope,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Opr {
     Change(usize, Mto),    // (n, motion-command)
     Delete(usize, Mto),    // (n, motion-command)
@@ -118,7 +118,7 @@ pub enum Opr {
     Func(usize, Mto),      // (n, motion-command)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Mod {
     Esc,
     Insert(usize, DP), // (n, Nope/Caret)
@@ -126,7 +126,7 @@ pub enum Mod {
     Open(usize, DP),   // (n, Left/Right)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Mto {
     Left(usize, DP),  // (n, LineBound/Nobound)
     Right(usize, DP), // (n, LineBound/Nobound)
@@ -151,7 +151,13 @@ pub enum Mto {
     None,
 }
 
-#[derive(Clone)]
+impl Default for Mto {
+    fn default() -> Mto {
+        Mto::None
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub enum Ted {
     NewBuffer,
     OpenFiles { flocs: Vec<Location> },
@@ -161,7 +167,7 @@ pub enum Ted {
     StatusCursor,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Event {
     // Insert events
     Backspace,

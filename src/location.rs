@@ -10,7 +10,7 @@ lazy_static! {
 }
 
 // Location of buffer's content, typically a persistent medium.
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Location {
     Anonymous(String),
     Disk(ffi::OsString),
