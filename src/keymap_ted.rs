@@ -169,7 +169,12 @@ impl KeyTed {
             },
             // control commands
             Event::Noop | N(_) => match evnt {
-                Char('g', _) if ctrl => (eno, Td(Ted::StatusFile)),
+                Char('g', _) if ctrl => (
+                    eno,
+                    Td(Ted::StatusFile {
+                        spans: Default::default(),
+                    }),
+                ),
                 evnt => (prefix, evnt),
             },
             prefix => (prefix, evnt),

@@ -65,7 +65,8 @@ impl Text {
 
         let evnt = match evnt {
             Event::Noop => Event::Noop,
-            Td(Ted::StatusCursor) => Event::Noop,
+            Td(Ted::StatusCursor { spans }) if spans.len() > 1 => Td(Ted::StatusCursor { spans }),
+            Td(Ted::StatusCursor { .. }) => todo!(),
             evnt => evnt,
         };
 

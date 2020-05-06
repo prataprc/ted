@@ -175,7 +175,8 @@ impl WindowFile {
         };
 
         match self.we.on_event(s, evnt)? {
-            Td(Ted::StatusFile) => {
+            Td(Ted::StatusFile { spans }) if spans.len() > 1 => Ok(Td(Ted::StatusFile { spans })),
+            Td(Ted::StatusFile { .. }) => {
                 self.show_statusfile = true;
                 Ok(Event::Noop)
             }

@@ -347,7 +347,7 @@ impl fmt::Display for Coord {
 }
 
 // Cursor within the Terminal/Window, starts from (0, 0)
-#[derive(Clone, Default, Copy, Debug)]
+#[derive(Clone, Default, Copy, Debug, Eq, PartialEq)]
 pub struct Cursor {
     pub col: u16,
     pub row: u16,
@@ -374,7 +374,7 @@ impl Add for Cursor {
 }
 
 // Span object to render on screen.
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Span {
     text: String,
     fg: Option<Color>,
@@ -440,6 +440,83 @@ impl Command for Span {
             ss.to_string()
         });
 
+        s
+    }
+}
+
+// Spanline object to render on screen.
+#[derive(Clone, Eq, PartialEq)]
+pub struct Spanline {
+    fg: Option<Color>,
+    bg: Option<Color>,
+    attr: Option<Attribute>,
+    cursor: Option<Cursor>,
+    spans: Vec<Span>,
+}
+
+impl Default for Spanline {
+    fn default() -> Spanline {
+        Spanline {
+            fg: Default::default(),
+            bg: Default::default(),
+            attr: Default::default(),
+            cursor: Default::default(),
+            spans: Default::default(),
+        }
+    }
+}
+
+impl Spanline {
+    pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
+    pub fn set_fg(&mut self, fg: Color) -> &mut Self {
+        self.fg = Some(fg);
+        self
+    }
+
+    pub fn set_bg(&mut self, bg: Color) -> &mut Self {
+        self.bg = Some(bg);
+        self
+    }
+
+    pub fn set_attr(&mut self, attr: Attribute) -> &mut Self {
+        self.attr = Some(attr);
+        self
+    }
+
+    pub fn add_span(&mut self, span: Span) -> &mut Self {
+        self.spans.push(span);
+        self
+    }
+}
+
+impl Command for Spanline {
+    type AnsiType = String;
+
+    fn ansi_code(&self) -> Self::AnsiType {
+        let mut s = match &self.cursor {
+            Some(Cursor { col, row }) => {
+                //
+                term_cursor::MoveTo(*col, *row).to_string()
+            }
+            None => Default::default(),
+        };
+
+        for mut span in self.spans.clone().into_iter() {
+            if let (None, Some(bg)) = (&span.bg, &self.bg) {
+                span.set_bg(*bg);
+            }
+            if let (None, Some(fg)) = (&span.fg, &self.fg) {
+                span.set_fg(*fg);
+            }
+            if let (None, Some(attr)) = (&span.attr, &self.attr) {
+                span.set_attr(*attr);
+            }
+            s.push_str(&span.ansi_code());
+        }
         s
     }
 }
