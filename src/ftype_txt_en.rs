@@ -69,8 +69,7 @@ impl Text {
 
         let evnt = match evnt {
             Event::Noop => Event::Noop,
-            Td(Ted::StatusCursor { spans }) if spans.len() > 1 => Td(Ted::StatusCursor { spans }),
-            Td(Ted::StatusCursor { .. }) => self.to_status_cursor(c, evnt),
+            Td(Ted::StatusCursor { .. }) => self.to_status_cursor(c, evnt)?,
             evnt => evnt,
         };
 
@@ -82,11 +81,33 @@ impl Text {
     }
 
     fn to_status_cursor(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
-        let sl: Spanline = Default::default();
-        // at_byte
-        // at_char
-        // at_word
-        // at_sent
-        // at_para
+        use crate::event::{Event::Td, Ted};
+
+        let mut sl: Spanline = Default::default();
+
+        match &self.tree {
+            None => Ok(Event::Noop),
+            Some(tree) => {
+                let (mut ws, mut ss, mut ls, mut ps) = (0, 0, 0, 0);
+                let mut prev_kind: Option<&str> = None;
+                let mut tc = tree.walk();
+                for node in tree.root_node().children(&mut tc) {
+                    match (prev_kind, node.kind()) {
+                        (_, "word") | (_, "wword") => ws += 1,
+                        (_, "dot") => ss += 1,
+                        (Some("nl"), "nl") => {
+                            ls += 1;
+                            ps += 1;
+                        }
+                        (_, "nl") => ls += 1,
+                        _ => err_at!(Fatal, msg: format!("unreachable"))?,
+                    }
+                    prev_kind = Some(node.kind());
+                }
+                let span = format!("{} {} {} {}", ws, ls, ss, ps);
+                sl.add_span(Span::new(&span));
+                Ok(Td(Ted::StatusCursor { spanline: sl }))
+            }
+        }
     }
 }

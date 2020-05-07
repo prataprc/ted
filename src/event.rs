@@ -2,7 +2,7 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
 use std::{convert::TryFrom, ffi, fs, path};
 
-use crate::{location::Location, window::Span, Error, Result};
+use crate::{location::Location, window::Spanline, Error, Result};
 
 pub enum OpenFile {
     ReadWrite(fs::File, ffi::OsString),
@@ -163,8 +163,8 @@ pub enum Ted {
     OpenFiles { flocs: Vec<Location> },
     UseBuffer { buffer_id: String },
     PromptReply { input: String },
-    StatusFile { spans: Vec<Span> },
-    StatusCursor { spans: Vec<Span> },
+    StatusFile,
+    StatusCursor { spanline: Spanline },
 }
 
 #[derive(Clone, Eq, PartialEq)]

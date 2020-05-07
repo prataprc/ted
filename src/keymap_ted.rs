@@ -103,6 +103,10 @@ impl KeyTed {
                 _ => (eno, Event::Noop),
             },
             G(n) if empty => match evnt {
+                Char('g', _) if ctrl => {
+                    let spanline = Default::default();
+                    (eno, Td(Ted::StatusCursor { spanline }))
+                }
                 Char('g', _) => (eno, Mt(Mto::Row(n, DP::Caret))),
                 Char('e', _) => (eno, Mt(Mto::Word(n, DP::Left, DP::End))),
                 Char('E', _) => (eno, Mt(Mto::WWord(n, DP::Left, DP::End))),
@@ -169,12 +173,7 @@ impl KeyTed {
             },
             // control commands
             Event::Noop | N(_) => match evnt {
-                Char('g', _) if ctrl => (
-                    eno,
-                    Td(Ted::StatusFile {
-                        spans: Default::default(),
-                    }),
-                ),
+                Char('g', _) if ctrl => (eno, Td(Ted::StatusFile)),
                 evnt => (prefix, evnt),
             },
             prefix => (prefix, evnt),
