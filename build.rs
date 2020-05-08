@@ -40,11 +40,13 @@ macro_rules! err_at {
 }
 
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+
     check_exit!(auto_cfg_npm(), 1);
     check_exit!(install_npm_pkgs(), 2);
 
     let parsers = vec![Parser {
-        name: "tx_en".to_string(),
+        name: "txt_en".to_string(),
         dir: "ts/txt_en".into(),
         grammar: "ts/txt_en/grammar.js".into(),
         sources: vec!["ts/txt_en/src/parser.c".into()],
@@ -129,10 +131,10 @@ fn build_parser(parser: Parser) -> Result<(), String> {
         }?;
     }
     // mark for rerun
-    println!("cargo:rerun-if-changed={:?}", parser.grammar);
-    for file in parser.sources.iter() {
-        println!("cargo:rerun-if-changed={:?}", file);
-    }
+    println!(
+        "cargo:rerun-if-changed={}",
+        parser.grammar.to_str().unwrap()
+    );
     // build library
     {
         let _sd = SwitchDir::to_manifest_dir();

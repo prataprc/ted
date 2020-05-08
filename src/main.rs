@@ -123,10 +123,6 @@ impl Application {
                     evnt
                 }
             };
-
-            // TODO: post handling if any, like command processing, status-line
-            // processing.
-
             // show-cursor
             let Cursor { col, row } = s.to_window_cursor();
             err_at!(Fatal, queue!(self.tm.stdout, cursor::MoveTo(col, row)))?;
@@ -134,11 +130,10 @@ impl Application {
             err_at!(Fatal, self.tm.stdout.flush())?;
 
             stats.sample(start.elapsed().unwrap());
-
             // new event
             evnt = {
                 let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
-                trace!("Event-{:?} Cursor:({},{})", tevnt, col, row);
+                trace!("{:?} Cursor:({},{})", tevnt, col, row);
                 match tevnt.clone().into() {
                     Event::Char('q', m) if m.is_empty() => break Ok(()),
                     evnt => evnt,

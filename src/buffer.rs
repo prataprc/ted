@@ -1,4 +1,5 @@
 use lazy_static::lazy_static;
+use log::trace;
 use ropey::{self, Rope, RopeSlice};
 
 use std::{
@@ -428,6 +429,8 @@ impl Buffer {
             evnt_up
         };
 
+        trace!("e-down {}", evnt);
+        trace!("e-up {} {}", evnt_up, evnt == evnt_up);
         let evnt = if evnt_up == evnt {
             Self::handle_event(c, evnt)?
         } else {

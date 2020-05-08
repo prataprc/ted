@@ -491,6 +491,10 @@ impl Spanline {
         self.spans.push(span);
         self
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.spans.len() == 0
+    }
 }
 
 impl Command for Spanline {

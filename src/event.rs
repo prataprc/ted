@@ -100,6 +100,23 @@ pub enum DP {
     Nope,
 }
 
+impl fmt::Display for DP {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            DP::Left => write!(f, "left"),
+            DP::Right => write!(f, "right"),
+            DP::Find => write!(f, "find"),
+            DP::Till => write!(f, "till"),
+            DP::Start => write!(f, "start"),
+            DP::End => write!(f, "end"),
+            DP::LineBound => write!(f, "line_bound"),
+            DP::Nobound => write!(f, "no_bound"),
+            DP::Caret => write!(f, "caret"),
+            DP::Nope => write!(f, "nope"),
+        }
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub enum Opr {
     Change(usize, Mto),    // (n, motion-command)
@@ -118,12 +135,44 @@ pub enum Opr {
     Func(usize, Mto),      // (n, motion-command)
 }
 
+impl fmt::Display for Opr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Opr::Change(n, mto) => write!(f, "change({},{})", n, mto),
+            Opr::Delete(n, mto) => write!(f, "delete({},{})", n, mto),
+            Opr::Yank(n, mto) => write!(f, "yank({},{})", n, mto),
+            Opr::Swapcase(n, mto) => write!(f, "swapcase({},{})", n, mto),
+            Opr::Lowercase(n, mto) => write!(f, "lowercase({},{})", n, mto),
+            Opr::Uppercase(n, mto) => write!(f, "uppercase({},{})", n, mto),
+            Opr::Filter(n, mto) => write!(f, "filter({},{})", n, mto),
+            Opr::Equal(n, mto) => write!(f, "equal({},{})", n, mto),
+            Opr::Format(n, mto) => write!(f, "format({},{})", n, mto),
+            Opr::Encode(n, mto) => write!(f, "encode({},{})", n, mto),
+            Opr::RShift(n, mto) => write!(f, "rshift({},{})", n, mto),
+            Opr::LShift(n, mto) => write!(f, "lshift({},{})", n, mto),
+            Opr::Fold(n, mto) => write!(f, "fold({},{})", n, mto),
+            Opr::Func(n, mto) => write!(f, "func({},{})", n, mto),
+        }
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub enum Mod {
     Esc,
     Insert(usize, DP), // (n, Nope/Caret)
     Append(usize, DP), // (n, Right/End)
     Open(usize, DP),   // (n, Left/Right)
+}
+
+impl fmt::Display for Mod {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Mod::Esc => write!(f, "esc"),
+            Mod::Insert(n, dp) => write!(f, "insert({},{})", n, dp),
+            Mod::Append(n, dp) => write!(f, "append({},{})", n, dp),
+            Mod::Open(n, dp) => write!(f, "open({},{})", n, dp),
+        }
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -157,6 +206,41 @@ impl Default for Mto {
     }
 }
 
+impl fmt::Display for Mto {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            DP::Nope => write!(f, "nope"),
+            Mto::Left(n, dp) => write!(f, "left({},{})", n, dp),
+            Mto::Right(n, dp) => write!(f, "right({},{})", n, dp),
+            Mto::Up(n, dp) => write!(f, "up({},{})", n, dp),
+            Mto::Down(n, dp) => write!(f, "down({},{})", n, dp),
+            Mto::Col(n) => write!(f, "col({})", n),
+            Mto::Home(dp) => write!(f, "home({})", dp),
+            Mto::End => write!(f, "end"),
+            Mto::Row(n, dp) => write!(f, "row({},{})", n, dp),
+            Mto::Percent(n) => write!(f, "percent({})", n),
+            Mto::Cursor(n) => write!(f, "cursor({})", n),
+            Mto::CharF(n, ch, dp) => write!(f, "charf({},{:?},{})", n, ch, dp),
+            Mto::CharT(n, ch, dp) => write!(f, "chart({},{:?},{})", n, ch, dp),
+            Mto::CharR(n, dp) => write!(f, "charr({},{})", n, dp),
+            Mto::Word(n, dp1, dp2) => write!(f, "word({},{},{})", n, dp1, dp2),
+            Mto::WWord(n, dp1, dp2) => write!(f, "wword({},{},{})", n, dp1, dp2),
+            Mto::Sentence(n, dp) => write!(f, "sentence({},{})", n, dp),
+            Mto::Para(n, dp) => write!(f, "para({},{})", n, dp),
+            Mto::Bracket(n, ch1, ch2, dp) => {
+                //
+                write!(f, "bracket({},{},{},{})", n, ch1, ch2, dp)
+            }
+            Mto::Pattern(n, patt, dp) => {
+                //
+                write!(f, "pattern({},{},{})", n, patt, dp)
+            }
+            Mto::PatternR(n, dp) => write!(f, "patternr({},{})", n, dp),
+            Mto::None => write!(f, "none"),
+        }
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub enum Ted {
     NewBuffer,
@@ -165,6 +249,25 @@ pub enum Ted {
     PromptReply { input: String },
     StatusFile,
     StatusCursor { spanline: Spanline },
+}
+
+impl fmt::Display for Ted {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Ted::NewBuffer => write!(f, "new_buffer"),
+            Ted::OpenFiles { flocs } => write!(f, "open_files({})", flocs.len()),
+            Ted::UseBuffer { buffer_id } => {
+                //
+                write!(f, "use_buffer({})", buffer_id)
+            }
+            Ted::PromptReply { input } => write!(f, "prompt_reply({})", input),
+            Ted::StatusFile => write!(f, "status_file"),
+            Ted::StatusCursor { spanline: sl } => {
+                //
+                write!(f, "status_cursor({})", sl.is_empty())
+            }
+        }
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -191,6 +294,35 @@ pub enum Event {
     FKey(u8, KeyModifiers),
     BackTab,
     Noop,
+}
+
+impl fmt::Display for Event {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        use Event::{BackTab, FKey, List, Md, Mt, Noop, Op, Td};
+        use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
+
+        match self {
+            Event::Backspace => write!(f, "backspace"),
+            Event::Enter => write!(f, "enter"),
+            Event::Tab => write!(f, "tab"),
+            Event::Delete => write!(f, "delete"),
+            Event::Esc => write!(f, "esc"),
+            Event::Char(ch, m) => write!(f, "char({},{})", ch, m),
+            Event::B(n, dp) => write!(f, "b({},{})", n, dp),
+            Event::G(n) => write!(f, "g({})", n),
+            Event::F(n, dp) => write!(f, "f({},{})", n, dp),
+            Event::T(n, dp) => write!(f, "t({},{})", n, dp),
+            Event::N(n) => write!(f, "b({}", n),
+            Event::Op(n, opr) => write!(f, "op({},{})", n, opr),
+            Event::Md(md) => write!(f, "md({})", md),
+            Event::Mt(mt) => write!(f, "mt({})", mt),
+            Event::Td(td) => write!(f, "td({})", td),
+            Event::List(es) => write!(f, "list({})", es.len()),
+            Event::FKey(ch, m) => write!(f, "fkey({},{})", ch, m),
+            Event::BackTab => write!(f, "backtab"),
+            Event::Noop => write!(f, "noop"),
+        }
+    }
 }
 
 impl Default for Event {
