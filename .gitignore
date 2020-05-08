@@ -10,3 +10,4 @@ Cargo.lock
 .vim_session
 core
 ts/txt_en/src
+node_modules
