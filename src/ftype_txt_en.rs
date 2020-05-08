@@ -80,7 +80,7 @@ impl Text {
         Ok(evnt)
     }
 
-    fn to_status_cursor(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+    fn to_status_cursor(&mut self, _: &mut Context, _: Event) -> Result<Event> {
         use crate::event::{Event::Td, Ted};
 
         let mut sl: Spanline = Default::default();
