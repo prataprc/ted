@@ -5,9 +5,10 @@ use ropey::{self, Rope, RopeSlice};
 use std::{
     borrow::Borrow,
     cell::{self, RefCell},
-    cmp, io, mem,
+    cmp, fmt, io, mem,
     ops::Bound,
     rc::{self, Rc},
+    result,
     sync::Mutex,
 };
 
@@ -25,6 +26,33 @@ pub const NL: char = '\n';
 
 lazy_static! {
     static ref BUFFER_NUM: Mutex<usize> = Mutex::new(0);
+}
+
+// Cursor within the buffer, starts from (0, 0)
+#[derive(Clone, Default, Copy, Debug, Eq, PartialEq)]
+pub struct Cursor {
+    pub col: usize,
+    pub row: usize,
+}
+
+impl From<(usize, usize)> for Cursor {
+    fn from(t: (usize, usize)) -> Cursor {
+        Cursor { col: t.0, row: t.1 }
+    }
+}
+
+impl fmt::Display for Cursor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(f, "BC<{},{}>", self.col, self.row)
+    }
+}
+
+impl Cursor {
+    pub fn diff(&self, new: &Self) -> (isize, isize) {
+        let dcol = (new.col as isize) - (self.col as isize);
+        let drow = (new.row as isize) - (self.row as isize);
+        (dcol, drow)
+    }
 }
 
 // all bits and pieces of content is managed by buffer.
@@ -227,7 +255,7 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn to_xy_cursor(&self) -> (usize, usize) {
+    pub fn to_xy_cursor(&self) -> Cursor {
         self.to_change().to_xy_cursor()
     }
 
@@ -415,8 +443,10 @@ impl Buffer {
             };
             let (prefix, evnt) = keymap.fold(c, evnt)?;
             c.as_mut_buffer().keymap = keymap;
+            trace!("folded event, {} {}", prefix, evnt);
             (prefix, evnt)
         };
+
         c.as_mut_buffer().set_event_prefix(prefix);
 
         let evnt_up = {
@@ -428,9 +458,6 @@ impl Buffer {
             c.as_mut_buffer().ftype = ftype;
             evnt_up
         };
-
-        trace!("e-down {}", evnt);
-        trace!("e-up {} {}", evnt_up, evnt == evnt_up);
         let evnt = if evnt_up == evnt {
             Self::handle_event(c, evnt)?
         } else {
@@ -440,7 +467,28 @@ impl Buffer {
         Ok(evnt)
     }
 
-    pub fn ex_n_insert(c: &mut Context, evnt: Event) -> Result<Event> {
+    pub fn mode_normal(&mut self) -> Result<()> {
+        self.inner = match mem::replace(&mut self.inner, Default::default()) {
+            Inner::Insert(ib) => Inner::Normal(ib.into()),
+            inner @ Inner::Normal(_) => inner,
+        };
+        Ok(())
+    }
+}
+
+impl Buffer {
+    fn to_insert_n(evnt: Event) -> (Option<usize>, Event) {
+        use crate::event::{Event::Md, Mod};
+
+        match evnt {
+            Md(Mod::Insert(n, dp)) => (Some(n), Md(Mod::Insert(n, dp))),
+            Md(Mod::Append(n, dp)) => (Some(n), Md(Mod::Append(n, dp))),
+            Md(Mod::Open(n, dp)) => (Some(n), Md(Mod::Open(n, dp))),
+            _ => (None, evnt),
+        }
+    }
+
+    fn ex_n_insert(c: &mut Context, evnt: Event) -> Result<Event> {
         use crate::event::{Event::Md, Mod};
 
         let nr = mem::replace(&mut c.as_mut_buffer().inner, Default::default());
@@ -484,27 +532,6 @@ impl Buffer {
         Ok(evnt)
     }
 
-    pub fn mode_normal(&mut self) -> Result<()> {
-        self.inner = match mem::replace(&mut self.inner, Default::default()) {
-            Inner::Insert(ib) => Inner::Normal(ib.into()),
-            inner @ Inner::Normal(_) => inner,
-        };
-        Ok(())
-    }
-}
-
-impl Buffer {
-    fn to_insert_n(evnt: Event) -> (Option<usize>, Event) {
-        use crate::event::{Event::Md, Mod};
-
-        match evnt {
-            Md(Mod::Insert(n, dp)) => (Some(n), Md(Mod::Insert(n, dp))),
-            Md(Mod::Append(n, dp)) => (Some(n), Md(Mod::Append(n, dp))),
-            Md(Mod::Open(n, dp)) => (Some(n), Md(Mod::Open(n, dp))),
-            _ => (None, evnt),
-        }
-    }
-
     fn handle_event(c: &mut Context, evnt: Event) -> Result<Event> {
         match c.as_buffer().to_mode() {
             "insert" => Self::handle_i_event(c, evnt),
@@ -518,7 +545,7 @@ impl Buffer {
 
         // switch to insert mode.
         let evnt = match Self::to_insert_n(evnt) {
-            (Some(n), evnt) if n > 1 => {
+            (Some(n), evnt) if n > 0 => {
                 let evnt = Self::ex_n_insert(c, evnt)?;
                 return Self::handle_i_event(c, evnt);
             }
@@ -793,13 +820,15 @@ impl Change {
     }
 
     fn to_next_change(prev: &mut Rc<RefCell<Change>>) -> Rc<RefCell<Change>> {
-        let prev_change: &Change = &prev.as_ref().borrow();
-        let next = Rc::new(RefCell::new(Change {
-            buf: prev_change.as_ref().clone(),
-            parent: None,
-            children: Default::default(),
-            cursor: prev_change.cursor,
-        }));
+        let next = {
+            let prev_change: &Change = &prev.as_ref().borrow();
+            Rc::new(RefCell::new(Change {
+                buf: prev_change.as_ref().clone(),
+                parent: None,
+                children: Default::default(),
+                cursor: prev_change.cursor,
+            }))
+        };
 
         next.borrow_mut().children.push(Rc::clone(prev));
         prev.borrow_mut().parent = Some(Rc::downgrade(&next));
@@ -811,10 +840,10 @@ impl Change {
         self.cursor
     }
 
-    fn to_xy_cursor(&self) -> (usize, usize) {
+    fn to_xy_cursor(&self) -> Cursor {
         let row_at = self.buf.char_to_line(self.cursor);
         let col_at = self.cursor - self.buf.line_to_char(row_at);
-        (col_at, row_at)
+        (col_at, row_at).into()
     }
 }
 
@@ -975,7 +1004,7 @@ fn mto_right(c: &mut Context, n: usize, dp: DP) -> Result<Event> {
     for ch in b.chars_at(cursor, DP::Right)?.take(n) {
         match dp {
             DP::LineBound if ch == NL => break,
-            DP::Nobound => (),
+            DP::Nobound | DP::LineBound => (),
             _ => err_at!(Fatal, msg: format!("unreachable"))?,
         }
         cursor += 1

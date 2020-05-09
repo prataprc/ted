@@ -1,6 +1,6 @@
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
-use std::{convert::TryFrom, ffi, fs, path};
+use std::{convert::TryFrom, ffi, fmt, fs, path, result};
 
 use crate::{location::Location, window::Spanline, Error, Result};
 
@@ -209,7 +209,6 @@ impl Default for Mto {
 impl fmt::Display for Mto {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
-            DP::Nope => write!(f, "nope"),
             Mto::Left(n, dp) => write!(f, "left({},{})", n, dp),
             Mto::Right(n, dp) => write!(f, "right({},{})", n, dp),
             Mto::Up(n, dp) => write!(f, "up({},{})", n, dp),
@@ -231,10 +230,7 @@ impl fmt::Display for Mto {
                 //
                 write!(f, "bracket({},{},{},{})", n, ch1, ch2, dp)
             }
-            Mto::Pattern(n, patt, dp) => {
-                //
-                write!(f, "pattern({},{},{})", n, patt, dp)
-            }
+            Mto::Pattern(n, _, dp) => write!(f, "pattern({},{})", n, dp),
             Mto::PatternR(n, dp) => write!(f, "patternr({},{})", n, dp),
             Mto::None => write!(f, "none"),
         }
@@ -302,25 +298,25 @@ impl fmt::Display for Event {
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
 
         match self {
-            Event::Backspace => write!(f, "backspace"),
-            Event::Enter => write!(f, "enter"),
-            Event::Tab => write!(f, "tab"),
-            Event::Delete => write!(f, "delete"),
-            Event::Esc => write!(f, "esc"),
-            Event::Char(ch, m) => write!(f, "char({},{})", ch, m),
-            Event::B(n, dp) => write!(f, "b({},{})", n, dp),
-            Event::G(n) => write!(f, "g({})", n),
-            Event::F(n, dp) => write!(f, "f({},{})", n, dp),
-            Event::T(n, dp) => write!(f, "t({},{})", n, dp),
-            Event::N(n) => write!(f, "b({}", n),
-            Event::Op(n, opr) => write!(f, "op({},{})", n, opr),
-            Event::Md(md) => write!(f, "md({})", md),
-            Event::Mt(mt) => write!(f, "mt({})", mt),
-            Event::Td(td) => write!(f, "td({})", td),
-            Event::List(es) => write!(f, "list({})", es.len()),
-            Event::FKey(ch, m) => write!(f, "fkey({},{})", ch, m),
-            Event::BackTab => write!(f, "backtab"),
-            Event::Noop => write!(f, "noop"),
+            Backspace => write!(f, "backspace"),
+            Enter => write!(f, "enter"),
+            Tab => write!(f, "tab"),
+            Delete => write!(f, "delete"),
+            Esc => write!(f, "esc"),
+            Char(ch, _) => write!(f, "char({})", ch),
+            B(n, dp) => write!(f, "b({},{})", n, dp),
+            G(n) => write!(f, "g({})", n),
+            F(n, dp) => write!(f, "f({},{})", n, dp),
+            T(n, dp) => write!(f, "t({},{})", n, dp),
+            N(n) => write!(f, "b({}", n),
+            Op(n, opr) => write!(f, "op({},{})", n, opr),
+            Md(md) => write!(f, "md({})", md),
+            Mt(mt) => write!(f, "mt({})", mt),
+            Td(td) => write!(f, "td({})", td),
+            List(es) => write!(f, "list({})", es.len()),
+            FKey(ch, _) => write!(f, "fkey({})", ch),
+            BackTab => write!(f, "backtab"),
+            Noop => write!(f, "noop"),
         }
     }
 }

@@ -4,10 +4,13 @@ use crossterm::{
     Command,
 };
 
-use std::{fmt, mem, ops::Add, result};
+use std::{convert::TryInto, fmt, mem, ops::Add, result};
 
 use crate::{
-    buffer::Buffer, window_edit::WindowEdit, window_file::WindowFile, window_prompt::WindowPrompt,
+    buffer::{self, Buffer},
+    window_edit::WindowEdit,
+    window_file::WindowFile,
+    window_prompt::WindowPrompt,
     Config, Event, Result,
 };
 
@@ -370,6 +373,45 @@ impl Add for Cursor {
 
     fn add(self, rhs: Cursor) -> Cursor {
         cursor!(self.col + rhs.col, self.row + rhs.row)
+    }
+}
+
+impl Cursor {
+    pub fn move_to(
+        self,
+        coord: Coord,        // within this coordinate
+        obc: buffer::Cursor, // from this original buffer cursor.
+        nbc: buffer::Cursor, // to this new buffer cursor.
+        scroll_off: u16,     // accounting for scroll-offset.
+    ) -> Self {
+        let (diff_col, diff_row) = obc.diff(&nbc);
+        let (hgt, wth) = coord.to_size();
+        let Cursor { row, col } = self.clone();
+
+        let (r_min, r_max): (isize, isize) = if hgt < (scroll_off * 2) {
+            (0, (hgt - 1) as isize)
+        } else {
+            (scroll_off as isize, (hgt - scroll_off - 1) as isize)
+        };
+        let new_row: u16 = limit!((row as isize) + diff_row, r_min, r_max)
+            .try_into()
+            .unwrap();
+
+        let new_col: u16 = limite!((col as isize) + diff_col, 0, wth as isize)
+            .try_into()
+            .unwrap();
+
+        Cursor {
+            col: new_col,
+            row: new_row,
+        }
+    }
+
+    pub fn adjust_nu(self, nu_wth: u16) -> Self {
+        Cursor {
+            col: self.col.saturating_sub(nu_wth),
+            row: self.row,
+        }
     }
 }
 

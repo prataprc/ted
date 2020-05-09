@@ -3,7 +3,6 @@ use log::trace;
 use ropey::RopeSlice;
 
 use std::{
-    convert::TryInto,
     fmt,
     io::{self, Write},
     iter::FromIterator,
@@ -11,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    buffer::Buffer,
+    buffer::{self, Buffer},
     event::{Event, Ted, DP},
     window::{Context, Coord, Cursor, Span, State},
     Error, Result,
@@ -22,7 +21,7 @@ pub struct WindowEdit {
     coord: Coord,
     cursor: Cursor,
     nu_wth: u16,
-    old_bc: (usize, usize),
+    old_bc: buffer::Cursor,
     buffer_id: String,
 }
 
@@ -39,58 +38,26 @@ impl WindowEdit {
             coord,
             cursor: cursor!(0, 0),
             nu_wth: 0,
-            old_bc: (0, 0),
+            old_bc: (0, 0).into(),
             buffer_id: Default::default(),
         }
     }
 }
 
 impl WindowEdit {
-    fn align_to_row(&self, s: &State) -> Result<(u16, u16)> {
-        let buf = s.as_buffer(&self.buffer_id);
-        let new_bc = buf.to_xy_cursor();
-        let (hgt, _) = self.coord.to_size();
-        let Cursor { row, .. } = self.cursor;
-
-        let row: u16 = {
-            let soff = s.as_ref().scroll_off * 2;
-            let nx = if_else!(hgt < soff, (0, hgt - 1), (soff, hgt - soff - 1));
-            limit!(
-                (row as isize) + (new_bc.1 as isize) - (self.old_bc.1 as isize),
-                nx.0 as isize,
-                nx.1 as isize
-            )
-            .try_into()
-            .unwrap()
-        };
-
-        // nu_wth extra space "<n> ".
-        let nu_wth = if s.as_ref().line_number {
-            let from = new_bc.1.saturating_sub(row as usize);
+    fn to_nu_width(&self, cr: &Cursor, co: &Coord, s: &State) -> Result<u16> {
+        if s.as_ref().line_number {
+            let buf = s.as_buffer(&self.buffer_id);
+            let new_bc = buf.to_xy_cursor();
+            let n = new_bc.row + ((co.hgt - cr.row) as usize);
             let ls: Vec<RopeSlice> = {
-                let iter = buf.lines_at(from, DP::Right)?.take(hgt as usize);
+                let iter = buf.lines_at(new_bc.row, DP::Right)?.take(n);
                 iter.collect()
             };
-            (from + ls.len()).to_string().len() as u16 + 1
+            Ok((1 + new_bc.row + ls.len()).to_string().len() as u16)
         } else {
-            0
-        };
-
-        Ok((row, nu_wth))
-    }
-
-    fn align_to_col(&self, s: &State, nu_wth: u16) -> u16 {
-        let new_bc = s.as_buffer(&self.buffer_id).to_xy_cursor();
-        let (_, wth) = self.coord.to_size();
-        let Cursor { col, .. } = self.cursor;
-
-        let col = limite!(
-            (col as isize) + (new_bc.0 as isize) - (self.old_bc.0 as isize),
-            0,
-            (wth - nu_wth) as isize
-        );
-        // trace!("atc {} {} {} {} {}", col, self.old_bc.0, new_bc.0,);
-        col.try_into().unwrap()
+            Ok(0)
+        }
     }
 
     fn refresh_nowrap(&mut self, s: &mut State) -> Result<()> {
@@ -99,9 +66,14 @@ impl WindowEdit {
         let new_bc = s.as_mut_buffer(&self.buffer_id).to_xy_cursor();
         let (hgt, wth) = self.coord.to_size();
         let (cursor, nu_wth) = {
-            let (crow, nu_wth) = self.align_to_row(&s)?;
-            let ccol = self.align_to_col(&s, nu_wth);
-            (cursor!(ccol, crow), nu_wth)
+            let cursor = self.cursor.move_to(
+                self.coord.clone(),
+                self.old_bc.clone(),
+                s.as_buffer(&self.buffer_id).to_xy_cursor(),
+                s.as_ref().scroll_off,
+            );
+            let nu_wth = self.to_nu_width(&cursor, &self.coord, s)?;
+            (cursor.adjust_nu(nu_wth), nu_wth)
         };
 
         trace!(
@@ -124,13 +96,13 @@ impl WindowEdit {
 
         let do_padding = |line: ropey::RopeSlice| -> Vec<char> {
             // trace!("l {} {} {:?}", new_bc.0, cursor.col, line.to_string());
-            line.chars_at(new_bc.0 - (cursor.col as usize))
+            line.chars_at(new_bc.col - (cursor.col as usize))
                 .chain(repeat(' '))
                 .take((wth - nu_wth) as usize)
                 .collect()
         };
 
-        let from = new_bc.1.saturating_sub(cursor.row as usize);
+        let from = new_bc.row.saturating_sub(cursor.row as usize);
         let lines = buf.lines_at(from, DP::Right)?.map(do_padding);
         let mrgn_wth = nu_wth.saturating_sub(1) as usize;
         for (i, line) in lines.take(hgt as usize).enumerate() {
@@ -189,13 +161,13 @@ impl WindowEdit {
                 Ok(Event::Noop)
             }
             mut evnt => match s.take_buffer(&self.buffer_id) {
-                Some(buffer) => {
-                    let (buffer, evnt) = {
-                        let mut c = Context::new(s, buffer);
+                Some(buf) => {
+                    let (buf, evnt) = {
+                        let mut c = Context::new(s, buf);
                         evnt = Buffer::on_event(&mut c, evnt)?;
                         (c.buffer, evnt)
                     };
-                    s.add_buffer(buffer);
+                    s.add_buffer(buf);
                     Ok(evnt)
                 }
                 None => Ok(evnt),
