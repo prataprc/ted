@@ -29,7 +29,7 @@ lazy_static! {
 }
 
 // Cursor within the buffer, starts from (0, 0)
-#[derive(Clone, Default, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
 pub struct Cursor {
     pub col: usize,
     pub row: usize,
@@ -48,10 +48,42 @@ impl fmt::Display for Cursor {
 }
 
 impl Cursor {
+    #[inline]
     pub fn diff(&self, new: &Self) -> (isize, isize) {
         let dcol = (new.col as isize) - (self.col as isize);
         let drow = (new.row as isize) - (self.row as isize);
         (dcol, drow)
+    }
+}
+
+impl PartialEq for Cursor {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.row == other.row && self.col == other.col
+    }
+}
+
+impl Eq for Cursor {}
+
+impl PartialOrd for Cursor {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.row == other.row {
+            self.col.partial_cmp(&other.col)
+        } else {
+            self.row.partial_cmp(&other.row)
+        }
+    }
+}
+
+impl Ord for Cursor {
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.row == other.row {
+            self.row.cmp(&other.row)
+        } else {
+            self.col.cmp(&other.col)
+        }
     }
 }
 
@@ -911,7 +943,12 @@ impl Change {
                 None => break n,
             }
         };
-        self.cursor = if_else!(dp == DP::Right, self.cursor + n, self.cursor - n);
+        self.cursor = if_else!(
+            //
+            dp == DP::Right,
+            self.cursor + n,
+            self.cursor - n
+        );
         n
     }
 
@@ -924,7 +961,12 @@ impl Change {
                 None => break n,
             }
         };
-        self.cursor = if_else!(dp == DP::Right, self.cursor + n, self.cursor - n);
+        self.cursor = if_else!(
+            //
+            dp == DP::Right,
+            self.cursor + n,
+            self.cursor - n
+        );
         n
     }
 
@@ -982,7 +1024,7 @@ impl Change {
     }
 }
 
-fn mto_left(c: &mut Context, n: usize, dp: DP) -> Result<Event> {
+pub fn mto_left(c: &mut Context, n: usize, dp: DP) -> Result<Event> {
     let mut cursor = c.as_buffer().to_cursor();
     cursor = match dp {
         DP::LineBound => {
@@ -998,7 +1040,7 @@ fn mto_left(c: &mut Context, n: usize, dp: DP) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-fn mto_right(c: &mut Context, n: usize, dp: DP) -> Result<Event> {
+pub fn mto_right(c: &mut Context, n: usize, dp: DP) -> Result<Event> {
     let b = c.as_mut_buffer();
     let mut cursor = b.to_cursor();
     for ch in b.chars_at(cursor, DP::Right)?.take(n) {
@@ -1014,7 +1056,7 @@ fn mto_right(c: &mut Context, n: usize, dp: DP) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-fn mto_home(c: &mut Context, pos: DP) -> Result<Event> {
+pub fn mto_home(c: &mut Context, pos: DP) -> Result<Event> {
     let b = c.as_mut_buffer();
     b.set_cursor(b.line_home());
     match pos {
@@ -1027,7 +1069,7 @@ fn mto_home(c: &mut Context, pos: DP) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-fn mto_up(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
+pub fn mto_up(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
     let b = c.as_mut_buffer();
     let mut cursor = b.to_cursor();
     match b.char_to_line(cursor) {
@@ -1054,7 +1096,7 @@ fn mto_up(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
     }
 }
 
-fn mto_down(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
+pub fn mto_down(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
     let b = c.as_mut_buffer();
     let row = b.char_to_line(b.to_cursor());
     match b.len_lines() {
@@ -1080,7 +1122,7 @@ fn mto_down(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
     }
 }
 
-fn mto_column(c: &mut Context, n: usize) -> Result<Event> {
+pub fn mto_column(c: &mut Context, n: usize) -> Result<Event> {
     let b = c.as_mut_buffer();
     let n = {
         let m = b.len_line(b.char_to_line(b.to_cursor())).saturating_sub(1);
@@ -1090,7 +1132,7 @@ fn mto_column(c: &mut Context, n: usize) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-fn mto_row(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
+pub fn mto_row(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
     let b = c.as_buffer();
     let row = b.char_to_line(b.to_cursor());
     let n = n.saturating_sub(1);
@@ -1103,7 +1145,7 @@ fn mto_row(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
     }
 }
 
-fn mto_percent(c: &mut Context, n: usize) -> Result<Event> {
+pub fn mto_percent(c: &mut Context, n: usize) -> Result<Event> {
     let b = c.as_buffer();
     let row = b.char_to_line(b.to_cursor());
     match b.len_lines() {
@@ -1119,7 +1161,7 @@ fn mto_percent(c: &mut Context, n: usize) -> Result<Event> {
     }
 }
 
-fn mto_cursor(c: &mut Context, n: usize) -> Result<Event> {
+pub fn mto_cursor(c: &mut Context, n: usize) -> Result<Event> {
     let b = c.as_mut_buffer();
     let cursor = b.to_cursor();
     b.set_cursor(limite!(cursor + n, b.len_chars()));
@@ -1127,7 +1169,7 @@ fn mto_cursor(c: &mut Context, n: usize) -> Result<Event> {
 }
 
 // TODO: create an option of having sticky cursor.
-fn mto_end(c: &mut Context) -> Result<Event> {
+pub fn mto_end(c: &mut Context) -> Result<Event> {
     let b = c.as_mut_buffer();
     let mut cursor = b.to_cursor();
     {
@@ -1144,7 +1186,7 @@ fn mto_end(c: &mut Context) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-fn mto_char(c: &mut Context, evnt: Mto) -> Result<Event> {
+pub fn mto_char(c: &mut Context, evnt: Mto) -> Result<Event> {
     let (mut n, ch, dp, pos) = match evnt {
         Mto::CharF(n, Some(ch), dp) => (n, ch, dp, DP::Find),
         Mto::CharT(n, Some(ch), dp) => (n, ch, dp, DP::Till),
@@ -1195,7 +1237,7 @@ fn mto_char(c: &mut Context, evnt: Mto) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-fn mto_words(c: &mut Context, evnt: Mto) -> Result<Event> {
+pub fn mto_words(c: &mut Context, evnt: Mto) -> Result<Event> {
     match evnt {
         Mto::Word(n, DP::Left, pos) => {
             for _ in 0..n {
@@ -1245,7 +1287,7 @@ fn mto_words(c: &mut Context, evnt: Mto) -> Result<Event> {
     }
 }
 
-fn mto_wwords(c: &mut Context, evnt: Mto) -> Result<Event> {
+pub fn mto_wwords(c: &mut Context, evnt: Mto) -> Result<Event> {
     match evnt {
         Mto::WWord(n, DP::Left, pos) => {
             for _ in 0..n {
@@ -1295,7 +1337,7 @@ fn mto_wwords(c: &mut Context, evnt: Mto) -> Result<Event> {
     }
 }
 
-fn mto_sentence(c: &mut Context, e: Mto) -> Result<Event> {
+pub fn mto_sentence(c: &mut Context, e: Mto) -> Result<Event> {
     let is_ws = |ch: char| ch.is_whitespace();
 
     let b = c.as_mut_buffer();
@@ -1363,7 +1405,7 @@ fn mto_sentence(c: &mut Context, e: Mto) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-fn mto_para(c: &mut Context, evnt: Mto) -> Result<Event> {
+pub fn mto_para(c: &mut Context, evnt: Mto) -> Result<Event> {
     let b = c.as_mut_buffer();
     let mut cursor = b.to_cursor();
     let row = b.char_to_line(cursor);
@@ -1409,7 +1451,7 @@ fn mto_para(c: &mut Context, evnt: Mto) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-fn mto_bracket(c: &mut Context, e: Mto) -> Result<Event> {
+pub fn mto_bracket(c: &mut Context, e: Mto) -> Result<Event> {
     let mut m = 0;
     let b = c.as_mut_buffer();
     let mut cursor = b.to_cursor();
@@ -1449,7 +1491,7 @@ fn mto_bracket(c: &mut Context, e: Mto) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-fn mto_pattern(c: &mut Context, evnt: Mto) -> Result<Event> {
+pub fn mto_pattern(c: &mut Context, evnt: Mto) -> Result<Event> {
     let (n, pattern, dp) = match evnt {
         Mto::Pattern(n, Some(pattern), dp) => Ok((n, pattern, dp)),
         _ => err_at!(Fatal, msg: format!("unreachable")),

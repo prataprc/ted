@@ -8,6 +8,7 @@ use std::{convert::TryInto, fmt, mem, ops::Add, result};
 
 use crate::{
     buffer::{self, Buffer},
+    event::DP,
     window_edit::WindowEdit,
     window_file::WindowFile,
     window_prompt::WindowPrompt,
@@ -266,7 +267,7 @@ impl<'a> Context<'a> {
 
 // Terminal coordinates, describes the four corners of a window.
 // Origin is at (1, 1).
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Coord {
     pub col: u16,
     pub row: u16,
@@ -294,6 +295,12 @@ impl Coord {
     pub fn move_by(mut self, col_off: i16, row_off: i16) -> Self {
         self.col = ((self.col as i16) + col_off) as u16;
         self.row = ((self.row as i16) + row_off) as u16;
+        self
+    }
+
+    #[inline]
+    pub fn shrink_width(mut self, width: u16) -> Self {
+        self.wth = self.wth.saturating_sub(width);
         self
     }
 
@@ -337,6 +344,15 @@ impl Coord {
     pub fn empty_line(&self) -> Vec<char> {
         std::iter::repeat(' ').take(self.wth as usize).collect()
     }
+
+    #[inline]
+    pub fn to_cells(&self, n: usize) -> usize {
+        if (n % self.wth) == 0 {
+            n
+        } else {
+            ((n / self.wth) * self.wth) + self.wth
+        }
+    }
 }
 
 impl fmt::Display for Coord {
@@ -350,7 +366,7 @@ impl fmt::Display for Coord {
 }
 
 // Cursor within the Terminal/Window, starts from (0, 0)
-#[derive(Clone, Default, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
 pub struct Cursor {
     pub col: u16,
     pub row: u16,
@@ -377,41 +393,26 @@ impl Add for Cursor {
 }
 
 impl Cursor {
-    pub fn move_to(
-        self,
-        coord: Coord,        // within this coordinate
-        obc: buffer::Cursor, // from this original buffer cursor.
-        nbc: buffer::Cursor, // to this new buffer cursor.
-        scroll_off: u16,     // accounting for scroll-offset.
-    ) -> Self {
-        let (diff_col, diff_row) = obc.diff(&nbc);
-        let (hgt, wth) = coord.to_size();
-        let Cursor { row, col } = self.clone();
-
-        let (r_min, r_max): (isize, isize) = if hgt < (scroll_off * 2) {
-            (0, (hgt - 1) as isize)
-        } else {
-            (scroll_off as isize, (hgt - scroll_off - 1) as isize)
-        };
-        let new_row: u16 = limit!((row as isize) + diff_row, r_min, r_max)
-            .try_into()
-            .unwrap();
-
-        let new_col: u16 = limite!((col as isize) + diff_col, 0, wth as isize)
-            .try_into()
-            .unwrap();
-
-        Cursor {
-            col: new_col,
-            row: new_row,
+    fn next_cursors(self, coord: Coord) -> Vec<Cursor> {
+        let mut cursors = Vec::with_capacity(coord.hgt * coord.wth);
+        for r in 0..coord.hgt {
+            for c in 0..coord.wth {
+                cursors.push(Cursor { col: c, row: r })
+            }
         }
+        let n = (self.row * coord.hgt) + self.col;
+        cursors.skip(n).collect()
     }
 
-    pub fn adjust_nu(self, nu_wth: u16) -> Self {
-        Cursor {
-            col: self.col.saturating_sub(nu_wth),
-            row: self.row,
+    fn prev_cursors(self, coord: Coord) -> Vec<Cursor> {
+        let mut cursors = Vec::with_capacity(coord.hgt * coord.wth);
+        for r in 0..coord.hgt {
+            for c in 0..coord.wth {
+                cursors.push(Cursor { col: c, row: r })
+            }
         }
+        let n = (self.row * coord.hgt) + self.col;
+        cursors.take(n).rev().collect()
     }
 }
 

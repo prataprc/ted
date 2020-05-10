@@ -5,6 +5,7 @@ pub struct Config {
     pub left_margin_char: char,
     pub top_margin_char: char,
     pub line_number: bool,
+    pub wrap: bool,
 }
 
 impl Default for Config {
@@ -15,6 +16,7 @@ impl Default for Config {
             left_margin_char: '|',
             top_margin_char: '-',
             line_number: true,
+            wrap: true,
         }
     }
 }
