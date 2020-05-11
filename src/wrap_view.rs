@@ -1,7 +1,13 @@
+use crate::{
+    buffer::Buffer,
+    window::{Coord, Cursor},
+};
+
 enum VShift {
     Left(usize),
     Right(usize),
-    None,
+    Skip,
+    Done,
 }
 
 pub struct WrapView {
@@ -11,56 +17,64 @@ pub struct WrapView {
 impl WrapView {
     pub fn new(line_idx: usize, coord: Coord, buf: &Buffer) -> WrapView {
         let mut lines = vec![];
-        for (row, line_idx) in (line_idx..).take(coord.hgt).enumerate() {
-            lines.push(Line::new_line(line_idx, row, coord.wth, buf))
+        let iter = (line_idx..).take(coord.hgt as usize).enumerate();
+        for (row, line_idx) in iter {
+            assert!(row < 1_000);
+            lines.push(Line::new_line(line_idx, row as u16, coord.wth, buf))
         }
         WrapView { lines }
     }
 
     pub fn align(&mut self, bc: usize, cursor: Cursor) {
         loop {
-            match do_align(bc, cursor) {
+            match self.do_align(bc, cursor) {
                 VShift::Left(_) => {
-                    let mut line = self.lines.remove(0)
+                    let line = self.lines.remove(0);
                     match line.drop_row() {
                         Some(line) => self.lines.push(line),
                         None => (),
                     }
                 }
                 VShift::Right(_) => unreachable!(),
-                None => break
+                VShift::Skip => (),
+                VShift::Done => break,
             }
         }
     }
 
     fn do_align(&self, bc: usize, cursor: Cursor) -> VShift {
-        for line in self.lines.iter();
+        for line in self.lines.iter() {
             match line.align(bc, cursor) {
-                VShift::Left(n) => VShift::Left(n),
+                VShift::Left(n) => return VShift::Left(n),
                 VShift::Right(_) => unreachable!(),
-                VShift::None => (),
+                VShift::Skip => (),
+                VShift::Done => return VShift::Done,
             }
         }
-        VShift::None
+        VShift::Done
     }
 }
 
 pub struct Line {
-    pub nu: usize
+    pub nu: usize,
     pub rows: Vec<Row>,
 }
 
 impl Line {
-    fn new_line(line_idx: usize, row: u16, wth: u16, buf: &Buffer) -> Vec<Row> {
-        let len_chars = buf.line(line_idx).len_chars();
-        let bc = buf.line_home(line_idx);
+    fn new_line(line_idx: usize, row: u16, wth: u16, buf: &Buffer) -> Self {
+        use std::iter::repeat;
 
-        let rows: Vec<(u16, usize, u16, u16)> = {
-            let iter = iter::repeat(wth).take(len_chars / (wth as usize));
-            iter.enumerate().map(|(r, wth)| {
-                assert!(r < 1_000); // TODO avoid magic number
-                (row + (r as u16), bc + (r * (wth as usize)), wth, wth)
-            })
+        let len_chars = buf.line_len(line_idx);
+        let bc = buf.char_to_line(buf.to_cursor());
+
+        let mut rows: Vec<(u16, usize, u16, u16)> = {
+            let iter = repeat(wth).take(len_chars / (wth as usize));
+            iter.enumerate()
+                .map(|(r, wth)| {
+                    assert!(r < 1_000); // TODO avoid magic number
+                    (row + (r as u16), bc + (r * (wth as usize)), wth, wth)
+                })
+                .collect()
         };
 
         if (len_chars % (wth as usize)) > 0 {
@@ -68,20 +82,19 @@ impl Line {
             let w = len_chars % (wth as usize);
             assert!(w <= (wth as usize));
             assert!(r < 1_000); // TODO avoid magic number
-            rows.push((
-                row + (r as u16),
-                bc + (r * (wth as usize)),
-                w as u16,
-                wth
-            ))
+            let row = row + (r as u16);
+            rows.push((row, bc + (r * (wth as usize)), w as u16, wth))
         }
 
         let rows: Vec<Row> = {
             let i1 = rows.into_iter();
-            let i2 = i1.map(|(row, bc, ln, wth)| Row::new_row(row, bc, ln, wth))
+            let i2 = i1.map(|(row, bc, ln, wth)| Row::new_row(row, bc, ln, wth));
             i2.collect()
         };
-        Line { nu: line_idx + 1, rows }
+        Line {
+            nu: line_idx + 1,
+            rows,
+        }
     }
 
     fn align(&self, bc: usize, cursor: Cursor) -> VShift {
@@ -89,42 +102,47 @@ impl Line {
             match row.align(bc, cursor) {
                 shift @ VShift::Left(_) => return shift,
                 shift @ VShift::Right(_) => return shift,
-                VShift::None => (),
+                VShift::Skip => (),
+                VShift::Done => return VShift::Done,
             }
         }
-        None
+        VShift::Done
     }
 
-    fn drop_row(mut self) -> Option<Self>{
+    fn drop_row(mut self) -> Option<Self> {
         match self.rows.len() {
             0 => None,
             1 => None,
             _ => {
                 self.rows.remove(0);
-                self.rows.iter_mut().for_each(|r| r.pull_row())
+                self.rows.iter_mut().for_each(|r| r.pull_row());
                 Some(self)
             }
         }
     }
 }
 
-struct Row {
+pub struct Row {
     pub cells: Vec<Cell>,
 }
 
 impl Row {
     fn new_row(row: u16, bc: usize, ln: u16, wth: u16) -> Row {
-        let bcs: Vec<Option<usize>> = {
-            let bc_end = bc+(ln as usize);
+        use std::iter::repeat;
+
+        let mut bcs: Vec<Option<usize>> = {
+            let bc_end = bc + (ln as usize);
             let iter = (bc..bc_end).into_iter().map(|bc| Some(bc));
             iter.collect()
         };
         assert!(bcs.len() < 10_000); // TODO avoid magic number
-        let n = wth.saturating_sub(bcs.len() as u16);
-        let pad: Vec<Option<usize>> = iter::repeat(None).take(n).collect();
-        bcs.extend(&pad);
+        bcs.extend(&{
+            let n = wth.saturating_sub(bcs.len() as u16) as usize;
+            let pad: Vec<Option<usize>> = repeat(None).take(n).collect();
+            pad
+        });
 
-        let cells {
+        let cells = {
             let iter = bcs.into_iter().zip((0..wth).into_iter());
             iter.map(|(bc, col)| Cell { bc, col, row }).collect()
         };
@@ -132,21 +150,31 @@ impl Row {
     }
 
     fn align(&self, bc: usize, cursor: Cursor) -> VShift {
-        use std::cmp::Ordering::{Equal, Less, Greater};
+        use std::cmp::Ordering::{Equal, Greater, Less};
 
-        let iter = self.cells.iter().take_while(|cell| {
-            let ok = cell.row < cursor.row;
-            ok || (cell.row == cursor.row) && (cell.col <= cursor.col)
-        });
-        let iter = iter.rev().skip(|cell| cell.bc.is_none());
+        let mut cells: Vec<&Cell> = self
+            .cells
+            .iter()
+            .take_while(|cell| {
+                let ok = cell.row < cursor.row;
+                ok || (cell.row == cursor.row) && (cell.col <= cursor.col)
+            })
+            .collect();
 
-        match iter.first() {
-            Some(cell { bc: Some(cell_bc), .. }) => match cell_bc.cmp(&bc) {
-                Equal => VShift::None,
-                Less => VShift::Left(bc-cell_bc),
-                Greater => VShift::Right(cell_bc-bc),
-            }
-            None => VShift::None
+        cells = {
+            let iter = cells.into_iter().rev().skip_while(|c| c.bc.is_none());
+            iter.collect()
+        };
+
+        match cells.first() {
+            Some(Cell {
+                bc: Some(cell_bc), ..
+            }) => match cell_bc.cmp(&bc) {
+                Equal => VShift::Done,
+                Less => VShift::Left(bc - cell_bc),
+                Greater => VShift::Right(cell_bc - bc),
+            },
+            _ => VShift::Skip,
         }
     }
 
@@ -157,7 +185,7 @@ impl Row {
     }
 }
 
-struct Cell {
+pub struct Cell {
     pub bc: Option<usize>,
     pub col: u16,
     pub row: u16,

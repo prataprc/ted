@@ -13,6 +13,7 @@ use crate::{
     buffer::{self, Buffer},
     event::{Event, Ted, DP},
     window::{Context, Coord, Cursor, Span, State},
+    wrap_view::WrapView,
     Error, Result,
 };
 
@@ -90,10 +91,10 @@ impl WindowEdit {
         let nbc_xy = s.as_buffer(&self.buffer_id).to_xy_cursor();
         // create possible cursor positions.
         let mut cursors: Vec<Cursor> = if nbc_xy < self.obc_xy {
-            let mut iter = self.cursor.prev_cursors(coord).into_iter().rev();
+            let iter = self.cursor.prev_cursors(coord).into_iter().rev();
             iter.skip((scroll_off * coord.wth) as usize).rev().collect()
         } else {
-            let mut iter = self.cursor.next_cursors(coord).into_iter().rev();
+            let iter = self.cursor.next_cursors(coord).into_iter().rev();
             iter.skip((scroll_off * coord.wth) as usize).rev().collect()
         };
         // compute the number of cells to drain and its direction.
@@ -150,37 +151,40 @@ impl WindowEdit {
         let (col, mut row) = coord.to_origin_cursor();
         let max_row = row + coord.hgt;
 
-        //let wv = {
-        //    let line_idx = nbc_xy.row - new_cursor.row;
-        //    WrapView::new(line_idx, coord, buf);
-        //};
-        //'a: for line in wv.lines.iter() {
-        //    let nus = line.nu.to_string();
-        //    for (r, rline) in line.rows.enumerate() {
-        //        let s = match r {
-        //            0 => nus.clone(),
-        //            _ => String::from_iter(repeat(' ').take(nus.len())),
-        //        };
-        //        let s = format!("{:>width$} ", s, width = nu_wth);
-        //        err_at!(Fatal, queue!(stdout, span!((col, row), st: s)))?;
+        let wv = {
+            let line_idx = nbc_xy.row - (new_cursor.row as usize);
+            WrapView::new(line_idx, coord, buf)
+        };
+        'a: for line in wv.lines.iter() {
+            let nus = line.nu.to_string();
+            for (r, rline) in line.rows.iter().enumerate() {
+                let s = match r {
+                    0 => nus.clone(),
+                    _ => String::from_iter(repeat(' ').take(nus.len())),
+                };
+                let s = format!("{:>width$} ", s, width = (nu_wth as usize));
+                err_at!(Fatal, queue!(stdout, span!((col, row), st: s)))?;
 
-        //        let bcs = rline.cells.filter_map(|c| c.bc);
-        //        let s = match (bcs.first(), bcs.last()) {
-        //            (Some(fbc), Some(ebc)) => {
-        //                let iter = buf.chars_at(n, DP::Right);
-        //                let chs: Vec<Char> = iter.take(ebc - fbc + 1).collect();
-        //                String::from_iter(chs)
-        //            }
-        //            _ => "".to_string()
-        //        }
-        //        err_at!(Fatal, queue!(stdout, span!(st: s)))?;
+                let bcs: Vec<usize> = {
+                    let iter = rline.cells.iter().filter_map(|c| c.bc);
+                    iter.collect()
+                };
+                let s = match (bcs.first(), bcs.last()) {
+                    (Some(fbc), Some(ebc)) => {
+                        let iter = buf.chars_at(*fbc, DP::Right)?;
+                        let chs: Vec<char> = iter.take(*ebc - *fbc + 1).collect();
+                        String::from_iter(chs)
+                    }
+                    _ => "".to_string(),
+                };
+                err_at!(Fatal, queue!(stdout, span!(st: s)))?;
 
-        //        row += 1;
-        //        if row >= max_row {
-        //            break 'a;
-        //        }
-        //    }
-        //}
+                row += 1;
+                if row >= max_row {
+                    break 'a;
+                }
+            }
+        }
 
         Ok(())
     }

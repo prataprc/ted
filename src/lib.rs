@@ -19,6 +19,7 @@ pub mod window;
 pub mod window_edit;
 pub mod window_file;
 pub mod window_prompt;
+pub mod wrap_view;
 
 pub use buffer::Buffer;
 pub use config::Config;
