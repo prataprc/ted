@@ -95,7 +95,7 @@ impl WindowEdit {
         use crate::event::DP::{Left, Right};
 
         let scroll_off = s.as_ref().scroll_off; // accounting for scroll-offset.
-        // gather variables
+        // gather variables.
         let nbc_xy = s.as_buffer(&self.buffer_id).to_xy_cursor();
         let coord = self.coord.shrink_width(nu_wth + 1);
         // create possible cursor positions.

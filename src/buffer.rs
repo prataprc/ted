@@ -307,6 +307,12 @@ impl Buffer {
     }
 
     #[inline]
+    pub fn line(&self, line_idx: usize) -> RopeSlice {
+        let change = self.to_change();
+        change.buf.line(line_idx)
+    }
+
+    #[inline]
     pub fn lines_at<'a>(
         //
         &'a self,
