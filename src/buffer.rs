@@ -29,7 +29,7 @@ lazy_static! {
 }
 
 // Cursor within the buffer, starts from (0, 0)
-#[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Default, Debug)]
 pub struct Cursor {
     pub col: usize,
     pub row: usize,
@@ -67,7 +67,7 @@ impl Eq for Cursor {}
 
 impl PartialOrd for Cursor {
     #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         if self.row == other.row {
             self.col.partial_cmp(&other.col)
         } else {
@@ -78,7 +78,7 @@ impl PartialOrd for Cursor {
 
 impl Ord for Cursor {
     #[inline]
-    fn cmp(&self, other: &Self) -> Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         if self.row == other.row {
             self.row.cmp(&other.row)
         } else {
@@ -301,15 +301,15 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn len_lines(&self) -> usize {
+    pub fn n_lines(&self) -> usize {
         let change = self.to_change();
         change.buf.len_lines()
     }
 
     #[inline]
-    pub fn line(&self, line_idx: usize) -> RopeSlice {
+    pub fn line_len(&self, line_idx: usize) -> usize {
         let change = self.to_change();
-        change.buf.line(line_idx)
+        change.buf.line(line_idx).len_chars()
     }
 
     #[inline]
@@ -1105,7 +1105,7 @@ pub fn mto_up(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
 pub fn mto_down(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
     let b = c.as_mut_buffer();
     let row = b.char_to_line(b.to_cursor());
-    match b.len_lines() {
+    match b.n_lines() {
         0 => Ok(Event::Noop),
         n_rows if row == n_rows => Ok(Event::Noop),
         n_rows => {
@@ -1142,7 +1142,7 @@ pub fn mto_row(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
     let b = c.as_buffer();
     let row = b.char_to_line(b.to_cursor());
     let n = n.saturating_sub(1);
-    match b.len_lines() {
+    match b.n_lines() {
         0 => Ok(Event::Noop),
         n_rows if n == 0 => mto_down(c, n_rows.saturating_sub(1), pos),
         _ if n < row => mto_up(c, row - n, pos),
@@ -1154,7 +1154,7 @@ pub fn mto_row(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
 pub fn mto_percent(c: &mut Context, n: usize) -> Result<Event> {
     let b = c.as_buffer();
     let row = b.char_to_line(b.to_cursor());
-    match b.len_lines() {
+    match b.n_lines() {
         0 => Ok(Event::Noop),
         mut n_rows if n < 100 => {
             n_rows = n_rows.saturating_sub(1);

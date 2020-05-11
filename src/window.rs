@@ -4,14 +4,10 @@ use crossterm::{
     Command,
 };
 
-use std::{convert::TryInto, fmt, mem, ops::Add, result};
+use std::{fmt, mem, ops::Add, result};
 
 use crate::{
-    buffer::{self, Buffer},
-    event::DP,
-    window_edit::WindowEdit,
-    window_file::WindowFile,
-    window_prompt::WindowPrompt,
+    buffer::Buffer, window_edit::WindowEdit, window_file::WindowFile, window_prompt::WindowPrompt,
     Config, Event, Result,
 };
 
@@ -347,10 +343,11 @@ impl Coord {
 
     #[inline]
     pub fn to_cells(&self, n: usize) -> usize {
-        if (n % self.wth) == 0 {
+        let n_wth = n as u16;
+        if (n_wth % self.wth) == 0 {
             n
         } else {
-            ((n / self.wth) * self.wth) + self.wth
+            (((n_wth / self.wth) * self.wth) + self.wth) as usize
         }
     }
 }
@@ -393,26 +390,31 @@ impl Add for Cursor {
 }
 
 impl Cursor {
-    fn next_cursors(self, coord: Coord) -> Vec<Cursor> {
-        let mut cursors = Vec::with_capacity(coord.hgt * coord.wth);
+    pub fn next_cursors(self, coord: Coord) -> Vec<Cursor> {
+        let mut cursors = Vec::with_capacity((coord.hgt * coord.wth) as usize);
         for r in 0..coord.hgt {
             for c in 0..coord.wth {
                 cursors.push(Cursor { col: c, row: r })
             }
         }
         let n = (self.row * coord.hgt) + self.col;
-        cursors.skip(n).collect()
+        cursors.into_iter().skip(n as usize).collect()
     }
 
-    fn prev_cursors(self, coord: Coord) -> Vec<Cursor> {
-        let mut cursors = Vec::with_capacity(coord.hgt * coord.wth);
+    pub fn prev_cursors(self, coord: Coord) -> Vec<Cursor> {
+        let mut cursors = Vec::with_capacity((coord.hgt * coord.wth) as usize);
         for r in 0..coord.hgt {
             for c in 0..coord.wth {
                 cursors.push(Cursor { col: c, row: r })
             }
         }
         let n = (self.row * coord.hgt) + self.col;
-        cursors.take(n).rev().collect()
+        cursors.into_iter().take(n as usize).rev().collect()
+    }
+
+    pub fn add_nu_width(mut self, nu_wth: u16) -> Self {
+        self.col += nu_wth;
+        self
     }
 }
 
