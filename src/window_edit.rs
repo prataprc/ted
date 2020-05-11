@@ -20,7 +20,6 @@ use crate::{
 pub struct WindowEdit {
     coord: Coord,
     cursor: Cursor,
-    nu_wth: u16,
     obc_xy: buffer::Cursor,
     buffer_id: String,
 }
@@ -37,7 +36,6 @@ impl WindowEdit {
         WindowEdit {
             coord,
             cursor: cursor!(0, 0),
-            nu_wth: 0,
             obc_xy: (0, 0).into(),
             buffer_id: Default::default(),
         }
@@ -45,13 +43,6 @@ impl WindowEdit {
 }
 
 impl WindowEdit {
-    fn to_cursor_nu_width(&self, s: &State) -> u16 {
-        let buf = s.as_buffer(&self.buffer_id);
-        let nbc_xy = buf.to_xy_cursor();
-        let nu = nbc_xy.row.saturating_sub(1);
-        cmp::min(nu.to_string().len() as u16, 3_u16)
-    }
-
     fn wshift_after(&self, s: &State) -> usize {
         let buf = s.as_buffer(&self.buffer_id);
         let obc_xy = self.obc_xy;
@@ -90,14 +81,13 @@ impl WindowEdit {
         n
     }
 
-    fn wshift(&self, nu_wth: u16, s: &State) -> Cursor {
+    fn wshift(&self, s: &State) -> Cursor {
         use std::cmp::Ordering::{Equal, Greater, Less};
         use crate::event::DP::{Left, Right};
 
         let scroll_off = s.as_ref().scroll_off; // accounting for scroll-offset.
         // gather variables.
         let nbc_xy = s.as_buffer(&self.buffer_id).to_xy_cursor();
-        let coord = self.coord.shrink_width(nu_wth + 1);
         // create possible cursor positions.
         let mut cursors: Vec<Cursor> = if nbc_xy < self.obc_xy {
             let mut iter = self.cursor.prev_cursors(coord).into_iter().rev();
@@ -133,72 +123,65 @@ impl WindowEdit {
         Ok(cursor)
     }
 
-    fn wrefresh(&mut self, new_cursor: Cursor, s: &mut State) -> Result<()> {
+    fn wrefresh(&self, new_cursor: Cursor, s: &mut State) -> Result<()> {
         use std::iter::repeat;
 
-        let (cursor, nu_wth) = {
-            let nu_wth = self.to_nu_width(&cursor, &self.coord, s)?;
-            (cursor.adjust_nu(nu_wth), nu_wth)
+        let (nbc_xy, nu_wth) = {
+            let buf = s.as_mut_buffer(&self.buffer_id);
+            let nbc_xy = buf.to_xy_cursor();
+            let nu = buf.char_to_line(buf.to_cursor());
+            (nbc_xy, cmp::min(nu.to_string().len() + 1, 3))
         };
 
-        let new_bc = s.as_mut_buffer(&self.buffer_id).to_xy_cursor();
-        let (hgt, wth) = self.coord.to_size();
-        trace!(
-            "{} bc:{:?}->{:?} vc:{}->{} nu_wth:{}",
-            self.coord,
-            self.obc_xy,
-            new_bc,
-            self.cursor,
-            cursor,
-            nu_wth
-        );
-        self.cursor = cursor;
-        self.nu_wth = nu_wth;
-        self.obc_xy = new_bc;
+        let coord = self.coord.shrink_width(nu_wth);
+        let (hgt, wth) = coord.to_size();
 
-        let mut stdout = io::stdout();
-        let (col, mut row) = self.coord.to_origin_cursor();
+        trace!(
+            "nu:{} {} bc:{}->{} vc:{}->{}",
+            nu_wth,
+            coord,
+            self.obc_xy,
+            nbc_xy,
+            self.cursor,
+            new_cursor,
+        );
 
         let buf = s.as_buffer(&self.buffer_id);
+        let mut stdout = io::stdout();
+        let (col, mut row) = coord.to_origin_cursor();
+        let max_row = row + coord.hgt;
 
-        let do_padding = |line: ropey::RopeSlice| -> Vec<char> {
-            // trace!("l {} {} {:?}", new_bc.0, cursor.col, line.to_string());
-            line.chars_at(new_bc.col - (cursor.col as usize))
-                .chain(repeat(' '))
-                .take((wth - nu_wth) as usize)
-                .collect()
+        let wv = {
+            let line_idx = nbc_xy.row - new_cursor.row
+            WrapView::new(line_idx, coord, buf);
         };
+        'a: for line in wv.lines.iter() {
+            let nus = line.nu.to_string();
+            for (r, rline) in line.rows.enumerate() {
+                let s = match r {
+                    0 => nus.clone(),
+                    _ => String::from_iter(iter::repeat(' ').take(nus.len())),
+                };
+                let s = format!("{:>width$} ", s, width = nu_wth);
+                err_at!(Fatal, queue!(stdout, span!((col, row), st: s)))?;
 
-        let from = new_bc.row.saturating_sub(cursor.row as usize);
-        let lines = buf.lines_at(from, DP::Right)?.map(do_padding);
-        let mrgn_wth = nu_wth.saturating_sub(1) as usize;
-        for (i, line) in lines.take(hgt as usize).enumerate() {
-            let mut st: String = if_else!(
-                s.as_ref().line_number,
-                format!("{:>width$} ", from + i + 1, width = mrgn_wth),
-                Default::default()
-            );
-            let s_line = String::from_iter(line);
-            // trace!("bufline col:{} row:{} line:{:?}", col, row, s_line);
-            st.push_str(&s_line);
-            err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
-            row += 1;
+                let bcs = rline.cells.filter_map(|c| c.bc);
+                let s = match bcs.first(), bcs.last() {
+                    (Some(fbc), Some(ebc)) => {
+                        let iter = buf.chars_at(n, DP::Right);
+                        let chs: Vec<Char> = iter.take(ebc - fbc + 1).collect();
+                        String::from_iter(chs)
+                    }
+                    _ => "".to_string()
+                }
+                err_at!(Fatal, queue!(stdout, span!(st: s)))?;
+
+                row += 1;
+                if row >= max_row {
+                    break 'a;
+                }
+            }
         }
-        for _ in row..hgt {
-            let mut st: String = if_else!(
-                s.as_ref().line_number,
-                format!("{} ", '~'),
-                Default::default()
-            );
-            st.push_str(&{
-                let iter = repeat(' ').take((wth - 2) as usize);
-                String::from_iter(iter)
-            });
-            // trace!("empline col:{} row:{} line:{:?}", col, row, st.len());
-            err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
-            row += 1;
-        }
-        assert!(row == hgt);
 
         Ok(())
     }
@@ -231,49 +214,42 @@ impl WindowEdit {
         }
     }
 
-    fn refresh_nowrap(&mut self, s: &mut State) -> Result<()> {
+    fn nrefresh(&mut self, new_cursor: Cursor, s: &mut State) -> Result<()> {
         use std::iter::repeat;
 
-        let (cursor, nu_wth) = {
-            let cursor = self.cursor.move_to(
-                self.coord.clone(),
-                self.obc_xy.clone(),
-                s.as_buffer(&self.buffer_id).to_xy_cursor(), // new_bc
-                s.as_ref(),                                  // config
-            );
-            let nu_wth = self.to_nu_width(&cursor, &self.coord, s)?;
-            (cursor.adjust_nu(nu_wth), nu_wth)
+        let (nbc_xy, nu_wth) = {
+            let buf = s.as_mut_buffer(&self.buffer_id);
+            let nbc_xy = buf.to_xy_cursor();
+            let nu = buf.char_to_line(buf.to_cursor());
+            (nbc_xy, cmp::min(nu.to_string().len() + 1, 3))
         };
 
-        let new_bc = s.as_mut_buffer(&self.buffer_id).to_xy_cursor();
+        let coord = self.coord.shrink_width(nu_wth);
         let (hgt, wth) = self.coord.to_size();
-        trace!(
-            "{} bc:{:?}->{:?} vc:{}->{} nu_wth:{}",
-            self.coord,
-            self.obc_xy,
-            new_bc,
-            self.cursor,
-            cursor,
-            nu_wth
-        );
-        self.cursor = cursor;
-        self.nu_wth = nu_wth;
-        self.obc_xy = new_bc;
 
+        trace!(
+            "nu:{} {} bc:{}->{} vc:{}->{}",
+            nu_wth,
+            coord,
+            self.obc_xy,
+            nbc_xy,
+            self.cursor,
+            new_cursor,
+        );
+
+        let buf = s.as_buffer(&self.buffer_id);
         let mut stdout = io::stdout();
         let (col, mut row) = self.coord.to_origin_cursor();
 
-        let buf = s.as_buffer(&self.buffer_id);
-
         let do_padding = |line: ropey::RopeSlice| -> Vec<char> {
-            // trace!("l {} {} {:?}", new_bc.0, cursor.col, line.to_string());
-            line.chars_at(new_bc.col - (cursor.col as usize))
+            // trace!("l {} {} {:?}", nbc_xy.0, new_cursor.col, line.to_string());
+            line.chars_at(nbc_xy.col - (new_cursor.col as usize))
                 .chain(repeat(' '))
                 .take((wth - nu_wth) as usize)
                 .collect()
         };
 
-        let from = new_bc.row.saturating_sub(cursor.row as usize);
+        let from = nbc_xy.row.saturating_sub(new_cursor.row as usize);
         let lines = buf.lines_at(from, DP::Right)?.map(do_padding);
         let mrgn_wth = nu_wth.saturating_sub(1) as usize;
         for (i, line) in lines.take(hgt as usize).enumerate() {
@@ -306,29 +282,6 @@ impl WindowEdit {
 
         Ok(())
     }
-
-    pub fn adjust_nu(self, nu_wth: u16) -> Self {
-        Cursor {
-            col: self.col.saturating_sub(nu_wth),
-            row: self.row,
-        }
-    }
-
-    fn to_nu_width(&self, cr: &Cursor, co: &Coord, s: &State) -> Result<u16> {
-        let buf = s.as_buffer(&self.buffer_id);
-        if s.as_ref().line_number && s.as_ref().wrap {
-            let new_bc = buf.to_xy_cursor();
-            let n = new_bc.row + ((co.hgt - cr.row) as usize);
-            let ls: Vec<RopeSlice> = {
-                let iter = buf.lines_at(new_bc.row, DP::Right)?.take(n);
-                iter.collect()
-            };
-            Ok((1 + new_bc.row + ls.len()).to_string().len() as u16)
-        } else {
-            Ok(0)
-        }
-    }
-
 }
 
 impl WindowEdit {
@@ -345,13 +298,17 @@ impl WindowEdit {
     }
 
     pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
-        if s.as_ref().wrap {
+        self.cursor = if s.as_ref().wrap {
             let new_cursor = self.wshift(s);
             self.wrefresh(new_cursor, s)?;
+            new_cursor
         } else {
-            self.cursor = self.nshift(s);
-            self.nrefresh(s)?;
-        }
+            let new_cursor = self.nshift(s);
+            self.nrefresh(new_cursor, s)?;
+            new_cursor
+        };
+        self.obc_xy = s.as_mut_buffer().to_xy_cursor();
+
         Ok(())
     }
 

@@ -4,12 +4,12 @@ enum VShift {
     None,
 }
 
-struct WrapView {
-    lines: Vec<Line>,
+pub struct WrapView {
+    pub lines: Vec<Line>,
 }
 
 impl WrapView {
-    fn new(line_idx: usize, coord: Coord, buf: &Buffer) -> WrapView {
+    pub fn new(line_idx: usize, coord: Coord, buf: &Buffer) -> WrapView {
         let mut lines = vec![];
         for (row, line_idx) in (line_idx..).take(coord.hgt).enumerate() {
             lines.push(Line::new_line(line_idx, row, coord.wth, buf))
@@ -17,11 +17,27 @@ impl WrapView {
         WrapView { lines }
     }
 
-    fn align(&self, bc: usize, cursor: Cursor) -> VShift {
-        for line in self.lines.iter() {
+    pub fn align(&mut self, bc: usize, cursor: Cursor) {
+        loop {
+            match do_align(bc, cursor) {
+                VShift::Left(_) => {
+                    let mut line = self.lines.remove(0)
+                    match line.drop_row() {
+                        Some(line) => self.lines.push(line),
+                        None => (),
+                    }
+                }
+                VShift::Right(_) => unreachable!(),
+                None => break
+            }
+        }
+    }
+
+    fn do_align(&self, bc: usize, cursor: Cursor) -> VShift {
+        for line in self.lines.iter();
             match line.align(bc, cursor) {
-                shift @ VShift::Left(_) => return shift,
-                shift @ VShift::Right(_) => return shift,
+                VShift::Left(n) => VShift::Left(n),
+                VShift::Right(_) => unreachable!(),
                 VShift::None => (),
             }
         }
@@ -29,9 +45,9 @@ impl WrapView {
     }
 }
 
-struct Line {
-    nu: usize
-    rows: Vec<Row>,
+pub struct Line {
+    pub nu: usize
+    pub rows: Vec<Row>,
 }
 
 impl Line {
@@ -78,16 +94,22 @@ impl Line {
         }
         None
     }
+
+    fn drop_row(mut self) -> Option<Self>{
+        match self.rows.len() {
+            0 => None,
+            1 => None,
+            _ => {
+                self.rows.remove(0);
+                self.rows.iter_mut().for_each(|r| r.pull_row())
+                Some(self)
+            }
+        }
+    }
 }
 
 struct Row {
-    cells: Vec<Cell>,
-}
-
-struct Cell {
-    bc: Option<usize>,
-    col: u16,
-    row: u16,
+    pub cells: Vec<Cell>,
 }
 
 impl Row {
@@ -127,4 +149,16 @@ impl Row {
             None => VShift::None
         }
     }
+
+    fn pull_row(&mut self) {
+        for cell in self.cells.iter_mut() {
+            cell.row = cell.row.saturating_sub(1)
+        }
+    }
+}
+
+struct Cell {
+    pub bc: Option<usize>,
+    pub col: u16,
+    pub row: u16,
 }
