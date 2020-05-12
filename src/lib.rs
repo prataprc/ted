@@ -16,6 +16,7 @@ mod search;
 pub mod stats;
 #[macro_use]
 pub mod window;
+pub mod view;
 pub mod window_edit;
 pub mod window_file;
 pub mod window_prompt;

@@ -295,12 +295,6 @@ impl Coord {
     }
 
     #[inline]
-    pub fn shrink_width(mut self, width: u16) -> Self {
-        self.wth = self.wth.saturating_sub(width);
-        self
-    }
-
-    #[inline]
     pub fn resize_to(mut self, height: u16, width: u16) -> Self {
         self.hgt = height;
         self.wth = width;
@@ -412,8 +406,9 @@ impl Cursor {
         cursors.into_iter().take(n as usize).rev().collect()
     }
 
-    pub fn add_nu_wth(mut self, nu_wth: u16) -> Self {
-        self.col = self.col + nu_wth + 1;
+    pub fn move_by(mut self, col: i16, row: i16) -> Self {
+        self.col = ((self.col as i16) + col) as u16;
+        self.row = ((self.row as i16) + row) as u16;
         self
     }
 }
