@@ -30,10 +30,7 @@ impl WrapView {
             match self.do_align(bc, cursor) {
                 VShift::Left(_) => {
                     let line = self.lines.remove(0);
-                    match line.drop_row() {
-                        Some(line) => self.lines.push(line),
-                        None => (),
-                    }
+                    line.drop_row().map(|line| self.lines.push(line));
                 }
                 VShift::Right(_) => unreachable!(),
                 VShift::Skip => (),

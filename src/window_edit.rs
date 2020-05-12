@@ -138,9 +138,7 @@ impl WindowEdit {
     ) -> Result<()> {
         use std::iter::repeat;
 
-        let s_nu_blank = String::from_iter(repeat(' ').take(nu_wth as usize));
         let nbc_xy = s.as_mut_buffer(&self.buffer_id).to_xy_cursor();
-        let (hgt, wth) = coord.to_size();
         trace!(
             "nu:{} {} bc:{}->{} vc:{}->{}",
             nu_wth,
@@ -151,16 +149,22 @@ impl WindowEdit {
             new_cursor,
         );
 
-        let buf = s.as_buffer(&self.buffer_id);
         let mut stdout = io::stdout();
+
+        let buf = s.as_buffer(&self.buffer_id);
+
+        let (hgt, wth) = coord.to_size();
         let (col, mut row) = coord.to_origin_cursor();
         let max_row = row + coord.hgt;
         let line_number = s.as_ref().line_number;
 
-        let wv = {
+        let mut wv = {
             let line_idx = nbc_xy.row.saturating_sub(new_cursor.row as usize);
             WrapView::new(line_idx, coord, buf)
         };
+        wv.align(buf.to_cursor(), new_cursor);
+
+        let s_nu_blank = String::from_iter(repeat(' ').take(nu_wth as usize));
         'a: for line in wv.lines.iter() {
             let s_nu = line.nu.to_string();
             for (r, rline) in line.rows.iter().enumerate() {
