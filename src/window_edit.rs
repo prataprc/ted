@@ -46,15 +46,14 @@ impl WindowEdit {
 impl WindowEdit {
     fn wshift_after(&self, coord: Coord, s: &State) -> usize {
         let buf = s.as_buffer(&self.buffer_id);
-        let obc_xy = self.obc_xy;
         let nbc_xy = buf.to_xy_cursor();
 
         let mut n = 0;
-        for row in obc_xy.row..=nbc_xy.row {
+        for row in self.obc_xy.row..=nbc_xy.row {
             n += match row {
-                row if row == obc_xy.row => {
+                row if row == self.obc_xy.row => {
                     let m = coord.to_cells(buf.line_len(row));
-                    m - obc_xy.col
+                    m.saturating_sub(self.obc_xy.col)
                 }
                 row if row == nbc_xy.row => nbc_xy.col,
                 row => coord.to_cells(buf.line_len(row)),
@@ -65,16 +64,15 @@ impl WindowEdit {
 
     fn wshift_before(&self, coord: Coord, s: &State) -> usize {
         let buf = s.as_buffer(&self.buffer_id);
-        let obc_xy = self.obc_xy;
         let nbc_xy = buf.to_xy_cursor();
 
         let mut n = 0;
-        for row in (nbc_xy.row..=obc_xy.row).rev() {
+        for row in (nbc_xy.row..=self.obc_xy.row).rev() {
             n += match row {
-                row if row == obc_xy.row => obc_xy.col,
+                row if row == self.obc_xy.row => self.obc_xy.col,
                 row if row == nbc_xy.row => {
                     let m = coord.to_cells(buf.line_len(row));
-                    m - nbc_xy.col
+                    m.saturating_sub(nbc_xy.col)
                 }
                 row => coord.to_cells(buf.line_len(row)),
             }
@@ -82,13 +80,14 @@ impl WindowEdit {
         n
     }
 
-    fn wshift(&self, coord: Coord, s: &State) -> Cursor {
+    fn wshift(&self, mut coord: Coord, s: &State) -> (Cursor, u16) {
         use crate::event::DP::{Left, Right};
         use std::cmp::Ordering::{Equal, Greater, Less};
 
         let scroll_off = s.as_ref().scroll_off; // accounting for scroll-offset.
-                                                // gather variables.
         let nbc_xy = s.as_buffer(&self.buffer_id).to_xy_cursor();
+        coord = coord.shrink_width(compute_nu_width(self.obc_xy.row));
+
         // create possible cursor positions.
         let mut cursors: Vec<Cursor> = if nbc_xy < self.obc_xy {
             let iter = self.cursor.prev_cursors(coord).into_iter().rev();
@@ -100,29 +99,33 @@ impl WindowEdit {
         // compute the number of cells to drain and its direction.
         let same_row = nbc_xy.row == self.obc_xy.row;
         let (m, dp) = match nbc_xy.cmp(&self.obc_xy) {
-            Equal => return self.cursor,
+            Equal => return (self.cursor, compute_nu_width(self.obc_xy.row)),
             Greater if same_row => (nbc_xy.col - self.obc_xy.col, Right),
             Greater => (self.wshift_after(coord, s), Right),
             Less if same_row => (self.obc_xy.col - nbc_xy.col, Left),
             Less => (self.wshift_before(coord, s), Left),
         };
-        let (n, m) = (cursors.len(), cursors.len() - m);
-        cursors.drain(n..m);
+        cursors.drain(..cmp::min(m, cursors.len()));
         // compute cursor.
-        let cursor = match (cursors.pop(), dp) {
-            (Some(cursor), _) => cursor,
-            (None, DP::Left) => Cursor {
-                row: scroll_off,
-                col: (nbc_xy.col % (coord.wth as usize)) as u16,
-            },
-            (None, DP::Right) => Cursor {
-                row: coord.hgt - scroll_off - 1,
-                col: (nbc_xy.col % (coord.wth as usize)) as u16,
-            },
+        coord = coord.shrink_width(compute_nu_width(nbc_xy.row));
+        match (cursors.pop(), dp) {
+            (Some(cursor), _) => (cursor, compute_nu_width(self.obc_xy.row)),
+            (None, DP::Left) => {
+                let cursor = Cursor {
+                    row: scroll_off,
+                    col: (nbc_xy.col % (coord.wth as usize)) as u16,
+                };
+                (cursor, compute_nu_width(nbc_xy.row))
+            }
+            (None, DP::Right) => {
+                let cursor = Cursor {
+                    row: coord.hgt.saturating_sub(scroll_off + 1),
+                    col: (nbc_xy.col % (coord.wth as usize)) as u16,
+                };
+                (cursor, compute_nu_width(nbc_xy.row))
+            }
             _ => unreachable!(),
-        };
-
-        cursor
+        }
     }
 
     fn wrefresh(
@@ -135,7 +138,9 @@ impl WindowEdit {
     ) -> Result<()> {
         use std::iter::repeat;
 
+        let s_nu_blank = String::from_iter(repeat(' ').take(nu_wth as usize));
         let nbc_xy = s.as_mut_buffer(&self.buffer_id).to_xy_cursor();
+        let (hgt, wth) = coord.to_size();
         trace!(
             "nu:{} {} bc:{}->{} vc:{}->{}",
             nu_wth,
@@ -150,19 +155,24 @@ impl WindowEdit {
         let mut stdout = io::stdout();
         let (col, mut row) = coord.to_origin_cursor();
         let max_row = row + coord.hgt;
+        let line_number = s.as_ref().line_number;
 
         let wv = {
-            let line_idx = nbc_xy.row - (new_cursor.row as usize);
+            let line_idx = nbc_xy.row.saturating_sub(new_cursor.row as usize);
             WrapView::new(line_idx, coord, buf)
         };
         'a: for line in wv.lines.iter() {
-            let nus = line.nu.to_string();
+            let s_nu = line.nu.to_string();
             for (r, rline) in line.rows.iter().enumerate() {
                 let s = match r {
-                    0 => nus.clone(),
-                    _ => String::from_iter(repeat(' ').take(nus.len())),
+                    0 => s_nu.clone(),
+                    _ => s_nu_blank.clone(),
                 };
-                let s = format!("{:>width$} ", s, width = (nu_wth as usize));
+                let s = if line_number {
+                    format!("{:>width$} ", s, width = (nu_wth as usize))
+                } else {
+                    "".to_string()
+                };
                 err_at!(Fatal, queue!(stdout, span!((col, row), st: s)))?;
 
                 let bcs: Vec<usize> = {
@@ -186,10 +196,27 @@ impl WindowEdit {
             }
         }
 
+        for _ in row..hgt {
+            let mut st: String = if_else!(
+                //
+                line_number,
+                format!("{} ", '~'),
+                Default::default()
+            );
+            st.push_str(&{
+                let iter = repeat(' ').take((wth - 2) as usize);
+                String::from_iter(iter)
+            });
+            // trace!("empline col:{} row:{} line:{:?}", col, row, st.len());
+            err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
+            row += 1;
+        }
+        assert!(row == hgt);
+
         Ok(())
     }
 
-    fn nshift(&self, coord: Coord, s: &State) -> Cursor {
+    fn nshift(&self, coord: Coord, s: &State) -> (Cursor, u16) {
         let scroll_off = s.as_ref().scroll_off; // accounting for scroll-offset.
         let nbc_xy = s.as_buffer(&self.buffer_id).to_xy_cursor();
 
@@ -198,26 +225,39 @@ impl WindowEdit {
         let Cursor { row, col } = self.cursor;
 
         let (r_min, r_max): (isize, isize) = if hgt < (scroll_off * 2) {
-            (0, (hgt - 1) as isize)
+            (0, (hgt.saturating_sub(1) as isize))
         } else {
-            (scroll_off as isize, (hgt - scroll_off - 1) as isize)
+            (
+                scroll_off as isize,
+                (hgt.saturating_sub(scroll_off + 1) as isize),
+            )
         };
+
+        let nu_wth = {
+            let row = (row as isize) + diff_row;
+            if row < r_min || row > r_max {
+                compute_nu_width(nbc_xy.row)
+            } else {
+                compute_nu_width(self.obc_xy.row)
+            }
+        };
+
         let new_row: u16 = {
             let row = limit!((row as isize) + diff_row, r_min, r_max);
             assert!(row < (coord.hgt as isize));
             row as u16
         };
-
         let new_col: u16 = {
             let col = limite!((col as isize) + diff_col, 0, wth as isize);
             assert!(col < (coord.wth as isize));
             col as u16
         };
 
-        Cursor {
+        let cursor = Cursor {
             col: new_col,
             row: new_row,
-        }
+        };
+        (cursor, nu_wth)
     }
 
     fn nrefresh(
@@ -231,7 +271,6 @@ impl WindowEdit {
 
         let nbc_xy = s.as_mut_buffer(&self.buffer_id).to_xy_cursor();
         let (hgt, wth) = coord.to_size();
-
         trace!(
             "nu:{} {} bc:{}->{} vc:{}->{}",
             nu_wth,
@@ -256,11 +295,10 @@ impl WindowEdit {
 
         let from = nbc_xy.row.saturating_sub(new_cursor.row as usize);
         let lines = buf.lines_at(from, DP::Right)?.map(do_padding);
-        let mrgn_wth = nu_wth.saturating_sub(1) as usize;
         for (i, line) in lines.take(hgt as usize).enumerate() {
             let mut st: String = if_else!(
                 s.as_ref().line_number,
-                format!("{:>width$} ", from + i + 1, width = mrgn_wth),
+                format!("{:>width$} ", from + i + 1, width = (nu_wth as usize)),
                 Default::default()
             );
             let s_line = String::from_iter(line);
@@ -301,19 +339,16 @@ impl WindowEdit {
     }
 
     pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
-        let nu_wth = {
-            let buf = s.as_buffer(&self.buffer_id);
-            let nu = buf.char_to_line(buf.to_cursor());
-            assert!(nu < 1_000_000_000); // TODO: no magic number
-            (cmp::min(nu.to_string().len(), 2) + 1) as u16
-        };
-        let coord = self.coord.shrink_width(nu_wth);
         self.cursor = if s.as_ref().wrap {
-            let new_cursor = self.wshift(coord, s).add_nu_width(nu_wth);
+            let (mut new_cursor, nu_wth) = self.wshift(self.coord, s);
+            let coord = self.coord.shrink_width(nu_wth);
+            new_cursor = new_cursor.add_nu_wth(nu_wth);
             self.wrefresh(new_cursor, coord, nu_wth, s)?;
             new_cursor
         } else {
-            let new_cursor = self.nshift(coord, s).add_nu_width(nu_wth);
+            let (mut new_cursor, nu_wth) = self.nshift(self.coord, s);
+            let coord = self.coord.shrink_width(nu_wth);
+            new_cursor = new_cursor.add_nu_wth(nu_wth);
             self.nrefresh(new_cursor, coord, nu_wth, s)?;
             new_cursor
         };
@@ -342,4 +377,11 @@ impl WindowEdit {
             },
         }
     }
+}
+
+fn compute_nu_width(row: usize) -> u16 {
+    use crate::buffer::MAX_LINES;
+
+    assert!(row < MAX_LINES);
+    (cmp::min(row.to_string().len(), 2) + 1) as u16
 }

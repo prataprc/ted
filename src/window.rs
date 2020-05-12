@@ -412,8 +412,8 @@ impl Cursor {
         cursors.into_iter().take(n as usize).rev().collect()
     }
 
-    pub fn add_nu_width(mut self, nu_wth: u16) -> Self {
-        self.col += nu_wth;
+    pub fn add_nu_wth(mut self, nu_wth: u16) -> Self {
+        self.col = self.col + nu_wth + 1;
         self
     }
 }

@@ -23,6 +23,7 @@ use crate::{
 };
 
 pub const NL: char = '\n';
+pub const MAX_LINES: usize = 1_000_000_000;
 
 lazy_static! {
     static ref BUFFER_NUM: Mutex<usize> = Mutex::new(0);
@@ -346,8 +347,8 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn line_to_char(&self, row: usize) -> usize {
-        self.to_change().buf.line_to_char(row)
+    pub fn line_to_char(&self, line_idx: usize) -> usize {
+        self.to_change().buf.line_to_char(line_idx)
     }
 
     #[inline]
@@ -406,12 +407,6 @@ impl Buffer {
             }
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
-    }
-
-    #[inline]
-    pub fn len_line(&self, row: usize) -> usize {
-        let change = self.to_change();
-        change.buf.line(row).len_chars()
     }
 
     #[inline]
@@ -1084,7 +1079,7 @@ pub fn mto_up(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
             let row = row.saturating_sub(n);
             cursor = {
                 let col = {
-                    let n_chars = b.len_line(row);
+                    let n_chars = b.line_len(row);
                     cmp::min(n_chars.saturating_sub(2), b.to_col())
                 };
                 b.line_to_char(row) + col
@@ -1111,7 +1106,7 @@ pub fn mto_down(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
         n_rows => {
             let row = limite!(row.saturating_add(n), n_rows);
             let cursor = {
-                let n_chars = b.len_line(row);
+                let n_chars = b.line_len(row);
                 let col = cmp::min(n_chars.saturating_sub(2), b.to_col());
                 b.line_to_char(row) + col
             };
@@ -1131,7 +1126,7 @@ pub fn mto_down(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
 pub fn mto_column(c: &mut Context, n: usize) -> Result<Event> {
     let b = c.as_mut_buffer();
     let n = {
-        let m = b.len_line(b.char_to_line(b.to_cursor())).saturating_sub(1);
+        let m = b.line_len(b.char_to_line(b.to_cursor())).saturating_sub(1);
         cmp::min(m, n).saturating_sub(1)
     };
     b.set_cursor(b.line_home() + n);

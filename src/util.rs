@@ -36,7 +36,8 @@ macro_rules! limite {
     }};
     ($op:expr, $max:expr) => {{
         let res = $op;
-        if_else!(res < $max, res, $max)
+        let max = $max.saturating_sub(1);
+        if_else!(res < $max, res, max)
     }};
 }
 
