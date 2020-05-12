@@ -414,6 +414,12 @@ impl Buffer {
         let change = self.to_change();
         change.buf.len_chars()
     }
+
+    #[inline]
+    pub fn char(&self, char_idx: usize) -> char {
+        let change = self.to_change();
+        change.buf.char(char_idx)
+    }
 }
 
 impl Buffer {

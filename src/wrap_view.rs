@@ -1,6 +1,7 @@
 use crate::{
     buffer::Buffer,
     window::{Coord, Cursor},
+    Result,
 };
 
 enum VShift {
@@ -15,14 +16,16 @@ pub struct WrapView {
 }
 
 impl WrapView {
-    pub fn new(line_idx: usize, coord: Coord, buf: &Buffer) -> WrapView {
+    pub fn new(line_idx: usize, coord: Coord, buf: &Buffer) -> Result<WrapView> {
         let mut lines = vec![];
         let iter = (line_idx..).take(coord.hgt as usize).enumerate();
         for (row, line_idx) in iter {
-            assert!(row < 1_000);
-            lines.push(Line::new_line(line_idx, row as u16, coord.wth, buf))
+            assert!(row < 1_000); // TODO: avoid magic number
+            Line::new_line(line_idx, row as u16, coord.wth, buf)
+                //
+                .map(|line| lines.push(line));
         }
-        WrapView { lines }
+        Ok(WrapView { lines })
     }
 
     pub fn align(&mut self, bc: usize, cursor: Cursor) {
@@ -58,10 +61,14 @@ pub struct Line {
 }
 
 impl Line {
-    fn new_line(line_idx: usize, row: u16, wth: u16, buf: &Buffer) -> Self {
+    fn new_line(line_idx: usize, row: u16, wth: u16, buf: &Buffer) -> Option<Self> {
         use std::iter::repeat;
 
-        let len_chars = buf.line_len(line_idx);
+        let len_chars = match buf.n_lines() {
+            rows if line_idx == rows => Some(0),
+            rows if line_idx < rows => Some(buf.line_len(line_idx)),
+            _ => None,
+        }?;
         let bc = buf.char_to_line(buf.to_cursor());
 
         let mut rows: Vec<(u16, usize, u16, u16)> = {
@@ -88,10 +95,11 @@ impl Line {
             let i2 = i1.map(|(row, bc, ln, wth)| Row::new_row(row, bc, ln, wth));
             i2.collect()
         };
-        Line {
+
+        Some(Line {
             nu: line_idx + 1,
             rows,
-        }
+        })
     }
 
     fn align(&self, bc: usize, cursor: Cursor) -> VShift {

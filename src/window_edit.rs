@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    buffer::{self, Buffer},
+    buffer::{self, Buffer, NL},
     event::{Event, Ted, DP},
     window::{Context, Coord, Cursor, Span, State},
     wrap_view::WrapView,
@@ -108,7 +108,7 @@ impl WindowEdit {
         cursors.drain(..cmp::min(m, cursors.len()));
         // compute cursor.
         coord = coord.shrink_width(compute_nu_width(nbc_xy.row));
-        match (cursors.pop(), dp) {
+        let (new_cursor, nu_wth) = match (cursors.pop(), dp) {
             (Some(cursor), _) => (cursor, compute_nu_width(self.obc_xy.row)),
             (None, DP::Left) => {
                 let cursor = Cursor {
@@ -125,7 +125,10 @@ impl WindowEdit {
                 (cursor, compute_nu_width(nbc_xy.row))
             }
             _ => unreachable!(),
-        }
+        };
+
+        trace!("wshift new_cursor:{}, nu_wth:{}", new_cursor, nu_wth);
+        (new_cursor, nu_wth)
     }
 
     fn wrefresh(
@@ -139,29 +142,27 @@ impl WindowEdit {
         use std::iter::repeat;
 
         let nbc_xy = s.as_mut_buffer(&self.buffer_id).to_xy_cursor();
+        let line_idx = nbc_xy.row.saturating_sub(new_cursor.row as usize);
         trace!(
-            "nu:{} {} bc:{}->{} vc:{}->{}",
+            "nu:{} {} bc:{}->{} vc:{}->{} line_idx:{}",
             nu_wth,
             coord,
             self.obc_xy,
             nbc_xy,
             self.cursor,
             new_cursor,
+            line_idx,
         );
 
         let mut stdout = io::stdout();
 
         let buf = s.as_buffer(&self.buffer_id);
 
-        let (hgt, wth) = coord.to_size();
         let (col, mut row) = coord.to_origin_cursor();
         let max_row = row + coord.hgt;
         let line_number = s.as_ref().line_number;
 
-        let mut wv = {
-            let line_idx = nbc_xy.row.saturating_sub(new_cursor.row as usize);
-            WrapView::new(line_idx, coord, buf)
-        };
+        let mut wv = WrapView::new(line_idx, coord, buf)?;
         wv.align(buf.to_cursor(), new_cursor);
 
         let s_nu_blank = String::from_iter(repeat(' ').take(nu_wth as usize));
@@ -200,24 +201,8 @@ impl WindowEdit {
             }
         }
 
-        for _ in row..hgt {
-            let mut st: String = if_else!(
-                //
-                line_number,
-                format!("{} ", '~'),
-                Default::default()
-            );
-            st.push_str(&{
-                let iter = repeat(' ').take((wth - 2) as usize);
-                String::from_iter(iter)
-            });
-            // trace!("empline col:{} row:{} line:{:?}", col, row, st.len());
-            err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
-            row += 1;
-        }
-        assert!(row == hgt);
-
-        Ok(())
+        row = self.tail_line(row, coord, buf)?;
+        self.trefresh(row, coord, s)
     }
 
     fn nshift(&self, coord: Coord, s: &State) -> (Cursor, u16) {
@@ -311,19 +296,53 @@ impl WindowEdit {
             err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
             row += 1;
         }
-        for _ in row..hgt {
-            let mut st: String = if_else!(
-                s.as_ref().line_number,
-                format!("{} ", '~'),
-                Default::default()
-            );
-            st.push_str(&{
-                let iter = repeat(' ').take((wth - 2) as usize);
-                String::from_iter(iter)
-            });
-            // trace!("empline col:{} row:{} line:{:?}", col, row, st.len());
+
+        row = self.tail_line(row, coord, buf)?;
+        self.trefresh(row, coord, s)
+    }
+
+    fn tail_line(&self, row: u16, coord: Coord, buf: &Buffer) -> Result<u16> {
+        let n = buf.len_chars();
+        let (col, _) = coord.to_origin_cursor();
+        let ok1 = n == 0;
+        let ok2 = (row == coord.hgt - 1) && buf.char(n - 1) == NL;
+
+        let mut stdout = io::stdout();
+
+        if ok1 || ok2 {
+            let line_idx = if ok1 { 1 } else { buf.char_to_line(n - 1) + 1 };
+            let nu_wth = compute_nu_width(line_idx);
+            let st = format!("{:>width$} ", line_idx, width = (nu_wth as usize));
             err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
-            row += 1;
+            Ok(row + 1)
+        } else {
+            Ok(row)
+        }
+    }
+
+    fn trefresh(&self, mut row: u16, coord: Coord, s: &State) -> Result<()> {
+        use std::iter::repeat;
+
+        let mut stdout = io::stdout();
+        let (col, _) = coord.to_origin_cursor();
+        let (hgt, wth) = coord.to_size();
+
+        if row < hgt {
+            trace!("empty lines {} {}", row, hgt);
+            for _ in row..hgt {
+                let mut st: String = if_else!(
+                    s.as_ref().line_number,
+                    format!("{} ", '~'),
+                    Default::default()
+                );
+                st.push_str(&{
+                    let iter = repeat(' ').take((wth - 2) as usize);
+                    String::from_iter(iter)
+                });
+                // trace!("empline col:{} row:{} line:{:?}", col, row, st.len());
+                err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
+                row += 1;
+            }
         }
         assert!(row == hgt);
 
@@ -383,9 +402,9 @@ impl WindowEdit {
     }
 }
 
-fn compute_nu_width(row: usize) -> u16 {
+fn compute_nu_width(line_idx: usize) -> u16 {
     use crate::buffer::MAX_LINES;
 
-    assert!(row < MAX_LINES);
-    (cmp::min(row.to_string().len(), 2) + 1) as u16
+    assert!(line_idx < MAX_LINES);
+    (cmp::max(line_idx.to_string().len(), 2) + 1) as u16
 }
