@@ -8,19 +8,20 @@ pub mod buffer;
 pub mod config;
 pub mod event;
 pub mod ftype_txt_en;
-pub mod ftypes;
-pub mod keymap;
-pub mod keymap_ted;
+mod ftypes;
+mod keymap;
+mod keymap_ted;
 pub mod location;
 mod search;
 pub mod stats;
 #[macro_use]
 pub mod window;
-pub mod view;
+mod col_nu;
+mod view;
 pub mod window_edit;
 pub mod window_file;
 pub mod window_prompt;
-pub mod wrap_view;
+mod wrap_view;
 
 pub use buffer::Buffer;
 pub use config::Config;

@@ -2,13 +2,15 @@ use crossterm::queue;
 use log::trace;
 
 use std::{
-    cmp,
+    cmp, fmt,
     io::{self, Write},
     iter::FromIterator,
+    result,
 };
 
 use crate::{
     buffer::{self, Buffer, NL},
+    col_nu::ColNu,
     event::DP,
     window::{Coord, Cursor, Span, State},
     wrap_view::WrapView,
@@ -29,7 +31,6 @@ impl fmt::Display for Wrap {
     }
 }
 
-
 impl Wrap {
     // create a wrap view using previous cursor's nu_width.
     pub fn new(coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> Wrap {
@@ -39,7 +40,7 @@ impl Wrap {
             obc_xy,
             nu: ColNu::new(obc_xy.row),
         };
-        o.exclude_nu(nu.to_width())
+        o.exclude_nu(o.nu.to_width())
     }
 
     pub fn render(mut self, s: &State, buf: &Buffer) -> Result<Cursor> {
@@ -99,7 +100,9 @@ impl Wrap {
             } else {
                 self.cursor.next_cursors(self.coord).into_iter().rev()
             };
-            iter.skip((scroll_off * self.coord.wth) as usize).rev().collect()
+            iter.skip((scroll_off * self.coord.wth) as usize)
+                .rev()
+                .collect()
         };
         // compute the number of cells to drain and its direction.
         let same_row = nbc_xy.row == self.obc_xy.row;
@@ -117,18 +120,16 @@ impl Wrap {
                 self.cursor = cursor;
                 self
             }
-            (None, DP::Left) => self.into_resized(nbc_xy, scroll_off, DP::Left),
-            (None, DP::Right) => self.into_resized(nbc_xy, scroll_off, DP:Right),
+            (None, DP::Left) => self.into_resized(nbc_xy, scroll_off, Left),
+            (None, DP::Right) => self.into_resized(nbc_xy, scroll_off, Right),
             _ => unreachable!(),
         };
 
-        trace!("wrap-shift {}", self)
+        trace!("wrap-shift {}", self);
         self
     }
 
     fn refresh(self, s: &State, buf: &Buffer) -> Result<()> {
-        use std::iter::repeat;
-
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         trace!(
@@ -142,7 +143,7 @@ impl Wrap {
 
         let mut stdout = io::stdout();
 
-        let full_coord =  self.outer_coord();
+        let full_coord = self.outer_coord();
         let (col, mut row) = full_coord.to_origin_cursor();
         let max_row = row + full_coord.hgt;
         let line_number = s.as_ref().line_number;
@@ -153,8 +154,9 @@ impl Wrap {
         'a: for line in wv.lines.iter() {
             for (r, rline) in line.rows.iter().enumerate() {
                 let mut nu_span = match r {
-                    0 => self.nu.to_span(Some(line.nu)),
-                    _ => self.nu.to_span(None),
+                    0 if line_number => self.nu.to_span(Some(line.nu)),
+                    _ if line_number => self.nu.to_span(None),
+                    _ => span!(st: "".to_string()),
                 };
                 nu_span.set_cursor(Cursor { col, row });
 
@@ -170,7 +172,7 @@ impl Wrap {
                     }
                     _ => span!(st: "".to_string()),
                 };
-                err_at!(Fatal, queue!(stdout, nu_span, line_span))?
+                err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
 
                 row += 1;
                 if row >= max_row {
@@ -190,28 +192,29 @@ impl Wrap {
         self
     }
 
-    fn into_resized(mut self, nbc_xy: buffer::Cursor, so: u16, dp: DP) -> Self {
-        let nu = ColNu::new(nbc_xy.row),
+    fn into_resized(self, nbc_xy: buffer::Cursor, so: u16, dp: DP) -> Self {
+        let nu = ColNu::new(nbc_xy.row);
         let old_wth = ColNu::new(self.obc_xy.row).to_width();
         let new_wth = nu.to_width();
         let coord = {
             let (hgt, wth) = self.coord.to_size();
-            self.coord.resize_to(hgt, wth + old_wth - new_wth);
+            self.coord.resize_to(hgt, wth + old_wth - new_wth)
         };
         let cursor = match dp {
             DP::Left => Cursor {
                 row: so,
                 col: (nbc_xy.col % (coord.wth as usize)) as u16,
-            }
+            },
             DP::Right => Cursor {
-                row: coord.hgt.saturating_sub(scroll_off + 1),
+                row: coord.hgt.saturating_sub(so + 1),
                 col: (nbc_xy.col % (coord.wth as usize)) as u16,
-            }
+            },
+            _ => unreachable!(),
         };
 
         Wrap {
-            coord: Coord,
-            cursor: Cursor,
+            coord: coord,
+            cursor: cursor,
             obc_xy: self.obc_xy,
             nu,
         }
@@ -239,17 +242,17 @@ impl NoWrap {
             obc_xy,
             nu: ColNu::new(obc_xy.row),
         };
-        o.exclude_nu(nu.to_width())
+        o.exclude_nu(o.nu.to_width())
     }
 
     pub fn render(mut self, s: &State, buf: &Buffer) -> Result<Cursor> {
         self = self.shift(s, buf);
-        let cursor = v.cursor;
+        let cursor = self.cursor;
         self.refresh(s, buf)?;
         Ok(cursor)
     }
 
-    fn shift(mut self, s: &State, buf: &Buffer) -> Self {
+    fn shift(self, s: &State, buf: &Buffer) -> Self {
         let scroll_off = s.as_ref().scroll_off; // accounting for scroll-offset.
 
         let (r_min, r_max) = if self.coord.hgt < (scroll_off * 2) {
@@ -315,9 +318,10 @@ impl NoWrap {
 
         let mut stdout = io::stdout();
 
-        let full_coord =  self.outer_coord();
+        let full_coord = self.outer_coord();
         let (col, mut row) = full_coord.to_origin_cursor();
         let (hgt, wth) = self.coord.to_size();
+        let nu_wth = self.nu.to_width();
 
         let do_padding = |line: ropey::RopeSlice| -> Vec<char> {
             line.chars_at(nbc_xy.col - (self.cursor.col as usize))
@@ -329,14 +333,14 @@ impl NoWrap {
         let from = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         let lines = buf.lines_at(from, DP::Right)?.map(do_padding);
         for (i, line) in lines.take(hgt as usize).enumerate() {
-            let mut nu_span = self.nu.to_span(Some(from+i+1));
-            nu_span.set_Cursor(col, row);
+            let mut nu_span = self.nu.to_span(Some(from + i + 1));
+            nu_span.set_cursor(Cursor { col, row });
             let line_span = span!(st: String::from_iter(line));
             err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
             row += 1;
         }
 
-        empty_lines(tail_line(row, full_coord, buf)?, full_coord, s)
+        empty_lines(tail_line(row, full_coord, &self.nu, buf)?, full_coord, s)
     }
 
     fn outer_coord(&self) -> Coord {
@@ -385,14 +389,16 @@ fn empty_lines(mut row: u16, coord: Coord, s: &State) -> Result<()> {
 
 fn tail_line(row: u16, coord: Coord, nu: &ColNu, buf: &Buffer) -> Result<u16> {
     let n = buf.len_chars();
-    let (col, _) = coord.to_origin_cursor();
     let ok1 = n == 0;
     let ok2 = (row == coord.hgt - 1) && buf.char(n - 1) == NL;
 
     let mut stdout = io::stdout();
 
     if ok1 || ok2 {
-        let span = nu.to_span(if ok1 { 1 } else { buf.char_to_line(n - 1) + 1 });
+        let span = {
+            let line_idx = if ok1 { 1 } else { buf.char_to_line(n - 1) + 1 };
+            nu.to_span(Some(line_idx))
+        };
         err_at!(Fatal, queue!(stdout, span))?;
         Ok(row + 1)
     } else {

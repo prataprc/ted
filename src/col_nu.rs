@@ -1,8 +1,11 @@
 use crossterm::style::{Attribute, Color};
 
+use std::{cmp, fmt, iter::FromIterator, result};
+
 use crate::window::Span;
 
-struct ColNu {
+#[derive(Clone, Copy)]
+pub struct ColNu {
     width: u16,
     fg: Color,
     bg: Color,
@@ -37,13 +40,15 @@ impl ColNu {
         self.width
     }
 
-    fn to_span(&self, nu: Option<usize>) -> Span {
+    pub fn to_span(&self, nu: Option<usize>) -> Span {
+        use std::iter::repeat;
+
         let s = match nu {
             Some(nu) => format!("{:>width$} ", nu, width = (self.width as usize)),
-            None => String::from_iter(repeat(' ').take(self.width as usize));
+            None => String::from_iter(repeat(' ').take(self.width as usize)),
         };
-        let mut span = Span::new(s);
-        span.set_fg(self.fg).set_bg(self.bg).set_attr(self.attr)
+        let mut span = Span::new(&s);
+        span.set_fg(self.fg).set_bg(self.bg).set_attr(self.attr);
         span
     }
 }
