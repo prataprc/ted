@@ -1,5 +1,6 @@
-#![feature(box_syntax, box_patterns)]
+//! Package implement editing tool-kit for terminal based apps.
 
+#![feature(box_syntax, box_patterns)]
 use std::{fmt, result};
 
 #[macro_use]
@@ -22,10 +23,6 @@ pub mod window_edit;
 pub mod window_file;
 pub mod window_prompt;
 mod wrap_view;
-
-pub use buffer::Buffer;
-pub use config::Config;
-pub use event::Event;
 
 pub type Result<T> = result::Result<T, Error>;
 

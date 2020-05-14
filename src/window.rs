@@ -7,8 +7,8 @@ use crossterm::{
 use std::{fmt, mem, ops::Add, result};
 
 use crate::{
-    buffer::Buffer, window_edit::WindowEdit, window_file::WindowFile, window_prompt::WindowPrompt,
-    Config, Event, Result,
+    buffer::Buffer, config::Config, event::Event, window_edit::WindowEdit, window_file::WindowFile,
+    window_prompt::WindowPrompt, Result,
 };
 
 #[macro_export]

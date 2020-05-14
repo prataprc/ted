@@ -1,3 +1,6 @@
+//! Module buffer implement editing and cursor movement commands
+//! over text content.
+
 use lazy_static::lazy_static;
 use log::trace;
 use ropey::{self, Rope, RopeSlice};

@@ -21,17 +21,21 @@ use std::{
 };
 
 use ted::{
+    config::Config,
     err_at,
     event::{Event, Ted},
     location::Location,
     stats,
     window::{Coord, Cursor, State, Window},
     window_file::WindowFile,
-    Config, Error, Result,
+    Error, Result,
 };
 
 #[derive(Debug, StructOpt)]
 pub struct Opt {
+    #[structopt(short = "u", long = "config", default_value = "")]
+    toml_file: String,
+
     #[structopt(long = "log", default_value = "")]
     log_file: String,
 
@@ -71,6 +75,44 @@ fn main() {
         Ok(_) => (),
         Err(err) => println!("{}", err),
     }
+}
+
+fn init_logger(opts: &Opt) -> Result<()> {
+    let home_dir = err_at!(
+        Fatal,
+        dirs::home_dir().ok_or(format!("can't find home-directory"))
+    )?;
+    let log_file: path::PathBuf = if opts.log_file.is_empty() {
+        [home_dir, path::Path::new(".ted.log").to_path_buf()]
+    } else {
+        [home_dir, path::Path::new(&opts.log_file).to_path_buf()]
+    }
+    .iter()
+    .collect();
+
+    let level_filter = if opts.trace {
+        simplelog::LevelFilter::Trace
+    } else if opts.verbose {
+        simplelog::LevelFilter::Debug
+    } else {
+        simplelog::LevelFilter::Info
+    };
+
+    let mut lcnf = simplelog::ConfigBuilder::new();
+    lcnf.set_location_level(simplelog::LevelFilter::Error)
+        .set_target_level(simplelog::LevelFilter::Off)
+        .set_thread_mode(simplelog::ThreadLogMode::Both)
+        .set_thread_level(simplelog::LevelFilter::Error)
+        .set_time_to_local(true)
+        .set_time_format("%Y-%m-%dT%H-%M-%S%.3f".to_string());
+
+    let fs = err_at!(Fatal, fs::File::create(&log_file))?;
+    err_at!(
+        Fatal,
+        simplelog::WriteLogger::init(level_filter, lcnf.build(), fs)
+    )?;
+
+    Ok(())
 }
 
 struct Application {
@@ -216,43 +258,4 @@ impl Drop for Terminal {
         .unwrap();
         terminal::disable_raw_mode().unwrap();
     }
-}
-
-fn init_logger(opts: &Opt) -> Result<()> {
-    let home_dir = err_at!(
-        Fatal,
-        dirs::home_dir().ok_or(format!("can't find home-directory"))
-    )?;
-    let log_file: path::PathBuf = if opts.log_file.is_empty() {
-        [home_dir, path::Path::new(".ted.log").to_path_buf()]
-    } else {
-        [home_dir, path::Path::new(&opts.log_file).to_path_buf()]
-    }
-    .iter()
-    .collect();
-
-    let level_filter = if opts.trace {
-        simplelog::LevelFilter::Trace
-    } else if opts.verbose {
-        simplelog::LevelFilter::Debug
-    } else {
-        simplelog::LevelFilter::Info
-    };
-
-    let mut config = simplelog::ConfigBuilder::new();
-    config
-        .set_location_level(simplelog::LevelFilter::Error)
-        .set_target_level(simplelog::LevelFilter::Off)
-        .set_thread_mode(simplelog::ThreadLogMode::Both)
-        .set_thread_level(simplelog::LevelFilter::Error)
-        .set_time_to_local(true)
-        .set_time_format("%Y-%m-%dT%H-%M-%S%.3f".to_string());
-
-    let fs = err_at!(Fatal, fs::File::create(&log_file))?;
-    err_at!(
-        Fatal,
-        simplelog::WriteLogger::init(level_filter, config.build(), fs)
-    )?;
-
-    Ok(())
 }
