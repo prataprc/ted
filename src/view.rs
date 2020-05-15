@@ -388,7 +388,7 @@ fn empty_lines(mut row: u16, coord: Coord, s: &State) -> Result<()> {
 }
 
 fn tail_line(row: u16, coord: Coord, nu: &ColNu, buf: &Buffer) -> Result<u16> {
-    let n = buf.len_chars();
+    let n = buf.n_chars();
     let ok1 = n == 0;
     let ok2 = (row == coord.hgt - 1) && buf.char(n - 1) == NL;
 

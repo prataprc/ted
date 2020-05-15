@@ -104,26 +104,28 @@ impl Ord for Cursor {
 // all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
 pub struct Buffer {
-    /// Globally counting buffer number.
-    pub num: usize, // buffer number
     /// Source for this buffer, typically a file from local disk.
     pub location: Location,
     /// Mark this buffer read-only, in which case insert ops are not allowed.
     pub read_only: bool,
-    /// Last search command applied on this buffer.
-    pub mto_pattern: Mto,
-    /// Last find character (within the line) command  applied on this buffer.
-    pub mto_find_char: Mto,
-    /// Number of times to repeat an insert operation.
-    pub insert_repeat: usize,
-    /// Collection of events applied during the last insert session.
-    pub last_inserts: Vec<Event>,
     /// Keymap plugin for this buffer.
     pub keymap: Keymap,
     /// File-type plugin for this buffer.
     pub ftype: FType,
 
+    /// Globally counting buffer number.
+    num: usize, // buffer number
+    /// Buffer states
     inner: Inner,
+
+    /// Last search command applied on this buffer.
+    mto_pattern: Mto,
+    /// Last find character (within the line) command  applied on this buffer.
+    mto_find_char: Mto,
+    /// Number of times to repeat an insert operation.
+    insert_repeat: usize,
+    /// Collection of events applied during the last insert session.
+    last_inserts: Vec<Event>,
 }
 
 #[derive(Clone)]
@@ -138,6 +140,7 @@ impl Default for Inner {
     }
 }
 
+/// Create and configure a text buffer.
 impl Buffer {
     pub fn from_reader<R>(data: R) -> Result<Buffer>
     where
@@ -199,16 +202,6 @@ impl Buffer {
         self.ftype = ftype;
         self
     }
-
-    pub fn set_event_prefix(&mut self, prefix: Event) -> &mut Self {
-        match &mut self.inner {
-            Inner::Insert(_) => (),
-            Inner::Normal(NormalBuffer { evnt_prefix, .. }) => {
-                *evnt_prefix = prefix;
-            }
-        };
-        self
-    }
 }
 
 impl Buffer {
@@ -229,17 +222,20 @@ impl Buffer {
 }
 
 impl Buffer {
+    /// Return whether buffer is marked read-only.
     #[inline]
     pub fn is_read_only(&self) -> bool {
         self.read_only
     }
 
+    /// Return whether buffer is marked as modified.
     #[inline]
     pub fn is_modified(&self) -> bool {
         let change = self.to_change();
         change.parent.is_some() || !change.children.is_empty()
     }
 
+    /// Return current buffer state as string.
     #[inline]
     pub fn to_mode(&self) -> &'static str {
         match &self.inner {
@@ -248,6 +244,7 @@ impl Buffer {
         }
     }
 
+    /// Return buffer id, constructed from its location string.
     #[inline]
     pub fn to_id(&self) -> String {
         match self.to_location() {
@@ -256,111 +253,120 @@ impl Buffer {
         }
     }
 
+    /// Buffer number, handy for users to rotate between buffers.
     #[inline]
     pub fn to_num(&self) -> usize {
         self.num
     }
 
+    /// Return buffer's file type.
     #[inline]
     pub fn to_file_type(&self) -> String {
         self.ftype.to_type_name()
     }
 
+    /// Return buffer's location.
     #[inline]
     pub fn to_location(&self) -> Location {
         self.location.clone()
     }
 
+    /// Return buffers current event prefix.
     pub fn to_event_prefix(&self) -> Event {
-        match &self.inner {
-            Inner::Insert(_) => Event::Noop,
-            Inner::Normal(NormalBuffer { evnt_prefix, .. }) => {
-                //
-                evnt_prefix.clone()
-            }
-        }
-    }
+        use Inner::{Insert, Normal};
 
-    pub fn to_inserts(&self) -> Vec<Event> {
-        self.last_inserts.clone()
+        match &self.inner {
+            Insert(_) => Event::Noop,
+            Normal(NormalBuffer { evnt_prefix, .. }) => evnt_prefix.clone(),
+        }
     }
 }
 
 impl Buffer {
+    /// Return the underlying text, if buffer is really large this can be
+    /// a costly operation.
     #[inline]
     pub fn to_string(&self) -> String {
         self.to_change().as_ref().to_string()
     }
 
+    /// Return the cursor position, as character offset, within this buffer.
     #[inline]
     pub fn to_cursor(&self) -> usize {
         self.to_change().to_cursor()
     }
 
+    /// Return the cursor position, as (col, row) starting from (0,), within
+    /// this buffer.
     #[inline]
     pub fn to_xy_cursor(&self) -> Cursor {
         self.to_change().to_xy_cursor()
     }
 
+    /// Like `to_xy_cursor` method, but return only the column offset for the
+    /// cursor-line.
     pub fn to_col(&self) -> usize {
-        let cursor = self.to_cursor();
-        let a_char = {
-            let change = self.to_change();
-            change.buf.line_to_char(change.buf.char_to_line(cursor))
-        };
-        cursor - a_char
+        self.to_xy_cursor().col
     }
 
+    /// Return the number of text lines in this buffer.
     #[inline]
     pub fn n_lines(&self) -> usize {
         let change = self.to_change();
         change.buf.len_lines()
     }
 
+    /// For the line identified by `line_idx`, starting from 0, return the
+    /// length of the line. Note that, `0 <= line_idx < n_lines`.
     #[inline]
     pub fn line_len(&self, line_idx: usize) -> usize {
         let change = self.to_change();
         change.buf.line(line_idx).len_chars()
     }
 
+    /// Return an iterator starting from line_idx. `dp` can either be
+    /// [DP::Right] or [DP::Left] for either forward iteration or reverse
+    /// iteration. In the forward direction, iteration will start from
+    /// the cursor's current line. In reverse direction, iteration will start
+    /// from the one before cursor's current line. Note that,
+    /// `0 <= line_idx < n_lines`.
     #[inline]
     pub fn lines_at<'a>(
-        //
         &'a self,
-        r: usize,
+        line_idx: usize,
         dp: DP,
     ) -> Result<Box<dyn Iterator<Item = RopeSlice> + 'a>> {
         let change = self.to_change();
+        let iter = unsafe {
+            let cref: &Change = change.borrow();
+            (cref as *const Change)
+                .as_ref()
+                .unwrap()
+                .buf
+                .lines_at(line_idx)
+        };
+
         match dp {
-            DP::Right => {
-                let iter = unsafe {
-                    let change: &Change = change.borrow();
-                    (change as *const Change).as_ref().unwrap().buf.lines_at(r)
-                };
-                Ok(Box::new(Iter {
-                    _change: change,
-                    iter,
-                }))
-            }
-            DP::Left => {
-                let iter = unsafe {
-                    let change: &Change = change.borrow();
-                    (change as *const Change).as_ref().unwrap().buf.lines_at(r)
-                };
-                Ok(Box::new(ReverseIter {
-                    _change: Some(change),
-                    iter,
-                }))
-            }
+            DP::Right => Ok(Box::new(Iter {
+                _change: change,
+                iter,
+            })),
+            DP::Left => Ok(Box::new(ReverseIter {
+                _change: Some(change),
+                iter,
+            })),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
+    /// Return the character offset of first character for the requested
+    /// `line_idx`. Note that, `0 <= line_idx < n_lines`.
     #[inline]
     pub fn line_to_char(&self, line_idx: usize) -> usize {
         self.to_change().buf.line_to_char(line_idx)
     }
 
+    /// Similar to `line_to_char` but for the current cursor line.
     #[inline]
     pub fn line_home(&self) -> usize {
         let change = self.to_change();
@@ -369,62 +375,65 @@ impl Buffer {
             .line_to_char(change.buf.char_to_line(self.to_cursor()))
     }
 
+    /// Return the line offset for requested `char_idx`, which must be a valid
+    /// character offset within the buffer. [Buffer::to_cursor] is a `char_idx`.
+    /// Note that, `0 <= char_idx < n_chars`.
     #[inline]
-    pub fn char_to_line(&self, cursor: usize) -> usize {
-        self.to_change().buf.char_to_line(cursor)
+    pub fn char_to_line(&self, char_idx: usize) -> usize {
+        self.to_change().buf.char_to_line(char_idx)
     }
 
+    /// Return the byte offset for requested `char_idx`, which must be a valid
+    /// character offset within the buffer. [Buffer::to_cursor] is a `char_idx`.
+    /// Note that, `0 <= char_idx < n_chars`.
     #[inline]
-    pub fn char_to_byte(&self, cursor: usize) -> usize {
-        self.to_change().buf.char_to_byte(cursor)
+    pub fn char_to_byte(&self, char_idx: usize) -> usize {
+        self.to_change().buf.char_to_byte(char_idx)
     }
 
+    /// Return an iterator starting from char_idx. `dp` can either be
+    /// [DP::Right] or [DP::Left] for either forward iteration or reverse
+    /// iteration. In the forward direction, iteration will start from
+    /// the cursor position. In reverse direction, iteration will start
+    /// from the one before cursor position. Note that,
+    /// `0 <= char_idx < n_chars`.
     pub fn chars_at<'a>(
-        //
         &'a self,
-        n: usize,
+        char_idx: usize,
         dp: DP,
     ) -> Result<Box<dyn Iterator<Item = char> + 'a>> {
         let change = self.to_change();
+        let iter = unsafe {
+            let cref: &Change = change.borrow();
+            let r: &Rope = {
+                let c = (cref as *const Change).as_ref().unwrap();
+                c.as_ref()
+            };
+            r.chars_at(char_idx)
+        };
+
         match dp {
-            DP::Right => {
-                let iter = unsafe {
-                    let change: &Change = change.borrow();
-                    let r: &Rope = {
-                        let c = (change as *const Change).as_ref().unwrap();
-                        c.as_ref()
-                    };
-                    r.chars_at(n)
-                };
-                Ok(Box::new(Iter {
-                    _change: change,
-                    iter,
-                }))
-            }
-            DP::Left => {
-                let iter = unsafe {
-                    let change: &Change = change.borrow();
-                    let r: &Rope = {
-                        let c = (change as *const Change).as_ref().unwrap();
-                        c.as_ref()
-                    };
-                    r.chars_at(n)
-                };
-                Ok(Box::new(ReverseIter {
-                    _change: Some(change),
-                    iter,
-                }))
-            }
+            DP::Right => Ok(Box::new(Iter {
+                _change: change,
+                iter,
+            })),
+            DP::Left => Ok(Box::new(ReverseIter {
+                _change: Some(change),
+                iter,
+            })),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
+    /// Return the number of characters in the buffer.
     #[inline]
-    pub fn len_chars(&self) -> usize {
+    pub fn n_chars(&self) -> usize {
         let change = self.to_change();
         change.buf.len_chars()
     }
 
+    /// Return the character under the requested offset `char_idx`.
+    /// Note that `0 <= char_idx < n_chars`.
     #[inline]
     pub fn char(&self, char_idx: usize) -> char {
         let change = self.to_change();
@@ -449,7 +458,7 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn insert_char(&mut self, ch: char) -> Result<()> {
+    pub fn cmd_insert_char(&mut self, ch: char) -> Result<()> {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
@@ -460,7 +469,7 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn backspace(&mut self, n: usize) -> Result<()> {
+    pub fn cmd_backspace(&mut self, n: usize) -> Result<()> {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
@@ -471,14 +480,14 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn remove_at(&mut self, f: Bound<usize>, t: Bound<usize>) -> Result<()> {
+    pub fn cmd_remove_at(&mut self, from: Bound<usize>, to: Bound<usize>) -> Result<()> {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
         };
 
         *change = Change::to_next_change(change);
-        self.to_mut_change().remove_at(f, t)
+        self.to_mut_change().remove_at(from, to)
     }
 }
 
@@ -516,7 +525,7 @@ impl Buffer {
         Ok(evnt)
     }
 
-    pub fn mode_normal(&mut self) -> Result<()> {
+    fn mode_normal(&mut self) -> Result<()> {
         self.inner = match mem::replace(&mut self.inner, Default::default()) {
             Inner::Insert(ib) => Inner::Normal(ib.into()),
             inner @ Inner::Normal(_) => inner,
@@ -526,6 +535,16 @@ impl Buffer {
 }
 
 impl Buffer {
+    fn set_event_prefix(&mut self, prefix: Event) -> &mut Self {
+        match &mut self.inner {
+            Inner::Insert(_) => (),
+            Inner::Normal(NormalBuffer { evnt_prefix, .. }) => {
+                *evnt_prefix = prefix;
+            }
+        };
+        self
+    }
+
     fn to_insert_n(evnt: Event) -> (Option<usize>, Event) {
         use crate::event::{Event::Md, Mod};
 
@@ -561,7 +580,7 @@ impl Buffer {
                 Md(Mod::Open(n, DP::Left)) if n > 0 => {
                     c.as_mut_buffer().insert_repeat = n - 1;
                     mto_home(c, DP::Nope)?;
-                    c.as_mut_buffer().insert_char(NL)?;
+                    c.as_mut_buffer().cmd_insert_char(NL)?;
                     mto_left(c, 1, DP::Nobound)?;
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
@@ -569,7 +588,7 @@ impl Buffer {
                     c.as_mut_buffer().insert_repeat = n - 1;
                     mto_end(c)?;
                     mto_right(c, 1, DP::Nobound)?;
-                    c.as_mut_buffer().insert_char(NL)?;
+                    c.as_mut_buffer().cmd_insert_char(NL)?;
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 _ => (Inner::Normal(nb), Event::Noop),
@@ -675,25 +694,25 @@ impl Buffer {
             }
             // on going insert
             Char(ch, _) => {
-                c.as_mut_buffer().insert_char(ch)?;
+                c.as_mut_buffer().cmd_insert_char(ch)?;
                 Event::Noop
             }
             Backspace => {
-                c.as_mut_buffer().backspace(1)?;
+                c.as_mut_buffer().cmd_backspace(1)?;
                 Event::Noop
             }
             Enter => {
-                c.as_mut_buffer().insert_char(NL)?;
+                c.as_mut_buffer().cmd_insert_char(NL)?;
                 Event::Noop
             }
             Tab => {
-                c.as_mut_buffer().insert_char('\t')?;
+                c.as_mut_buffer().cmd_insert_char('\t')?;
                 Event::Noop
             }
             Delete => {
                 let from = Bound::Included(c.as_mut_buffer().to_cursor());
                 let to = from.clone();
-                c.as_mut_buffer().remove_at(from, to)?;
+                c.as_mut_buffer().cmd_remove_at(from, to)?;
                 Event::Noop
             }
             evnt => evnt,
@@ -1181,7 +1200,7 @@ pub fn mto_percent(c: &mut Context, n: usize) -> Result<Event> {
 pub fn mto_cursor(c: &mut Context, n: usize) -> Result<Event> {
     let b = c.as_mut_buffer();
     let cursor = b.to_cursor();
-    b.set_cursor(limite!(cursor + n, b.len_chars()));
+    b.set_cursor(limite!(cursor + n, b.n_chars()));
     Ok(Event::Noop)
 }
 
@@ -1408,7 +1427,7 @@ pub fn mto_sentence(c: &mut Context, e: Mto) -> Result<Event> {
                     }
                     (_, Some((_, ch))) => Some(ch),
                     (_, None) => {
-                        break b.len_chars().saturating_sub(1);
+                        break b.n_chars().saturating_sub(1);
                     }
                 };
             })
@@ -1456,7 +1475,7 @@ pub fn mto_para(c: &mut Context, evnt: Mto) -> Result<Event> {
                         Some(_) => (),
                         None => break b.line_to_char(row + i),
                     },
-                    None => break b.len_chars().saturating_sub(1),
+                    None => break b.n_chars().saturating_sub(1),
                 }
             };
             Ok(cursor)
