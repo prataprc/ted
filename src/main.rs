@@ -8,13 +8,13 @@ use structopt::StructOpt;
 use std::{ffi, fs, path};
 
 use ted::{
-    app_code::Code,
     config::Config,
     err_at,
     event::{Event, Ted},
     location::Location,
-    state::{App, State},
-    window::Coord,
+    state::State,
+    window::{Coord, Window},
+    window_code::WindowCode,
     Error, Result,
 };
 
@@ -107,9 +107,9 @@ fn run(opts: Opt) -> Result<()> {
         let config: Config = Default::default();
         State::new(config)?
     };
-    let app = {
+    let w = {
         let coord = Coord::new(1, 1, state.tm.rows, state.tm.cols);
-        App::Code(Code::new(coord))
+        Window::Code(Box::new(WindowCode::new(coord)))
     };
 
     let evnt = if opts.files.len() == 0 {
@@ -123,5 +123,5 @@ fn run(opts: Opt) -> Result<()> {
         Event::Td(Ted::OpenFiles { flocs })
     };
 
-    state.event_loop(app, evnt)
+    state.event_loop(w, evnt)
 }

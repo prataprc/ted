@@ -4,16 +4,19 @@ use crossterm::{
     execute, queue,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use log::{trace, warn};
+use log::trace;
 
 use std::{
     io::{self, Write},
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use crate::{
-    app_code::Code, buffer::Buffer, config::Config, event::Event, stats, window::Cursor, Error,
-    Result,
+    buffer::Buffer,
+    config::Config,
+    event::Event,
+    window::{Cursor, Window},
+    Error, Result,
 };
 
 // Application state
@@ -39,9 +42,9 @@ impl State {
         })
     }
 
-    pub fn event_loop(mut self, mut app: App, mut evnt: Event) -> Result<()> {
+    pub fn event_loop(mut self, mut w: Window, mut evnt: Event) -> Result<()> {
         let mut stdout = io::stdout();
-        let mut stats = stats::Latency::new();
+        let mut stats = Latency::new();
 
         let mut start = SystemTime::now();
 
@@ -53,13 +56,13 @@ impl State {
                 Event::Noop => Event::Noop,
                 evnt => {
                     err_at!(Fatal, queue!(stdout, term_cursor::Hide))?;
-                    let evnt = app.on_event(&mut self, evnt)?;
-                    app.on_refresh(&mut self)?;
+                    let evnt = w.on_event(&mut self, evnt)?;
+                    w.on_refresh(&mut self)?;
                     evnt
                 }
             };
             // show-cursor
-            let Cursor { col, row } = app.to_cursor();
+            let Cursor { col, row } = w.to_cursor();
             err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, row)))?;
             err_at!(Fatal, queue!(stdout, term_cursor::Show))?;
             err_at!(Fatal, stdout.flush())?;
@@ -133,49 +136,6 @@ impl State {
     }
 }
 
-pub enum App {
-    Code(Code),
-    None,
-}
-
-impl Default for App {
-    fn default() -> App {
-        App::None
-    }
-}
-
-impl App {
-    fn to_cursor(&self) -> Cursor {
-        match self {
-            App::Code(code) => code.to_cursor(),
-            App::None => {
-                warn!("application not selected !!");
-                Default::default()
-            }
-        }
-    }
-
-    fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
-        match self {
-            App::Code(code) => code.on_event(s, evnt),
-            App::None => {
-                warn!("application not selected !!");
-                Ok(Event::Noop)
-            }
-        }
-    }
-
-    fn on_refresh(&mut self, s: &mut State) -> Result<()> {
-        match self {
-            App::Code(code) => code.on_refresh(s),
-            App::None => {
-                warn!("application not selected !!");
-                Ok(())
-            }
-        }
-    }
-}
-
 pub struct Terminal {
     stdout: io::Stdout,
     pub cols: u16,
@@ -211,5 +171,88 @@ impl Drop for Terminal {
         )
         .unwrap();
         terminal::disable_raw_mode().unwrap();
+    }
+}
+
+#[derive(Clone, Default, Debug)]
+struct Latency {
+    samples: usize,
+    min: Duration,
+    max: Duration,
+    total: Duration,
+    durations: Vec<usize>,
+}
+
+impl Latency {
+    fn new() -> Latency {
+        let mut stats: Latency = Default::default();
+        stats.durations = Vec::with_capacity(256);
+        stats.durations.resize(256, 0);
+        stats
+    }
+
+    fn sample(&mut self, duration: Duration) {
+        self.samples += 1;
+        self.total += duration;
+        if self.min == Duration::from_nanos(0) || self.min > duration {
+            self.min = duration
+        }
+        if self.max == Duration::from_nanos(0) || self.max < duration {
+            self.max = duration
+        }
+        let off: usize = (duration.as_nanos() / 10_000_000) as usize;
+        self.durations[off] += 1;
+    }
+
+    #[allow(dead_code)]
+    fn samples(&self) -> usize {
+        self.samples
+    }
+
+    #[allow(dead_code)]
+    fn min(&self) -> Duration {
+        self.min
+    }
+
+    #[allow(dead_code)]
+    fn max(&self) -> Duration {
+        self.max
+    }
+
+    fn mean(&self) -> Duration {
+        self.total / (self.samples as u32)
+    }
+
+    fn percentiles(&self) -> Vec<(u8, usize)> {
+        let mut percentiles: Vec<(u8, usize)> = vec![];
+        let (mut acc, mut prev_perc) = (0_f64, 90_u8);
+        let iter = self
+            .durations
+            .iter()
+            .enumerate()
+            .filter(|(_, &item)| item > 0);
+        for (duration, samples) in iter {
+            acc += *samples as f64;
+            let perc = ((acc / (self.samples as f64)) * 100_f64) as u8;
+            if perc >= prev_perc {
+                percentiles.push((perc, duration));
+                prev_perc = perc;
+            }
+        }
+        percentiles
+    }
+
+    fn pretty_print(&self, prefix: &str) {
+        let mean = self.mean();
+        println!(
+            "{}duration (min, avg, max): {:?}",
+            prefix,
+            (self.min, mean, self.max)
+        );
+        for (duration, n) in self.percentiles().into_iter() {
+            if n > 0 {
+                println!("{}  {} percentile = {}", prefix, duration, n);
+            }
+        }
     }
 }

@@ -7,8 +7,8 @@ use crossterm::{
 use std::{fmt, ops::Add, result};
 
 use crate::{
-    buffer::Buffer, event::Event, state::State, window_edit::WindowEdit, window_file::WindowFile,
-    window_prompt::WindowPrompt, Result,
+    buffer::Buffer, event::Event, state::State, window_code::WindowCode, window_edit::WindowEdit,
+    window_file::WindowFile, window_prompt::WindowPrompt, Result,
 };
 
 #[macro_export]
@@ -64,9 +64,10 @@ macro_rules! span {
 }
 
 pub enum Window {
-    WF(WindowFile),
-    WE(WindowEdit),
-    WP(WindowPrompt),
+    Code(Box<WindowCode>),
+    File(Box<WindowFile>),
+    Edit(Box<WindowEdit>),
+    Prompt(Box<WindowPrompt>),
     None,
 }
 
@@ -79,27 +80,30 @@ impl Default for Window {
 impl Window {
     pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         match self {
-            Window::WF(w) => w.on_event(s, evnt),
-            Window::WE(w) => w.on_event(s, evnt),
-            Window::WP(w) => w.on_event(s, evnt),
+            Window::Code(w) => w.on_event(s, evnt),
+            Window::File(w) => w.on_event(s, evnt),
+            Window::Edit(w) => w.on_event(s, evnt),
+            Window::Prompt(w) => w.on_event(s, evnt),
             Window::None => Ok(evnt),
         }
     }
 
     pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
         match self {
-            Window::WF(w) => w.on_refresh(s),
-            Window::WE(w) => w.on_refresh(s),
-            Window::WP(w) => w.on_refresh(s),
+            Window::Code(w) => w.on_refresh(s),
+            Window::File(w) => w.on_refresh(s),
+            Window::Edit(w) => w.on_refresh(s),
+            Window::Prompt(w) => w.on_refresh(s),
             Window::None => Ok(()),
         }
     }
 
     pub fn to_cursor(&self) -> Cursor {
         match self {
-            Window::WF(w) => w.to_cursor(),
-            Window::WE(w) => w.to_cursor(),
-            Window::WP(w) => w.to_cursor(),
+            Window::Code(w) => w.to_cursor(),
+            Window::File(w) => w.to_cursor(),
+            Window::Edit(w) => w.to_cursor(),
+            Window::Prompt(w) => w.to_cursor(),
             Window::None => Default::default(),
         }
     }

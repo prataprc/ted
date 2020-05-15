@@ -8,23 +8,20 @@ pub mod util;
 pub mod buffer;
 pub mod config;
 pub mod event;
+mod ftype;
 pub mod ftype_txt_en;
-mod ftypes;
 mod keymap;
 mod keymap_ted;
 pub mod location;
-mod search;
-pub mod stats;
 #[macro_use]
 pub mod window;
-pub mod app_code;
 mod col_nu;
 pub mod state;
 mod view;
+pub mod window_code;
 pub mod window_edit;
 pub mod window_file;
 pub mod window_prompt;
-mod wrap_view;
 
 pub type Result<T> = result::Result<T, Error>;
 

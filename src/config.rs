@@ -98,7 +98,7 @@ pub fn load_config(app: &str, ftype: &str) -> Result<Config> {
             };
             let file3: path::PathBuf = {
                 let ftype_toml: ConfigFile = ftype.into();
-                [home.clone(), ".ted".into(), "ftypes".into(), ftype_toml.0]
+                [home.clone(), ".ted".into(), "ftype".into(), ftype_toml.0]
                     .iter()
                     .collect()
             };

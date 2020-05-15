@@ -3,6 +3,7 @@
 
 use lazy_static::lazy_static;
 use log::trace;
+use regex::Regex;
 use ropey::{self, Rope, RopeSlice};
 
 use std::{
@@ -17,10 +18,9 @@ use std::{
 
 use crate::{
     event::{Event, Mto, DP},
-    ftypes::FType,
+    ftype::FType,
     keymap::Keymap,
     location::Location,
-    search::Search,
     window::Context,
     {err_at, Error, Result},
 };
@@ -1583,5 +1583,71 @@ impl<'a> Iterator for ReverseIter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.prev()
+    }
+}
+
+#[derive(Clone)]
+struct Search {
+    re: Regex,
+    matches: Vec<(usize, usize)>, // byte (start, end)
+    dp: DP,
+}
+
+impl Search {
+    fn new(patt: &str, text: &str, dp: DP) -> Result<Search> {
+        let re = err_at!(BadPattern, Regex::new(patt), format!("{}", patt))?;
+        let matches = re.find_iter(text).map(|m| (m.start(), m.end())).collect();
+        Ok(Search { re, matches, dp })
+    }
+
+    fn iter(&self, byte_off: usize) -> impl Iterator<Item = (usize, usize)> {
+        match self.find(byte_off, &self.matches[..]) {
+            Some(i) => {
+                let mut ms = self.matches[i..].to_vec();
+                ms.extend(&self.matches[..i]);
+                ms.into_iter()
+            }
+            None => self.matches.clone().into_iter(),
+        }
+    }
+
+    fn rev(&self, byte_off: usize) -> impl Iterator<Item = (usize, usize)> {
+        match self.find(byte_off, &self.matches[..]) {
+            Some(i) => {
+                let mut ms = self.matches[i..].to_vec();
+                ms.extend(&self.matches[..i]);
+                ms.into_iter().rev()
+            }
+            None => self.matches.clone().into_iter().rev(),
+        }
+    }
+
+    fn find(&self, byte_off: usize, rs: &[(usize, usize)]) -> Option<usize> {
+        if rs.len() < 8
+        /* TODO: no magic number */
+        {
+            let mut iter = rs
+                .iter()
+                .enumerate()
+                .skip_while(|(_, (_, e))| *e < byte_off)
+                .skip_while(|(_, (s, _))| byte_off >= *s);
+            match iter.next() {
+                None => None,
+                Some((i, _)) => Some(i),
+            }
+        } else {
+            let m = rs.len() / 2;
+            match &rs[m] {
+                (_, e) if *e < byte_off => match self.find(byte_off, &rs[m..]) {
+                    None => None,
+                    Some(i) => Some(m + i),
+                },
+                (s, _) if byte_off >= *s => match self.find(byte_off, &rs[m..]) {
+                    None => None,
+                    Some(i) => Some(m + i),
+                },
+                _ => self.find(byte_off, &rs[..m]),
+            }
+        }
     }
 }
