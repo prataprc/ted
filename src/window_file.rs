@@ -92,8 +92,6 @@ impl WindowFile {
             let mut ss = vec![];
             if b.is_read_only() {
                 ss.push("read-only")
-            } else if b.is_insert_only() {
-                ss.push("insert-only")
             } else if b.is_modified() {
                 ss.push("modified")
             }

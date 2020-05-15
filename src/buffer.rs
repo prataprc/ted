@@ -1,4 +1,4 @@
-//! Module buffer implement editing and cursor movement commands
+//! Module `buffer` implement editing and cursor movement commands
 //! over text content.
 
 use lazy_static::lazy_static;
@@ -25,14 +25,18 @@ use crate::{
     {err_at, Error, Result},
 };
 
+/// Newline character supported by this buffer implementation.
 pub const NL: char = '\n';
+
+/// Maximum number of lines supported by this buffer implementation.
 pub const MAX_LINES: usize = 1_000_000_000;
 
 lazy_static! {
     static ref BUFFER_NUM: Mutex<usize> = Mutex::new(0);
 }
 
-// Cursor within the buffer, starts from (0, 0)
+/// Cursor within the buffer, where the first row, first column
+/// start from (0, 0).
 #[derive(Clone, Copy, Default, Debug)]
 pub struct Cursor {
     pub col: usize,
@@ -52,6 +56,12 @@ impl fmt::Display for Cursor {
 }
 
 impl Cursor {
+    /// Compute the difference between two cursor points. If `O` is
+    /// old-cursor and `N` is new-cursor then following should hold
+    /// true.
+    ///
+    /// * D = O - N;
+    /// * N = O + D;
     #[inline]
     pub fn diff(&self, new: &Self) -> (isize, isize) {
         let dcol = (new.col as isize) - (self.col as isize);
@@ -94,15 +104,23 @@ impl Ord for Cursor {
 // all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
 pub struct Buffer {
+    /// Globally counting buffer number.
     pub num: usize, // buffer number
+    /// Source for this buffer, typically a file from local disk.
     pub location: Location,
+    /// Mark this buffer read-only, in which case insert ops are not allowed.
     pub read_only: bool,
-    pub insert_only: bool,
+    /// Last search command applied on this buffer.
     pub mto_pattern: Mto,
+    /// Last find character (within the line) command  applied on this buffer.
     pub mto_find_char: Mto,
+    /// Number of times to repeat an insert operation.
     pub insert_repeat: usize,
+    /// Collection of events applied during the last insert session.
     pub last_inserts: Vec<Event>,
+    /// Keymap plugin for this buffer.
     pub keymap: Keymap,
+    /// File-type plugin for this buffer.
     pub ftype: FType,
 
     inner: Inner,
@@ -132,7 +150,6 @@ impl Buffer {
             num: *num,
             location: Default::default(),
             read_only: false,
-            insert_only: false,
             insert_repeat: Default::default(),
             last_inserts: Default::default(),
             mto_find_char: Default::default(),
@@ -170,11 +187,6 @@ impl Buffer {
 
     pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
         self.read_only = read_only;
-        self
-    }
-
-    pub fn set_insert_only(&mut self, insert_only: bool) -> &mut Self {
-        self.insert_only = insert_only;
         self
     }
 
@@ -220,11 +232,6 @@ impl Buffer {
     #[inline]
     pub fn is_read_only(&self) -> bool {
         self.read_only
-    }
-
-    #[inline]
-    pub fn is_insert_only(&self) -> bool {
-        self.insert_only
     }
 
     #[inline]
