@@ -17,7 +17,9 @@ mod search;
 pub mod stats;
 #[macro_use]
 pub mod window;
+pub mod app_code;
 mod col_nu;
+pub mod state;
 mod view;
 pub mod window_edit;
 pub mod window_file;

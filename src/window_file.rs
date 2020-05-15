@@ -10,7 +10,8 @@ use std::{
 use crate::{
     buffer::Buffer,
     event::{Event, Ted},
-    window::{Coord, Cursor, Span, State},
+    state::State,
+    window::{Coord, Cursor, Span},
     window_edit::WindowEdit,
     Error, Result,
 };

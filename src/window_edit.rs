@@ -3,8 +3,9 @@ use std::{fmt, result};
 use crate::{
     buffer::{self, Buffer},
     event::{Event, Ted},
+    state::State,
     view,
-    window::{Context, Coord, Cursor, State},
+    window::{Context, Coord, Cursor},
     Result,
 };
 

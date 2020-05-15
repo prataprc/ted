@@ -1,33 +1,20 @@
 #![feature(backtrace)]
 #![feature(box_syntax)]
 
-use crossterm::{
-    self, cursor,
-    event::{self as ct_event, Event as TermEvent},
-    event::{DisableMouseCapture, EnableMouseCapture},
-    execute, queue,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
-};
 use dirs;
-use log::trace;
 use simplelog;
 use structopt::StructOpt;
 
-use std::{
-    ffi, fs,
-    io::{self, Write},
-    mem, path,
-    time::SystemTime,
-};
+use std::{ffi, fs, path};
 
 use ted::{
+    app_code::Code,
     config::Config,
     err_at,
     event::{Event, Ted},
     location::Location,
-    stats,
-    window::{Coord, Cursor, State, Window},
-    window_file::WindowFile,
+    state::{App, State},
+    window::Coord,
     Error, Result,
 };
 
@@ -71,7 +58,7 @@ fn main() {
         fs::write("ted-panic.out", strng.as_bytes()).unwrap();
     });
 
-    match Application::run(opts) {
+    match run(opts) {
         Ok(_) => (),
         Err(err) => println!("{}", err),
     }
@@ -115,147 +102,26 @@ fn init_logger(opts: &Opt) -> Result<()> {
     Ok(())
 }
 
-struct Application {
-    tm: Terminal,
-    s: State,
-}
-
-impl Application {
-    fn run(opts: Opt) -> Result<()> {
+fn run(opts: Opt) -> Result<()> {
+    let state = {
         let config: Config = Default::default();
-        let app = {
-            let tm = Terminal::init()?;
-            let s = {
-                let coord = Coord::new(1, 1, tm.rows, tm.cols);
-                State::new(config, Window::WF(WindowFile::new(coord)))
-            };
-            Application { tm, s }
-        };
+        State::new(config)?
+    };
+    let app = {
+        let coord = Coord::new(1, 1, state.tm.rows, state.tm.cols);
+        App::Code(Code::new(coord))
+    };
 
-        let evnt = if opts.files.len() == 0 {
-            Event::Td(Ted::NewBuffer)
-        } else {
-            let mut flocs = vec![];
-            for f in opts.files.clone().into_iter() {
-                let f: ffi::OsString = f.into();
-                flocs.push(Location::new_disk(&f));
-            }
-            Event::Td(Ted::OpenFiles { flocs })
-        };
+    let evnt = if opts.files.len() == 0 {
+        Event::Td(Ted::NewBuffer)
+    } else {
+        let mut flocs = vec![];
+        for f in opts.files.clone().into_iter() {
+            let f: ffi::OsString = f.into();
+            flocs.push(Location::new_disk(&f));
+        }
+        Event::Td(Ted::OpenFiles { flocs })
+    };
 
-        app.event_loop(evnt)
-    }
-
-    fn event_loop(mut self, mut evnt: Event) -> Result<()> {
-        let mut stats = stats::Latency::new();
-
-        let mut s = mem::replace(&mut self.s, Default::default());
-        let mut start = SystemTime::now();
-
-        // TODO: later statistics can be moved to a different release stream
-        // and or controlled by command line option.
-        let res = loop {
-            // hide cursor, handle event and refresh window
-            let _evnt = match evnt {
-                Event::Noop => Event::Noop,
-                evnt => {
-                    err_at!(Fatal, queue!(self.tm.stdout, cursor::Hide))?;
-                    let evnt = s.on_event(evnt)?;
-                    s.on_refresh()?;
-                    evnt
-                }
-            };
-            // show-cursor
-            let Cursor { col, row } = s.to_window_cursor();
-            err_at!(Fatal, queue!(self.tm.stdout, cursor::MoveTo(col, row)))?;
-            err_at!(Fatal, queue!(self.tm.stdout, cursor::Show))?;
-            err_at!(Fatal, self.tm.stdout.flush())?;
-
-            stats.sample(start.elapsed().unwrap());
-            // new event
-            evnt = {
-                let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
-                trace!("{:?} Cursor:({},{})", tevnt, col, row);
-                match tevnt.clone().into() {
-                    Event::Char('q', m) if m.is_empty() => break Ok(()),
-                    evnt => evnt,
-                }
-            };
-            start = SystemTime::now();
-        };
-
-        stats.pretty_print("");
-
-        res
-    }
-
-    //fn do_open_files(mut self, mut flocs: Vec<event::OpenFile>) -> Result<Self> {
-    //    let inner = mem::replace(&mut self.inner, Default::default());
-    //    self.inner = match inner {
-    //        Inner::Usual { window } => {
-    //            let mut fds = vec![];
-    //            loop {
-    //                let floc = flocs.remove(0);
-    //                let pw: Result<WindowPrompt> = floc.clone().try_into();
-    //                match pw {
-    //                    Err(_) => {
-    //                        fds.push(floc);
-    //                        break Inner::Usual { window };
-    //                    }
-    //                    Ok(pw) => {
-    //                        flocs.insert(0, floc);
-    //                        break Inner::OpenFiles {
-    //                            pw,
-    //                            window,
-    //                            flocs,
-    //                            fds,
-    //                        };
-    //                    }
-    //                }
-    //            }
-    //        }
-    //        val @ Inner::OpenFiles { .. } => val,
-    //        Inner::None => err_at!(Fatal, msg: format!("unreachable"))?,
-    //    };
-
-    //    Ok(self)
-    //}
-}
-
-struct Terminal {
-    stdout: io::Stdout,
-    cols: u16,
-    rows: u16,
-}
-
-impl Terminal {
-    fn init() -> Result<Terminal> {
-        let mut stdout = io::stdout();
-        err_at!(Fatal, terminal::enable_raw_mode())?;
-        err_at!(
-            Fatal,
-            execute!(
-                stdout,
-                EnterAlternateScreen,
-                EnableMouseCapture,
-                cursor::Hide
-            )
-        )?;
-
-        let (cols, rows) = err_at!(Fatal, terminal::size())?;
-        Ok(Terminal { stdout, cols, rows })
-    }
-}
-
-impl Drop for Terminal {
-    fn drop(&mut self) {
-        execute!(
-            self.stdout,
-            LeaveAlternateScreen,
-            DisableMouseCapture,
-            cursor::Show
-        )
-        .unwrap();
-        terminal::disable_raw_mode().unwrap();
-    }
+    state.event_loop(app, evnt)
 }

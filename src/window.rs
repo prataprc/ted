@@ -1,13 +1,13 @@
 use crossterm::{
-    cursor as term_cursor,
+    self, cursor as term_cursor,
     style::{self, Attribute, Color},
     Command,
 };
 
-use std::{fmt, mem, ops::Add, result};
+use std::{fmt, ops::Add, result};
 
 use crate::{
-    buffer::Buffer, config::Config, event::Event, window_edit::WindowEdit, window_file::WindowFile,
+    buffer::Buffer, event::Event, state::State, window_edit::WindowEdit, window_file::WindowFile,
     window_prompt::WindowPrompt, Result,
 };
 
@@ -63,110 +63,6 @@ macro_rules! span {
     }};
 }
 
-// Application state
-pub struct State {
-    config: Config,
-    buffers: Vec<Buffer>,
-    window: Window,
-}
-
-impl Default for State {
-    fn default() -> State {
-        let coord: Coord = Default::default();
-        State {
-            buffers: Default::default(),
-            config: Default::default(),
-            window: Window::WF(WindowFile::new(coord)),
-        }
-    }
-}
-
-impl AsRef<Config> for State {
-    fn as_ref(&self) -> &Config {
-        &self.config
-    }
-}
-
-impl State {
-    pub fn new(config: Config, window: Window) -> State {
-        State {
-            buffers: Default::default(),
-            config,
-            window: window,
-        }
-    }
-
-    pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
-        let i = {
-            let mut iter = self.buffers.iter().enumerate();
-            loop {
-                match iter.next() {
-                    Some((i, b)) if b.to_id() == id => break Some(i),
-                    None => break None,
-                    _ => (),
-                }
-            }
-        };
-        match i {
-            Some(i) => Some(self.buffers.remove(i)),
-            None => None,
-        }
-    }
-
-    pub fn add_buffer(&mut self, buffer: Buffer) {
-        self.buffers.insert(0, buffer)
-    }
-}
-
-impl State {
-    pub fn as_buffer(&self, id: &str) -> &Buffer {
-        for b in self.buffers.iter() {
-            if b.to_id() == id {
-                return b;
-            }
-        }
-        unreachable!()
-    }
-
-    pub fn as_mut_buffer(&mut self, id: &str) -> &mut Buffer {
-        for b in self.buffers.iter_mut() {
-            if b.to_id() == id {
-                return b;
-            }
-        }
-        unreachable!()
-    }
-
-    pub fn to_window_cursor(&self) -> Cursor {
-        self.window.to_cursor()
-    }
-
-    pub fn to_buffer_num(&self, id: String) -> Option<usize> {
-        for b in self.buffers.iter() {
-            if b.to_id() == id {
-                return Some(b.to_num());
-            }
-        }
-        None
-    }
-}
-
-impl State {
-    pub fn on_event(&mut self, mut evnt: Event) -> Result<Event> {
-        let mut window = mem::replace(&mut self.window, Default::default());
-        evnt = window.on_event(self, evnt)?;
-        self.window = window;
-        Ok(evnt)
-    }
-
-    pub fn on_refresh(&mut self) -> Result<()> {
-        let mut window = mem::replace(&mut self.window, Default::default());
-        window.on_refresh(self)?;
-        self.window = window;
-        Ok(())
-    }
-}
-
 pub enum Window {
     WF(WindowFile),
     WE(WindowEdit),
@@ -181,7 +77,7 @@ impl Default for Window {
 }
 
 impl Window {
-    fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         match self {
             Window::WF(w) => w.on_event(s, evnt),
             Window::WE(w) => w.on_event(s, evnt),
@@ -190,7 +86,7 @@ impl Window {
         }
     }
 
-    fn on_refresh(&mut self, s: &mut State) -> Result<()> {
+    pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
         match self {
             Window::WF(w) => w.on_refresh(s),
             Window::WE(w) => w.on_refresh(s),
@@ -199,7 +95,7 @@ impl Window {
         }
     }
 
-    fn to_cursor(&self) -> Cursor {
+    pub fn to_cursor(&self) -> Cursor {
         match self {
             Window::WF(w) => w.to_cursor(),
             Window::WE(w) => w.to_cursor(),

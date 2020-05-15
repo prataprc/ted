@@ -10,7 +10,8 @@ use std::{
 
 use crate::{
     event::{self, Event, Ted},
-    window::{Coord, Cursor, Span, State},
+    state::State,
+    window::{Coord, Cursor, Span},
     Error, Result,
 };
 

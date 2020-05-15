@@ -12,7 +12,8 @@ use crate::{
     buffer::{self, Buffer, NL},
     col_nu::ColNu,
     event::DP,
-    window::{Coord, Cursor, Span, State},
+    state::State,
+    window::{Coord, Cursor, Span},
     wrap_view::WrapView,
     Error, Result,
 };
