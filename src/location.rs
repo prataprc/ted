@@ -1,3 +1,5 @@
+//! Module `location` implement the backing source for a buffer.
+
 use dirs;
 use lazy_static::lazy_static;
 
@@ -9,7 +11,7 @@ lazy_static! {
     static ref ANONYMOUS_COUNT: Mutex<usize> = Mutex::new(0);
 }
 
-// Location of buffer's content, typically a persistent medium.
+/// Location of buffer's content, typically a persistent medium.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Location {
     Anonymous(String),
@@ -17,12 +19,16 @@ pub enum Location {
 }
 
 impl Location {
+    /// Create a anonymous location for buffer.
     pub fn new_anonymous() -> Location {
         let mut count = ANONYMOUS_COUNT.lock().unwrap();
         *count = *count + 1;
         Location::Anonymous(format!("newfile-{}", count))
     }
 
+    /// Create a new Disk location for buffer. `loc` can be absolute path,
+    /// relative path to current-directory or start with `~` relative to
+    /// home-directory.
     pub fn new_disk(loc: &ffi::OsStr) -> Location {
         match loc.to_os_string().into_string() {
             Ok(loc) => Location::Disk(Self::canonicalize(loc).into_os_string()),
@@ -30,17 +36,19 @@ impl Location {
         }
     }
 
-    pub fn to_short_string(&self) -> Result<ffi::OsString> {
-        match self {
-            Location::Anonymous(_) => Ok("[no name]".to_string().into()),
-            Location::Disk(s) => Self::shrink_home(&Self::shrink_cwd(s)?),
-        }
-    }
-
+    /// Return full path of the location, for display purpose.
     pub fn to_long_string(&self) -> Result<ffi::OsString> {
         match self {
             Location::Anonymous(_) => Ok("[no name]".to_string().into()),
             Location::Disk(s) => Ok(s.to_os_string()),
+        }
+    }
+
+    /// Return shrunk, but meaningful, version of path for display purpose.
+    pub fn to_short_string(&self) -> Result<ffi::OsString> {
+        match self {
+            Location::Anonymous(_) => Ok("[no name]".to_string().into()),
+            Location::Disk(s) => Self::shrink_home(&Self::shrink_cwd(s)?),
         }
     }
 

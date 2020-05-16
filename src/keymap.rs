@@ -1,4 +1,4 @@
-use crate::{event::Event, keymap_ted::KeyTed, window::Context, Result};
+use crate::{event::Event, keymap_ted::KeyTed, state::Context, Result};
 
 #[derive(Clone)]
 pub enum Keymap {
@@ -12,12 +12,7 @@ impl Default for Keymap {
 }
 
 impl Keymap {
-    pub fn fold(
-        //
-        &mut self,
-        c: &mut Context,
-        evnt: Event,
-    ) -> Result<(Event, Event)> {
+    pub fn fold(&mut self, c: &mut Context, evnt: Event) -> Result<(Event, Event)> {
         match self {
             Keymap::Ted(km) => km.fold(c, evnt),
         }

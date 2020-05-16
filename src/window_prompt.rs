@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     event::{self, Event, Ted},
-    state::State,
+    state::Context,
     window::{Coord, Cursor, Span},
     Error, Result,
 };
@@ -33,7 +33,7 @@ impl fmt::Display for WindowPrompt {
 
 impl From<Vec<Span>> for WindowPrompt {
     fn from(spans: Vec<Span>) -> WindowPrompt {
-        WindowPrompt::new(spans).ok().unwrap()
+        WindowPrompt::new(spans)
     }
 }
 
@@ -67,15 +67,15 @@ impl TryFrom<event::OpenFile> for WindowPrompt {
 
 impl WindowPrompt {
     #[inline]
-    pub fn new(prompt_lines: Vec<Span>) -> Result<WindowPrompt> {
-        Ok(WindowPrompt {
+    pub fn new(prompt_lines: Vec<Span>) -> WindowPrompt {
+        WindowPrompt {
             coord: Default::default(),
             prompt_lines,
             prompt_cursor: Default::default(),
             rendered: false,
 
             input: Default::default(),
-        })
+        }
     }
 
     pub fn set_coord(&mut self, coord: Coord) -> &mut Self {
@@ -96,7 +96,25 @@ impl WindowPrompt {
         Default::default()
     }
 
-    pub fn on_refresh(&mut self, _: &mut State) -> Result<()> {
+    pub fn on_event(&mut self, _: &mut Context, mut evnt: Event) -> Result<Event> {
+        evnt = match evnt {
+            Event::Backspace => {
+                self.input.pop();
+                Event::Noop
+            }
+            Event::Enter => Event::Td(Ted::PromptReply {
+                input: self.input.clone(),
+            }),
+            Event::Char(ch, _m) => {
+                self.input.push(ch);
+                Event::Noop
+            }
+            _ => Event::Noop,
+        };
+        Ok(evnt)
+    }
+
+    pub fn on_refresh(&mut self, _: &mut Context) -> Result<()> {
         let mut stdout = io::stdout();
 
         if !self.rendered {
@@ -118,23 +136,5 @@ impl WindowPrompt {
         }
 
         Ok(())
-    }
-
-    pub fn on_event(&mut self, _: &mut State, mut evnt: Event) -> Result<Event> {
-        evnt = match evnt {
-            Event::Backspace => {
-                self.input.pop();
-                Event::Noop
-            }
-            Event::Enter => Event::Td(Ted::PromptReply {
-                input: self.input.clone(),
-            }),
-            Event::Char(ch, _m) => {
-                self.input.push(ch);
-                Event::Noop
-            }
-            _ => Event::Noop,
-        };
-        Ok(evnt)
     }
 }

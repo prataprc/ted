@@ -50,17 +50,22 @@ impl State {
 
         // TODO: later statistics can be moved to a different release stream
         // and or controlled by command line option.
-        let res = loop {
+        let res = 'a: loop {
             // hide cursor, handle event and refresh window
-            let _evnt = match evnt {
-                Event::Noop => Event::Noop,
-                evnt => {
-                    err_at!(Fatal, queue!(stdout, term_cursor::Hide))?;
-                    let evnt = w.on_event(&mut self, evnt)?;
-                    w.on_refresh(&mut self)?;
-                    evnt
+            err_at!(Fatal, queue!(stdout, term_cursor::Hide))?;
+            let evnts: Vec<Event> = evnt.into();
+            for evnt in evnts.into_iter() {
+                let evnts = {
+                    let mut c = self.to_context();
+                    let evnts: Vec<Event> = w.on_event(&mut c, evnt)?.into();
+                    w.on_refresh(&mut c)?;
+                    evnts
+                };
+                match self.on_events(evnts).unwrap_or("".to_string()).as_str() {
+                    "quit" => break 'a Ok(()),
+                    _ => (),
                 }
-            };
+            }
             // show-cursor
             let Cursor { col, row } = w.to_cursor();
             err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, row)))?;
@@ -72,10 +77,7 @@ impl State {
             evnt = {
                 let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
                 trace!("{:?} Cursor:({},{})", tevnt, col, row);
-                match tevnt.clone().into() {
-                    Event::Char('q', m) if m.is_empty() => break Ok(()),
-                    evnt => evnt,
-                }
+                tevnt.clone().into()
             };
             start = SystemTime::now();
         };
@@ -85,25 +87,26 @@ impl State {
         res
     }
 
-    pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
-        let i = {
-            let mut iter = self.buffers.iter().enumerate();
-            loop {
-                match iter.next() {
-                    Some((i, b)) if b.to_id() == id => break Some(i),
-                    None => break None,
-                    _ => (),
-                }
-            }
-        };
-        match i {
-            Some(i) => Some(self.buffers.remove(i)),
-            None => None,
+    fn to_context(&mut self) -> Context {
+        Context {
+            state: self,
+            w: Default::default(),
+            buffer: Default::default(),
         }
     }
 
-    pub fn add_buffer(&mut self, buffer: Buffer) {
-        self.buffers.insert(0, buffer)
+    fn on_events(&mut self, evnts: Vec<Event>) -> Option<String> {
+        let mut iter = evnts.into_iter();
+        loop {
+            match iter.next() {
+                Some(Event::Char('q', m)) if m.is_empty() => {
+                    let s = "quit".to_string();
+                    break Some(s);
+                }
+                Some(_) => (),
+                None => break None,
+            }
+        }
     }
 }
 
@@ -253,6 +256,81 @@ impl Latency {
             if n > 0 {
                 println!("{}  {} percentile = {}", prefix, duration, n);
             }
+        }
+    }
+}
+
+pub struct Context<'a> {
+    pub state: &'a mut State,
+    pub w: Window,
+    pub buffer: Option<Buffer>,
+}
+
+impl<'a> AsRef<Buffer> for Context<'a> {
+    fn as_ref(&self) -> &Buffer {
+        self.buffer.as_ref().unwrap()
+    }
+}
+
+impl<'a> AsMut<Buffer> for Context<'a> {
+    fn as_mut(&mut self) -> &mut Buffer {
+        self.buffer.as_mut().unwrap()
+    }
+}
+
+impl<'a> AsRef<State> for Context<'a> {
+    fn as_ref(&self) -> &State {
+        &self.state
+    }
+}
+
+impl<'a> AsMut<State> for Context<'a> {
+    fn as_mut(&mut self) -> &mut State {
+        &mut self.state
+    }
+}
+
+impl<'a> AsRef<Window> for Context<'a> {
+    fn as_ref(&self) -> &Window {
+        &self.w
+    }
+}
+
+impl<'a> AsMut<Window> for Context<'a> {
+    fn as_mut(&mut self) -> &mut Window {
+        &mut self.w
+    }
+}
+
+impl<'a> Context<'a> {
+    #[inline]
+    pub fn as_buffer(&self) -> &Buffer {
+        self.buffer.as_ref().unwrap()
+    }
+
+    #[inline]
+    pub fn as_mut_buffer(&mut self) -> &mut Buffer {
+        self.buffer.as_mut().unwrap()
+    }
+
+    pub fn add_buffer(&mut self, buffer: Buffer) {
+        self.state.buffers.insert(0, buffer)
+    }
+
+    pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
+        let i = {
+            let mut iter = self.state.buffers.iter().enumerate();
+            loop {
+                match iter.next() {
+                    Some((i, b)) if b.to_id() == id => break Some(i),
+                    None => break None,
+                    _ => (),
+                }
+            }
+        };
+        match i {
+            Some(i) => Some(self.state.buffers.remove(i)),
+            None => None,
         }
     }
 }

@@ -7,8 +7,7 @@ use crossterm::{
 use std::{fmt, ops::Add, result};
 
 use crate::{
-    buffer::Buffer, event::Event, state::State, window_code::WindowCode, window_edit::WindowEdit,
-    window_file::WindowFile, window_prompt::WindowPrompt, Result,
+    event::Event, state::Context, window_code::WindowCode, window_line::WindowLine, Result,
 };
 
 #[macro_export]
@@ -63,11 +62,22 @@ macro_rules! span {
     }};
 }
 
+pub fn new_window_line(typ: &str, mut coord: Coord) -> WindowLine {
+    let (col, _) = coord.to_origin();
+    let (hgt, wth) = coord.to_size();
+    let row = match typ {
+        "cmdline" => hgt.saturating_sub(2),
+        "stsline" => hgt.saturating_sub(2),
+        "tbcline" => hgt.saturating_sub(3),
+        _ => unreachable!(),
+    };
+    coord = Coord::new(col, row, 1, wth);
+    WindowLine::new("cmd-line", coord)
+}
+
+#[derive(Clone)]
 pub enum Window {
     Code(Box<WindowCode>),
-    File(Box<WindowFile>),
-    Edit(Box<WindowEdit>),
-    Prompt(Box<WindowPrompt>),
     None,
 }
 
@@ -78,86 +88,39 @@ impl Default for Window {
 }
 
 impl Window {
-    pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
+    pub fn status(&self, span: Span) {
         match self {
-            Window::Code(w) => w.on_event(s, evnt),
-            Window::File(w) => w.on_event(s, evnt),
-            Window::Edit(w) => w.on_event(s, evnt),
-            Window::Prompt(w) => w.on_event(s, evnt),
-            Window::None => Ok(evnt),
+            Window::Code(w) => w.status(span),
+            Window::None => (),
         }
     }
 
-    pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
+    pub fn tab_complete(&self, span: Span) {
         match self {
-            Window::Code(w) => w.on_refresh(s),
-            Window::File(w) => w.on_refresh(s),
-            Window::Edit(w) => w.on_refresh(s),
-            Window::Prompt(w) => w.on_refresh(s),
-            Window::None => Ok(()),
+            Window::Code(w) => w.tab_complete(span),
+            Window::None => (),
         }
     }
 
     pub fn to_cursor(&self) -> Cursor {
         match self {
             Window::Code(w) => w.to_cursor(),
-            Window::File(w) => w.to_cursor(),
-            Window::Edit(w) => w.to_cursor(),
-            Window::Prompt(w) => w.to_cursor(),
             Window::None => Default::default(),
         }
     }
-}
 
-pub struct Context<'a> {
-    pub state: &'a mut State,
-    pub buffer: Buffer,
-}
-
-impl<'a> AsRef<Buffer> for Context<'a> {
-    fn as_ref(&self) -> &Buffer {
-        &self.buffer
-    }
-}
-
-impl<'a> AsRef<State> for Context<'a> {
-    fn as_ref(&self) -> &State {
-        &self.state
-    }
-}
-
-impl<'a> AsMut<Buffer> for Context<'a> {
-    fn as_mut(&mut self) -> &mut Buffer {
-        &mut self.buffer
-    }
-}
-
-impl<'a> AsMut<State> for Context<'a> {
-    fn as_mut(&mut self) -> &mut State {
-        &mut self.state
-    }
-}
-
-impl<'a> Context<'a> {
-    pub fn new(s: &'a mut State, buffer: Buffer) -> Context<'a> {
-        Context { state: s, buffer }
+    pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+        match self {
+            Window::Code(w) => w.on_event(c, evnt),
+            Window::None => Ok(evnt),
+        }
     }
 
-    #[inline]
-    pub fn as_buffer(&self) -> &Buffer {
-        &self.buffer
-    }
-
-    #[inline]
-    pub fn as_mut_buffer(&mut self) -> &mut Buffer {
-        &mut self.buffer
-    }
-}
-
-impl<'a> Context<'a> {
-    #[inline]
-    pub fn to_event_prefix(&self) -> Event {
-        self.as_buffer().to_event_prefix()
+    pub fn on_refresh(&mut self, c: &mut Context) -> Result<()> {
+        match self {
+            Window::Code(w) => w.on_refresh(c),
+            Window::None => Ok(()),
+        }
     }
 }
 
@@ -314,7 +277,7 @@ impl Cursor {
 }
 
 // Span object to render on screen.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct Span {
     text: String,
     fg: Option<Color>,

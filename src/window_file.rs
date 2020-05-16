@@ -10,9 +10,10 @@ use std::{
 use crate::{
     buffer::Buffer,
     event::{Event, Ted},
-    state::State,
-    window::{Coord, Cursor, Span},
+    state::{Context, State},
+    window::{new_window_line, Coord, Cursor, Span},
     window_edit::WindowEdit,
+    window_line::WindowLine,
     Error, Result,
 };
 
@@ -30,6 +31,7 @@ pub struct WindowFile {
     coord: Coord, // x window coord.
     show_statusfile: bool,
     we: WindowEdit,
+    stsline: WindowLine,
     // cached parameters.
     we_hgt: i16,
     we_wth: i16,
@@ -49,6 +51,7 @@ impl WindowFile {
             coord,
             show_statusfile: false,
             we,
+            stsline: new_window_line("stsline", coord),
             we_hgt: 0,
             we_wth: 0,
         }
@@ -140,45 +143,54 @@ impl WindowFile {
 
 impl WindowFile {
     #[inline]
+    pub fn status(&self, _span: Span) {
+        // self.stsline.render(span)
+        todo!()
+    }
+
+    #[inline]
+    pub fn tab_complete(&self, _span: Span) {
+        ()
+    }
+
+    #[inline]
     pub fn to_cursor(&self) -> Cursor {
         self.we.to_cursor()
     }
 
-    pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
-        self.do_refresh(s)?;
-        self.we.on_refresh(s)?;
-        if self.show_statusfile {
-            let mut stdout = io::stdout();
-            let span = self.status_line(s)?;
-            err_at!(Fatal, queue!(stdout, span))?;
-            self.show_statusfile = false;
-        }
-
-        Ok(())
-    }
-
-    pub fn on_event(&mut self, s: &mut State, mut evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, c: &mut Context, mut evnt: Event) -> Result<Event> {
         use crate::event::Event::Td;
 
         evnt = match evnt {
             Td(Ted::NewBuffer) => {
-                let (buffer_id, buffer) = {
-                    let mut b = Buffer::empty()?;
-                    b.set_location(Default::default());
-                    (b.to_id(), b)
-                };
-                s.add_buffer(buffer);
+                let buffer = Buffer::empty();
+                let buffer_id = buffer.to_id();
+                c.add_buffer(buffer);
                 Event::Td(Ted::UseBuffer { buffer_id })
             }
             evnt => evnt,
         };
 
-        match self.we.on_event(s, evnt)? {
+        match self.we.on_event(c, evnt)? {
             Td(Ted::StatusFile { .. }) => {
                 self.show_statusfile = true;
                 Ok(Event::Noop)
             }
             evnt => Ok(evnt),
         }
+    }
+
+    pub fn on_refresh(&mut self, c: &mut Context) -> Result<()> {
+        self.do_refresh(&mut c.state)?;
+        self.we.on_refresh(c)?;
+
+        if self.show_statusfile {
+            let mut stdout = io::stdout();
+            let span = self.status_line(&mut c.state)?;
+            err_at!(Fatal, queue!(stdout, span))?;
+            self.show_statusfile = false;
+        }
+
+        Ok(())
     }
 }

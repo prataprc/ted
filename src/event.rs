@@ -4,88 +4,6 @@ use std::{convert::TryFrom, ffi, fmt, fs, path, result};
 
 use crate::{location::Location, window::Spanline, Error, Result};
 
-pub enum OpenFile {
-    ReadWrite(fs::File, ffi::OsString),
-    ReadOnly(fs::File, ffi::OsString),
-    NotFound(ffi::OsString),
-    NoPermission(ffi::OsString),
-}
-
-impl Clone for OpenFile {
-    fn clone(&self) -> Self {
-        match self {
-            OpenFile::ReadWrite(_, floc) => {
-                let mut opts = fs::OpenOptions::new();
-                let fd = opts.read(true).write(true).open(floc).unwrap();
-                OpenFile::ReadWrite(fd, floc.clone())
-            }
-            OpenFile::ReadOnly(_, floc) => {
-                let mut opts = fs::OpenOptions::new();
-                let fd = opts.read(true).open(floc).unwrap();
-                OpenFile::ReadOnly(fd, floc.clone())
-            }
-            OpenFile::NotFound(floc) => OpenFile::NotFound(floc.clone()),
-            OpenFile::NoPermission(floc) => OpenFile::NoPermission(floc.clone()),
-        }
-    }
-}
-
-impl From<ffi::OsString> for OpenFile {
-    fn from(floc: ffi::OsString) -> Self {
-        let mut opts = fs::OpenOptions::new();
-        match opts.read(true).write(true).open(&floc) {
-            Ok(fd) => OpenFile::ReadWrite(fd, floc),
-            Err(_) => match opts.read(true).open(&floc) {
-                Ok(fd) => OpenFile::ReadOnly(fd, floc),
-                Err(_) => {
-                    let p = path::Path::new(&floc);
-                    if p.is_file() {
-                        OpenFile::NoPermission(floc)
-                    } else {
-                        OpenFile::NotFound(floc)
-                    }
-                }
-            },
-        }
-    }
-}
-
-impl From<String> for OpenFile {
-    fn from(floc: String) -> Self {
-        let f: &ffi::OsStr = floc.as_ref();
-        f.to_os_string().into()
-    }
-}
-
-impl TryFrom<OpenFile> for fs::File {
-    type Error = Error;
-
-    fn try_from(of: OpenFile) -> Result<fs::File> {
-        match of {
-            OpenFile::ReadWrite(fd, _) => Ok(fd),
-            OpenFile::ReadOnly(fd, _) => Ok(fd),
-            OpenFile::NotFound(floc) => {
-                let mut opts = fs::OpenOptions::new();
-                err_at!(
-                    IOError,
-                    opts.read(true).write(true).open(&floc),
-                    format!("{:?}", floc)
-                )?;
-                unreachable!()
-            }
-            OpenFile::NoPermission(floc) => {
-                let mut opts = fs::OpenOptions::new();
-                err_at!(
-                    IOError,
-                    opts.read(true).write(true).open(&floc),
-                    format!("{:?}", floc)
-                )?;
-                unreachable!()
-            }
-        }
-    }
-}
-
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DP {
     Left,
@@ -287,6 +205,7 @@ pub enum Event {
     Td(Ted),
     List(Vec<Event>),
     // other events
+    Cmd(String, String), // (command-name, arguments)
     FKey(u8, KeyModifiers),
     BackTab,
     Noop,
@@ -294,7 +213,7 @@ pub enum Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Event::{BackTab, FKey, List, Md, Mt, Noop, Op, Td};
+        use Event::{BackTab, Cmd, FKey, List, Md, Mt, Noop, Op, Td};
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
 
         match self {
@@ -314,6 +233,7 @@ impl fmt::Display for Event {
             Mt(mt) => write!(f, "mt({})", mt),
             Td(td) => write!(f, "td({})", td),
             List(es) => write!(f, "list({})", es.len()),
+            Cmd(name, _) => write!(f, "cmd({})", name),
             FKey(ch, _) => write!(f, "fkey({})", ch),
             BackTab => write!(f, "backtab"),
             Noop => write!(f, "noop"),
@@ -379,6 +299,15 @@ impl From<Vec<Event>> for Event {
     }
 }
 
+impl From<Event> for Vec<Event> {
+    fn from(evnt: Event) -> Vec<Event> {
+        match evnt {
+            Event::List(evnts) => evnts,
+            evnt => vec![evnt],
+        }
+    }
+}
+
 impl Mto {
     pub fn transform(self, m: usize, dp: DP) -> Result<Self> {
         use {
@@ -423,6 +352,88 @@ impl Event {
         match self {
             Md(Insert(_, _)) | Md(Append(_, _)) | Md(Open(_, _)) => true,
             _ => false,
+        }
+    }
+}
+
+pub enum OpenFile {
+    ReadWrite(fs::File, ffi::OsString),
+    ReadOnly(fs::File, ffi::OsString),
+    NotFound(ffi::OsString),
+    NoPermission(ffi::OsString),
+}
+
+impl Clone for OpenFile {
+    fn clone(&self) -> Self {
+        match self {
+            OpenFile::ReadWrite(_, floc) => {
+                let mut opts = fs::OpenOptions::new();
+                let fd = opts.read(true).write(true).open(floc).unwrap();
+                OpenFile::ReadWrite(fd, floc.clone())
+            }
+            OpenFile::ReadOnly(_, floc) => {
+                let mut opts = fs::OpenOptions::new();
+                let fd = opts.read(true).open(floc).unwrap();
+                OpenFile::ReadOnly(fd, floc.clone())
+            }
+            OpenFile::NotFound(floc) => OpenFile::NotFound(floc.clone()),
+            OpenFile::NoPermission(floc) => OpenFile::NoPermission(floc.clone()),
+        }
+    }
+}
+
+impl From<ffi::OsString> for OpenFile {
+    fn from(floc: ffi::OsString) -> Self {
+        let mut opts = fs::OpenOptions::new();
+        match opts.read(true).write(true).open(&floc) {
+            Ok(fd) => OpenFile::ReadWrite(fd, floc),
+            Err(_) => match opts.read(true).open(&floc) {
+                Ok(fd) => OpenFile::ReadOnly(fd, floc),
+                Err(_) => {
+                    let p = path::Path::new(&floc);
+                    if p.is_file() {
+                        OpenFile::NoPermission(floc)
+                    } else {
+                        OpenFile::NotFound(floc)
+                    }
+                }
+            },
+        }
+    }
+}
+
+impl From<String> for OpenFile {
+    fn from(floc: String) -> Self {
+        let f: &ffi::OsStr = floc.as_ref();
+        f.to_os_string().into()
+    }
+}
+
+impl TryFrom<OpenFile> for fs::File {
+    type Error = Error;
+
+    fn try_from(of: OpenFile) -> Result<fs::File> {
+        match of {
+            OpenFile::ReadWrite(fd, _) => Ok(fd),
+            OpenFile::ReadOnly(fd, _) => Ok(fd),
+            OpenFile::NotFound(floc) => {
+                let mut opts = fs::OpenOptions::new();
+                err_at!(
+                    IOError,
+                    opts.read(true).write(true).open(&floc),
+                    format!("{:?}", floc)
+                )?;
+                unreachable!()
+            }
+            OpenFile::NoPermission(floc) => {
+                let mut opts = fs::OpenOptions::new();
+                err_at!(
+                    IOError,
+                    opts.read(true).write(true).open(&floc),
+                    format!("{:?}", floc)
+                )?;
+                unreachable!()
+            }
         }
     }
 }

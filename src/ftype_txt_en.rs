@@ -2,7 +2,8 @@ use tree_sitter as ts;
 
 use crate::{
     event::Event,
-    window::{Context, Span, Spanline},
+    state::Context,
+    window::{Span, Spanline},
     Error, Result,
 };
 

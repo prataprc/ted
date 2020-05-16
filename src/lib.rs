@@ -15,12 +15,14 @@ mod keymap_ted;
 pub mod location;
 #[macro_use]
 pub mod window;
+pub mod cmd;
 mod col_nu;
 pub mod state;
 mod view;
 pub mod window_code;
 pub mod window_edit;
 pub mod window_file;
+pub mod window_line;
 pub mod window_prompt;
 
 pub type Result<T> = result::Result<T, Error>;

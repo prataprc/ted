@@ -21,7 +21,7 @@ use crate::{
     ftype::FType,
     keymap::Keymap,
     location::Location,
-    window::Context,
+    state::Context,
     {err_at, Error, Result},
 };
 
@@ -166,9 +166,9 @@ impl Buffer {
         Ok(b)
     }
 
-    pub fn empty() -> Result<Buffer> {
+    pub fn empty() -> Buffer {
         let buf = vec![];
-        Self::from_reader(buf.as_slice())
+        Self::from_reader(buf.as_slice()).unwrap()
     }
 
     pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {

@@ -2,7 +2,7 @@ use crossterm::event::KeyModifiers;
 
 use crate::{
     event::{Event, Mod, Mto, Ted, DP},
-    window::Context,
+    state::Context,
     Error, Result,
 };
 
@@ -29,17 +29,12 @@ impl KeyTed {
         Ok((Event::Noop, e))
     }
 
-    fn normal_fold(
-        //
-        &mut self,
-        c: &Context,
-        evnt: Event,
-    ) -> Result<(Event, Event)> {
+    fn normal_fold(&mut self, c: &Context, evnt: Event) -> Result<(Event, Event)> {
         use crate::event::Event::{Backspace, Char, Enter};
         use crate::event::Event::{Md, Mt, Td, B, F, G, N, T};
         let eno = Event::Noop;
 
-        let prefix = c.to_event_prefix();
+        let prefix = c.as_buffer().to_event_prefix();
         let (empty, ctrl) = {
             let m = evnt.to_modifiers();
             (m.is_empty(), m == KeyModifiers::CONTROL)
