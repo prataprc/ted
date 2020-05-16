@@ -398,6 +398,7 @@ impl Buffer {
     /// from the one before cursor position. Note that,
     /// `0 <= char_idx < n_chars`.
     pub fn chars_at<'a>(
+        //
         &'a self,
         char_idx: usize,
         dp: DP,
@@ -516,6 +517,7 @@ impl Buffer {
             c.as_mut_buffer().ftype = ftype;
             evnt_up
         };
+        // If event is not handled handle it as default behaviour.
         let evnt = if evnt_up == evnt {
             Self::handle_event(c, evnt)?
         } else {
@@ -525,10 +527,18 @@ impl Buffer {
         Ok(evnt)
     }
 
-    fn mode_normal(&mut self) -> Result<()> {
+    pub fn mode_normal(&mut self) -> Result<()> {
         self.inner = match mem::replace(&mut self.inner, Default::default()) {
             Inner::Insert(ib) => Inner::Normal(ib.into()),
             inner @ Inner::Normal(_) => inner,
+        };
+        Ok(())
+    }
+
+    pub fn mode_insert(&mut self) -> Result<()> {
+        self.inner = match mem::replace(&mut self.inner, Default::default()) {
+            Inner::Normal(nb) => Inner::Insert(nb.into()),
+            inner @ Inner::Insert(_) => inner,
         };
         Ok(())
     }

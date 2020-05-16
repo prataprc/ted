@@ -7,6 +7,7 @@ use crossterm::{
 use log::trace;
 
 use std::{
+    convert::TryInto,
     io::{self, Write},
     time::{Duration, SystemTime},
 };
@@ -42,11 +43,13 @@ impl State {
         })
     }
 
-    pub fn event_loop(mut self, mut w: Window, mut evnt: Event) -> Result<()> {
+    pub fn event_loop(mut self, w: Window, mut evnt: Event) -> Result<()> {
         let mut stdout = io::stdout();
         let mut stats = Latency::new();
 
         let mut start = SystemTime::now();
+
+        let mut windows = vec![w];
 
         // TODO: later statistics can be moved to a different release stream
         // and or controlled by command line option.
@@ -55,19 +58,33 @@ impl State {
             err_at!(Fatal, queue!(stdout, term_cursor::Hide))?;
             let evnts: Vec<Event> = evnt.into();
             for evnt in evnts.into_iter() {
-                let evnts = {
-                    let mut c = self.to_context();
-                    let evnts: Vec<Event> = w.on_event(&mut c, evnt)?.into();
-                    w.on_refresh(&mut c)?;
-                    evnts
+                let evnts = match windows.last_mut() {
+                    Some(w) => {
+                        let mut c = self.to_context();
+                        let evnts: Vec<Event> = w.on_event(&mut c, evnt)?.into();
+                        w.on_refresh(&mut c)?;
+                        evnts
+                    }
+                    None => break 'a Ok(()),
                 };
-                match self.on_events(evnts).unwrap_or("".to_string()).as_str() {
-                    "quit" => break 'a Ok(()),
-                    _ => (),
+                for evnt in evnts.into_iter() {
+                    match evnt {
+                        Event::Char('q', m) if m.is_empty() => {
+                            //
+                            break 'a Ok(());
+                        }
+                        Event::__Push(w) => windows.push(w),
+                        Event::__Pop if windows.len() > 0 => {
+                            let evnt = windows.pop().unwrap().try_into()?;
+                            let mut c = self.to_context();
+                            windows.last_mut().map(|w| w.on_event(&mut c, evnt));
+                        }
+                        _ => (),
+                    }
                 }
             }
             // show-cursor
-            let Cursor { col, row } = w.to_cursor();
+            let Cursor { col, row } = windows.last().unwrap().to_cursor();
             err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, row)))?;
             err_at!(Fatal, queue!(stdout, term_cursor::Show))?;
             err_at!(Fatal, stdout.flush())?;
@@ -92,20 +109,6 @@ impl State {
             state: self,
             w: Default::default(),
             buffer: Default::default(),
-        }
-    }
-
-    fn on_events(&mut self, evnts: Vec<Event>) -> Option<String> {
-        let mut iter = evnts.into_iter();
-        loop {
-            match iter.next() {
-                Some(Event::Char('q', m)) if m.is_empty() => {
-                    let s = "quit".to_string();
-                    break Some(s);
-                }
-                Some(_) => (),
-                None => break None,
-            }
         }
     }
 }

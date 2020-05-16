@@ -4,10 +4,22 @@ use crossterm::{
     Command,
 };
 
-use std::{fmt, ops::Add, result};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt,
+    ops::Add,
+    result,
+};
 
 use crate::{
-    event::Event, state::Context, window_code::WindowCode, window_line::WindowLine, Result,
+    //
+    event::Event,
+    state::Context,
+    window_code::WindowCode,
+    window_line::WindowLine,
+    window_prompt::WindowPrompt,
+    Error,
+    Result,
 };
 
 #[macro_export]
@@ -78,9 +90,46 @@ pub fn new_window_line(typ: &str, mut coord: Coord) -> WindowLine {
 #[derive(Clone)]
 pub enum Window {
     Code(Box<WindowCode>),
+    Prompt(Box<WindowPrompt>),
     None,
 }
 
+impl fmt::Display for Window {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Window::Code(_) => write!(f, "window-code"),
+            Window::Prompt(_) => write!(f, "window-prompt"),
+            Window::None => write!(f, "window-none"),
+        }
+    }
+}
+
+impl Eq for Window {}
+
+impl PartialEq for Window {
+    fn eq(&self, other: &Window) -> bool {
+        use Window::{Code, Prompt};
+
+        match (self, other) {
+            (Code(_), Code(_)) => true,
+            (Prompt(_), Prompt(_)) => true,
+            (Window::None, Window::None) => true,
+            _ => false,
+        }
+    }
+}
+
+impl TryFrom<Window> for Event {
+    type Error = Error;
+
+    fn try_from(w: Window) -> Result<Event> {
+        match w {
+            Window::Code(_) => Ok(Event::Noop),
+            Window::Prompt(w) => (*w).try_into(),
+            Window::None => Ok(Event::Noop),
+        }
+    }
+}
 impl Default for Window {
     fn default() -> Window {
         Window::None
@@ -91,6 +140,7 @@ impl Window {
     pub fn status(&self, span: Span) {
         match self {
             Window::Code(w) => w.status(span),
+            Window::Prompt(_) => (),
             Window::None => (),
         }
     }
@@ -98,6 +148,7 @@ impl Window {
     pub fn tab_complete(&self, span: Span) {
         match self {
             Window::Code(w) => w.tab_complete(span),
+            Window::Prompt(_) => (),
             Window::None => (),
         }
     }
@@ -105,6 +156,7 @@ impl Window {
     pub fn to_cursor(&self) -> Cursor {
         match self {
             Window::Code(w) => w.to_cursor(),
+            Window::Prompt(w) => w.to_cursor(),
             Window::None => Default::default(),
         }
     }
@@ -112,6 +164,7 @@ impl Window {
     pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
         match self {
             Window::Code(w) => w.on_event(c, evnt),
+            Window::Prompt(w) => w.on_event(c, evnt),
             Window::None => Ok(evnt),
         }
     }
@@ -119,6 +172,7 @@ impl Window {
     pub fn on_refresh(&mut self, c: &mut Context) -> Result<()> {
         match self {
             Window::Code(w) => w.on_refresh(c),
+            Window::Prompt(w) => w.on_refresh(c),
             Window::None => Ok(()),
         }
     }
@@ -247,6 +301,10 @@ impl Add for Cursor {
 }
 
 impl Cursor {
+    pub fn new(col: u16, row: u16) -> Cursor {
+        Cursor { col, row }
+    }
+
     pub fn next_cursors(self, coord: Coord) -> Vec<Cursor> {
         let mut cursors = Vec::with_capacity((coord.hgt * coord.wth) as usize);
         for r in 0..coord.hgt {

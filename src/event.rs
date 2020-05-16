@@ -2,7 +2,7 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
 use std::{convert::TryFrom, ffi, fmt, fs, path, result};
 
-use crate::{location::Location, window::Spanline, Error, Result};
+use crate::{location::Location, window::Spanline, window::Window, Error, Result};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DP {
@@ -208,13 +208,18 @@ pub enum Event {
     Cmd(String, String), // (command-name, arguments)
     FKey(u8, KeyModifiers),
     BackTab,
+    Prompt(String),
     Noop,
+    // internal events
+    __Push(Window),
+    __Pop,
 }
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Event::{BackTab, Cmd, FKey, List, Md, Mt, Noop, Op, Td};
+        use Event::{BackTab, Cmd, FKey, List, Md, Mt, Noop, Op, Prompt, Td};
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
+        use Event::{__Pop, __Push};
 
         match self {
             Backspace => write!(f, "backspace"),
@@ -236,7 +241,10 @@ impl fmt::Display for Event {
             Cmd(name, _) => write!(f, "cmd({})", name),
             FKey(ch, _) => write!(f, "fkey({})", ch),
             BackTab => write!(f, "backtab"),
+            Prompt(s) => write!(f, "prompt({})", s),
             Noop => write!(f, "noop"),
+            __Push(w) => write!(f, "__push({})", w),
+            __Pop => write!(f, "__pop"),
         }
     }
 }

@@ -5,7 +5,6 @@ use crate::{
     window::{new_window_line, Coord, Cursor, Span, Window},
     window_file::WindowFile,
     window_line::WindowLine,
-    window_prompt::WindowPrompt,
     Result,
 };
 
@@ -24,7 +23,6 @@ pub struct WindowCode {
 enum Inner {
     Regular,
     Command { w: WindowLine, cmd: Command },
-    Prompt { w: WindowPrompt },
 }
 
 impl Default for Inner {
@@ -42,22 +40,6 @@ impl WindowCode {
             tbcline: new_window_line("tbcline", coord),
             inner: Default::default(),
         }
-    }
-
-    fn to_regular(&mut self) {
-        self.inner = Default::default();
-    }
-
-    fn to_command(&mut self) {
-        self.inner = Inner::Command {
-            w: new_window_line("cmdline", self.coord),
-            cmd: Default::default(),
-        };
-    }
-    fn to_prompt(&mut self) {
-        self.inner = Inner::Prompt {
-            w: WindowPrompt::new(vec![]),
-        };
     }
 }
 
@@ -78,7 +60,6 @@ impl WindowCode {
         match &self.inner {
             Inner::Regular => self.w.to_cursor(),
             Inner::Command { w, .. } => w.to_cursor(),
-            Inner::Prompt { w, .. } => w.to_cursor(),
         }
     }
 
@@ -87,7 +68,6 @@ impl WindowCode {
         let evnt = match &mut self.inner {
             Inner::Regular => self.w.on_event(c, evnt)?,
             Inner::Command { w, .. } => w.on_event(c, evnt)?,
-            Inner::Prompt { w, .. } => w.on_event(c, evnt)?,
         };
         *self = match mem::replace(&mut c.w, Default::default()) {
             Window::Code(w) => *w,
@@ -105,9 +85,6 @@ impl WindowCode {
                 // self.cmd.on_refresh(c)?;
                 // w.on_refresh(c)?;
                 todo!()
-            }
-            Inner::Prompt { w, .. } => {
-                w.on_refresh(c)?;
             }
         }
         self.tbcline.on_refresh(c)

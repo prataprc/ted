@@ -1,4 +1,4 @@
-use crossterm::{cursor, queue, style::Color};
+use crossterm::{queue, style::Color};
 use unicode_width::UnicodeWidthChar;
 
 use std::{
@@ -9,7 +9,8 @@ use std::{
 };
 
 use crate::{
-    event::{self, Event, Ted},
+    buffer::Buffer,
+    event::{self, Event, DP},
     state::Context,
     window::{Coord, Cursor, Span},
     Error, Result,
@@ -20,9 +21,21 @@ pub struct WindowPrompt {
     coord: Coord,
     prompt_lines: Vec<Span>,
     prompt_cursor: Cursor,
-    rendered: bool,
 
-    input: String,
+    buffer: Option<Buffer>,
+}
+
+impl TryFrom<WindowPrompt> for Event {
+    type Error = Error;
+
+    fn try_from(w: WindowPrompt) -> Result<Event> {
+        Ok(Event::Prompt(
+            w.buffer
+                .as_ref()
+                .map(|b| b.to_string())
+                .unwrap_or("".to_string()),
+        ))
+    }
 }
 
 impl fmt::Display for WindowPrompt {
@@ -68,14 +81,15 @@ impl TryFrom<event::OpenFile> for WindowPrompt {
 impl WindowPrompt {
     #[inline]
     pub fn new(prompt_lines: Vec<Span>) -> WindowPrompt {
-        WindowPrompt {
+        let mut w = WindowPrompt {
             coord: Default::default(),
             prompt_lines,
             prompt_cursor: Default::default(),
-            rendered: false,
 
-            input: Default::default(),
-        }
+            buffer: Some(Buffer::empty()),
+        };
+        w.buffer.as_mut().map(|b| b.mode_insert().unwrap());
+        w
     }
 
     pub fn set_coord(&mut self, coord: Coord) -> &mut Self {
@@ -92,49 +106,47 @@ impl WindowPrompt {
 impl WindowPrompt {
     #[inline]
     pub fn to_cursor(&self) -> Cursor {
-        // TODO: Fix this
-        Default::default()
+        let n: usize = match &self.buffer {
+            Some(buffer) => {
+                let iter = buffer.chars_at(0, DP::Right).unwrap();
+                iter.map(|ch| ch.width().unwrap()).sum()
+            }
+            None => 0,
+        };
+        let (col, row) = {
+            let Cursor { col, row } = self.prompt_cursor;
+            ((col + n as u16), row)
+        };
+        Cursor::new(col, row)
     }
 
-    pub fn on_event(&mut self, _: &mut Context, mut evnt: Event) -> Result<Event> {
-        evnt = match evnt {
-            Event::Backspace => {
-                self.input.pop();
-                Event::Noop
+    pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+        match evnt {
+            Event::Esc => Ok(Event::Noop),
+            evnt => {
+                c.buffer = self.buffer.take();
+                let evnt = Buffer::on_event(c, evnt)?;
+                self.buffer = c.buffer.take();
+                Ok(evnt)
             }
-            Event::Enter => Event::Td(Ted::PromptReply {
-                input: self.input.clone(),
-            }),
-            Event::Char(ch, _m) => {
-                self.input.push(ch);
-                Event::Noop
-            }
-            _ => Event::Noop,
-        };
-        Ok(evnt)
+        }
     }
 
     pub fn on_refresh(&mut self, _: &mut Context) -> Result<()> {
         let mut stdout = io::stdout();
 
-        if !self.rendered {
-            let mut stdout = io::stdout();
-            for span in self.prompt_lines.iter() {
-                err_at!(Fatal, queue!(stdout, span))?;
-            }
-        } else {
-            let span = {
-                let mut span = Span::new(&self.input.clone());
-                span.set_cursor(self.prompt_cursor);
-                span
-            };
-            err_at!(Fatal, queue!(stdout, span))?;
-            let n: usize = self.input.chars().map(|ch| ch.width().unwrap()).sum();
-            let Cursor { mut col, row } = self.prompt_cursor;
-            col += n as u16;
-            err_at!(Fatal, queue!(stdout, cursor::MoveTo(col, row)))?;
-        }
-
+        let span = {
+            let mut span = Span::new(
+                &self
+                    .buffer
+                    .as_ref()
+                    .map(|b| b.to_string())
+                    .unwrap_or("".to_string()),
+            );
+            span.set_cursor(self.prompt_cursor);
+            span
+        };
+        err_at!(Fatal, queue!(stdout, span))?;
         Ok(())
     }
 }
