@@ -5,25 +5,33 @@ use std::{fmt, result};
 
 #[macro_use]
 pub mod util;
-pub mod buffer;
-pub mod config;
-pub mod event;
-mod ftype;
-pub mod ftype_txt_en;
-mod keymap;
-mod keymap_ted;
 pub mod location;
+
 #[macro_use]
 pub mod window;
-pub mod cmd;
 mod col_nu;
-pub mod state;
 mod view;
 pub mod window_code;
 pub mod window_edit;
 pub mod window_file;
 pub mod window_line;
 pub mod window_prompt;
+
+pub mod buffer;
+pub mod config;
+pub mod event;
+pub mod state;
+
+mod ftype;
+mod ftype_txt_en;
+
+mod keymap;
+mod keymap_ted;
+
+mod cmd;
+mod cmd_edit;
+mod cmd_file;
+mod cmd_write;
 
 pub type Result<T> = result::Result<T, Error>;
 

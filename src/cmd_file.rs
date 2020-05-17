@@ -1,5 +1,5 @@
 #[derive(Clone)]
-pub enum Edit {
+pub enum File {
     Initial {
         name: String,
     },
@@ -10,19 +10,19 @@ pub enum Edit {
     },
 }
 
-impl Default for Edit {
-    fn default() -> Edit {
-        Edit::Initial {
-            name: "edit".to_string(),
+impl Default for File {
+    fn default() -> File {
+        File::Initial {
+            name: "file".to_string(),
         }
     }
 }
 
-impl Edit {
+impl File {
     fn to_name(&self) -> String {
         match self {
-            Edit::Initial { name } => name.clone(),
-            Edit::TabComp { name, .. } => name.clone(),
+            File::Initial { name } => name.clone(),
+            File::TabComp { name, .. } => name.clone(),
         }
     }
 }
