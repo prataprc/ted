@@ -56,18 +56,17 @@ impl State {
         let res = 'a: loop {
             // hide cursor, handle event and refresh window
             err_at!(Fatal, queue!(stdout, term_cursor::Hide))?;
-            let evnts: Vec<Event> = evnt.into();
-            for evnt in evnts.into_iter() {
-                let evnts = match windows.last_mut() {
+            for evnt in evnt {
+                let evnt = match windows.last_mut() {
                     Some(w) => {
                         let mut c = self.to_context();
-                        let evnts: Vec<Event> = w.on_event(&mut c, evnt)?.into();
+                        let evnt = w.on_event(&mut c, evnt)?;
                         w.on_refresh(&mut c)?;
-                        evnts
+                        evnt
                     }
                     None => break 'a Ok(()),
                 };
-                for evnt in evnts.into_iter() {
+                for evnt in evnt {
                     match evnt {
                         Event::Char('q', m) if m.is_empty() => {
                             //

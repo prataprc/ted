@@ -130,6 +130,7 @@ impl TryFrom<Window> for Event {
         }
     }
 }
+
 impl Default for Window {
     fn default() -> Window {
         Window::None

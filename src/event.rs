@@ -1,6 +1,6 @@
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
-use std::{convert::TryFrom, ffi, fmt, fs, path, result};
+use std::{convert::TryFrom, ffi, fmt, fs, mem, path, result};
 
 use crate::{location::Location, window::Spanline, window::Window, Error, Result};
 
@@ -155,6 +155,32 @@ impl fmt::Display for Mto {
     }
 }
 
+impl Mto {
+    pub fn transform(self, m: usize, dp: DP) -> Result<Self> {
+        use {
+            Mto::{CharF, CharT, Pattern},
+            DP::{Left, Right},
+        };
+
+        match (self, dp) {
+            (CharF(_, ch, Left), Right) => Ok(CharF(m, ch, Left)),
+            (CharF(_, ch, Left), Left) => Ok(CharF(m, ch, Right)),
+            (CharF(_, ch, Right), Right) => Ok(CharF(m, ch, Right)),
+            (CharF(_, ch, Right), Left) => Ok(CharF(m, ch, Left)),
+            (CharT(_, ch, Left), Right) => Ok(CharT(m, ch, Left)),
+            (CharT(_, ch, Left), Left) => Ok(CharT(m, ch, Right)),
+            (CharT(_, ch, Right), Right) => Ok(CharT(m, ch, Right)),
+            (CharT(_, ch, Right), Left) => Ok(CharT(m, ch, Left)),
+            (Pattern(_, ch, Left), Right) => Ok(Pattern(m, ch, Left)),
+            (Pattern(_, ch, Left), Left) => Ok(Pattern(m, ch, Right)),
+            (Pattern(_, ch, Right), Right) => Ok(Pattern(m, ch, Right)),
+            (Pattern(_, ch, Right), Left) => Ok(Pattern(m, ch, Left)),
+            (Mto::None, _) => Ok(Mto::None),
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub enum Ted {
     NewBuffer,
@@ -215,6 +241,54 @@ pub enum Event {
     __Pop,
 }
 
+impl Event {
+    pub fn to_modifiers(&self) -> KeyModifiers {
+        match self {
+            Event::FKey(_, modifiers) => modifiers.clone(),
+            Event::Char(_, modifiers) => modifiers.clone(),
+            _ => KeyModifiers::empty(),
+        }
+    }
+
+    pub fn is_insert(&self) -> bool {
+        use {
+            Event::Md,
+            Mod::{Append, Insert, Open},
+        };
+
+        match self {
+            Md(Insert(_, _)) | Md(Append(_, _)) | Md(Open(_, _)) => true,
+            _ => false,
+        }
+    }
+
+    pub fn push(&mut self, evnt: Event) {
+        match self {
+            Event::List(events) => events.push(evnt),
+            _ => {
+                let event = mem::replace(self, Default::default());
+                *self = Event::List(vec![event, evnt]);
+            }
+        }
+    }
+}
+
+impl Iterator for Event {
+    type Item = Event;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Event::Noop => None,
+            Event::List(evnts) if evnts.len() > 0 => Some(evnts.remove(0)),
+            Event::List(_) => None,
+            _ => {
+                let evnt = mem::replace(self, Event::Noop);
+                Some(evnt)
+            }
+        }
+    }
+}
+
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         use Event::{BackTab, Cmd, FKey, List, Md, Mt, Noop, Op, Prompt, Td};
@@ -246,12 +320,6 @@ impl fmt::Display for Event {
             __Push(w) => write!(f, "__push({})", w),
             __Pop => write!(f, "__pop"),
         }
-    }
-}
-
-impl Default for Event {
-    fn default() -> Event {
-        Event::Noop
     }
 }
 
@@ -294,6 +362,12 @@ impl From<TermEvent> for Event {
     }
 }
 
+impl Default for Event {
+    fn default() -> Event {
+        Event::Noop
+    }
+}
+
 impl From<Vec<Event>> for Event {
     fn from(evnts: Vec<Event>) -> Event {
         let mut out: Vec<Event> = vec![];
@@ -312,54 +386,6 @@ impl From<Event> for Vec<Event> {
         match evnt {
             Event::List(evnts) => evnts,
             evnt => vec![evnt],
-        }
-    }
-}
-
-impl Mto {
-    pub fn transform(self, m: usize, dp: DP) -> Result<Self> {
-        use {
-            Mto::{CharF, CharT, Pattern},
-            DP::{Left, Right},
-        };
-
-        match (self, dp) {
-            (CharF(_, ch, Left), Right) => Ok(CharF(m, ch, Left)),
-            (CharF(_, ch, Left), Left) => Ok(CharF(m, ch, Right)),
-            (CharF(_, ch, Right), Right) => Ok(CharF(m, ch, Right)),
-            (CharF(_, ch, Right), Left) => Ok(CharF(m, ch, Left)),
-            (CharT(_, ch, Left), Right) => Ok(CharT(m, ch, Left)),
-            (CharT(_, ch, Left), Left) => Ok(CharT(m, ch, Right)),
-            (CharT(_, ch, Right), Right) => Ok(CharT(m, ch, Right)),
-            (CharT(_, ch, Right), Left) => Ok(CharT(m, ch, Left)),
-            (Pattern(_, ch, Left), Right) => Ok(Pattern(m, ch, Left)),
-            (Pattern(_, ch, Left), Left) => Ok(Pattern(m, ch, Right)),
-            (Pattern(_, ch, Right), Right) => Ok(Pattern(m, ch, Right)),
-            (Pattern(_, ch, Right), Left) => Ok(Pattern(m, ch, Left)),
-            (Mto::None, _) => Ok(Mto::None),
-            _ => err_at!(Fatal, msg: format!("unreachable")),
-        }
-    }
-}
-
-impl Event {
-    pub fn to_modifiers(&self) -> KeyModifiers {
-        match self {
-            Event::FKey(_, modifiers) => modifiers.clone(),
-            Event::Char(_, modifiers) => modifiers.clone(),
-            _ => KeyModifiers::empty(),
-        }
-    }
-
-    pub fn is_insert(&self) -> bool {
-        use {
-            Event::Md,
-            Mod::{Append, Insert, Open},
-        };
-
-        match self {
-            Md(Insert(_, _)) | Md(Append(_, _)) | Md(Open(_, _)) => true,
-            _ => false,
         }
     }
 }

@@ -44,20 +44,24 @@ impl WindowLine {
     }
 
     pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
-        let buffer = c.buffer.take();
+        match evnt {
+            Event::Esc => Ok(Event::Esc),
+            evnt => {
+                let buffer = c.buffer.take();
+                let (line_buffer, evnt) = match self.buffer.take() {
+                    Some(buffer) => {
+                        c.buffer = Some(buffer);
+                        let evnt = Buffer::on_event(c, evnt)?;
+                        (c.buffer.take(), evnt)
+                    }
+                    None => (None, evnt),
+                };
+                self.buffer = line_buffer;
 
-        let (line_buffer, evnt) = match self.buffer.take() {
-            Some(buffer) => {
-                c.buffer = Some(buffer);
-                let evnt = Buffer::on_event(c, evnt)?;
-                (c.buffer.take(), evnt)
+                c.buffer = buffer;
+                Ok(evnt)
             }
-            None => (None, evnt),
-        };
-        self.buffer = line_buffer;
-
-        c.buffer = buffer;
-        Ok(evnt)
+        }
     }
 
     pub fn on_refresh(&mut self, c: &mut Context) -> Result<()> {
