@@ -12,14 +12,8 @@ use std::{
 };
 
 use crate::{
-    //
-    event::Event,
-    state::Context,
-    window_code::WindowCode,
-    window_line::WindowLine,
-    window_prompt::WindowPrompt,
-    Error,
-    Result,
+    event::Event, state::Context, window_code::WindowCode, window_line::WindowLine,
+    window_prompt::WindowPrompt, Error, Result,
 };
 
 #[macro_export]
@@ -138,17 +132,9 @@ impl Default for Window {
 }
 
 impl Window {
-    pub fn status(&self, span: Span) {
+    pub fn post<T>(&mut self, c: &mut Context, name: &str, msg: T) {
         match self {
-            Window::Code(w) => w.status(span),
-            Window::Prompt(_) => (),
-            Window::None => (),
-        }
-    }
-
-    pub fn tab_complete(&self, span: Span) {
-        match self {
-            Window::Code(w) => w.tab_complete(span),
+            Window::Code(w) => w.post(c, name, msg),
             Window::Prompt(_) => (),
             Window::None => (),
         }

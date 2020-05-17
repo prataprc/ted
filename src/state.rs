@@ -9,6 +9,7 @@ use log::trace;
 use std::{
     convert::TryInto,
     io::{self, Write},
+    mem,
     time::{Duration, SystemTime},
 };
 
@@ -104,11 +105,7 @@ impl State {
     }
 
     fn to_context(&mut self) -> Context {
-        Context {
-            state: self,
-            w: Default::default(),
-            buffer: Default::default(),
-        }
+        Context::new(self)
     }
 }
 
@@ -305,6 +302,16 @@ impl<'a> AsMut<Window> for Context<'a> {
 }
 
 impl<'a> Context<'a> {
+    pub fn new(state: &mut State) -> Context {
+        Context {
+            state,
+            w: Default::default(),
+            buffer: Default::default(),
+        }
+    }
+}
+
+impl<'a> Context<'a> {
     #[inline]
     pub fn as_buffer(&self) -> &Buffer {
         self.buffer.as_ref().unwrap()
@@ -313,6 +320,14 @@ impl<'a> Context<'a> {
     #[inline]
     pub fn as_mut_buffer(&mut self) -> &mut Buffer {
         self.buffer.as_mut().unwrap()
+    }
+}
+
+impl<'a> Context<'a> {
+    pub fn post<T>(&mut self, name: &str, msg: T) {
+        let mut w = mem::replace(&mut self.w, Default::default());
+        w.post(self, name, msg);
+        self.w = w;
     }
 
     pub fn add_buffer(&mut self, buffer: Buffer) {

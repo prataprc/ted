@@ -10,6 +10,11 @@ use crate::{
 
 use std::mem;
 
+pub enum Message {
+    Status(Span),
+    TabComplete(Span),
+}
+
 #[derive(Clone, Default)]
 pub struct WindowCode {
     coord: Coord,
@@ -45,15 +50,11 @@ impl WindowCode {
 
 impl WindowCode {
     #[inline]
-    pub fn status(&self, _span: Span) {
-        // self.stsline.render(span)
-        todo!()
-    }
-
-    #[inline]
-    pub fn tab_complete(&self, _span: Span) {
-        // self.tbcline.render(span)
-        todo!()
+    pub fn post<Message>(&mut self, _: &mut Context, _name: &str, _msg: Message) {
+        //match (name, msg) {
+        //    ("status", Message::Status(sl)) -> self.stsline.set(sl),
+        //    ("tabcomplete", Message::TabComplete(sl) -> self.tbcline.set(sl),
+        //}
     }
 
     pub fn to_cursor(&self) -> Cursor {
