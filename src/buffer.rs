@@ -2,7 +2,6 @@
 //! over text content.
 
 use lazy_static::lazy_static;
-use log::trace;
 use regex::Regex;
 use ropey::{self, Rope, RopeSlice};
 
@@ -19,7 +18,6 @@ use std::{
 use crate::{
     event::{Event, Mto, DP},
     ftype::FType,
-    keymap::Keymap,
     location::Location,
     state::Context,
     {err_at, Error, Result},
@@ -108,8 +106,6 @@ pub struct Buffer {
     pub location: Location,
     /// Mark this buffer read-only, in which case insert ops are not allowed.
     pub read_only: bool,
-    /// Keymap plugin for this buffer.
-    pub keymap: Keymap,
     /// File-type plugin for this buffer.
     pub ftype: FType,
 
@@ -157,7 +153,6 @@ impl Buffer {
             last_inserts: Default::default(),
             mto_find_char: Default::default(),
             mto_pattern: Default::default(),
-            keymap: Default::default(),
             ftype: Default::default(),
 
             inner: Inner::Normal(NormalBuffer::new(buf)),
@@ -190,11 +185,6 @@ impl Buffer {
 
     pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
         self.read_only = read_only;
-        self
-    }
-
-    pub fn set_keymap(&mut self, km: Keymap) -> &mut Self {
-        self.keymap = km;
         self
     }
 
@@ -269,16 +259,6 @@ impl Buffer {
     #[inline]
     pub fn to_location(&self) -> Location {
         self.location.clone()
-    }
-
-    /// Return buffers current event prefix.
-    pub fn to_event_prefix(&self) -> Event {
-        use Inner::{Insert, Normal};
-
-        match &self.inner {
-            Insert(_) => Event::Noop,
-            Normal(NormalBuffer { evnt_prefix, .. }) => evnt_prefix.clone(),
-        }
     }
 }
 
@@ -494,20 +474,6 @@ impl Buffer {
 
 impl Buffer {
     pub fn on_event(c: &mut Context, evnt: Event) -> Result<Event> {
-        // fold events.
-        let (prefix, evnt) = {
-            let mut keymap = {
-                let b = c.as_mut_buffer();
-                mem::replace(&mut b.keymap, Default::default())
-            };
-            let (prefix, evnt) = keymap.fold(c, evnt)?;
-            c.as_mut_buffer().keymap = keymap;
-            trace!("folded event, {} {}", prefix, evnt);
-            (prefix, evnt)
-        };
-
-        c.as_mut_buffer().set_event_prefix(prefix);
-
         let evnt_up = {
             let mut ftype = {
                 let b = c.as_mut_buffer();
@@ -545,16 +511,6 @@ impl Buffer {
 }
 
 impl Buffer {
-    fn set_event_prefix(&mut self, prefix: Event) -> &mut Self {
-        match &mut self.inner {
-            Inner::Insert(_) => (),
-            Inner::Normal(NormalBuffer { evnt_prefix, .. }) => {
-                *evnt_prefix = prefix;
-            }
-        };
-        self
-    }
-
     fn to_insert_n(evnt: Event) -> (Option<usize>, Event) {
         use crate::event::{Event::Md, Mod};
 
@@ -762,14 +718,12 @@ impl Buffer {
 
 #[derive(Clone)]
 struct NormalBuffer {
-    evnt_prefix: Event,
     change: Rc<RefCell<Change>>,
 }
 
 impl Default for NormalBuffer {
     fn default() -> NormalBuffer {
         NormalBuffer {
-            evnt_prefix: Default::default(),
             change: Default::default(),
         }
     }
@@ -777,10 +731,7 @@ impl Default for NormalBuffer {
 
 impl From<InsertBuffer> for NormalBuffer {
     fn from(ib: InsertBuffer) -> NormalBuffer {
-        NormalBuffer {
-            evnt_prefix: Default::default(),
-            change: ib.change,
-        }
+        NormalBuffer { change: ib.change }
     }
 }
 

@@ -1,14 +1,15 @@
+use std::mem;
+
 use crate::{
     cmd::Command,
     event::Event,
+    keymap::Keymap,
     state::Context,
     window::{new_window_line, Coord, Cursor, Span, Window},
     window_file::WindowFile,
     window_line::WindowLine,
     Result,
 };
-
-use std::mem;
 
 pub enum Message {
     Status(Span),
@@ -21,6 +22,7 @@ pub struct WindowCode {
     w: WindowFile,
     stsline: WindowLine,
     tbcline: WindowLine,
+    keymap: Keymap,
     inner: Inner,
 }
 
@@ -44,7 +46,13 @@ impl WindowCode {
             stsline: new_window_line("stsline", coord),
             tbcline: new_window_line("tbcline", coord),
             inner: Default::default(),
+            keymap: Default::default(),
         }
+    }
+
+    pub fn set_keymap(&mut self, keymap: Keymap) -> &mut Self {
+        self.keymap = keymap;
+        self
     }
 }
 
@@ -65,15 +73,23 @@ impl WindowCode {
     }
 
     pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+        let mut keymap = mem::replace(&mut self.keymap, Default::default());
         c.w = Window::Code(Box::new(mem::replace(self, Default::default())));
-        let evnt = match &mut self.inner {
-            Inner::Regular => self.w.on_event(c, evnt)?,
-            Inner::Command { w, .. } => w.on_event(c, evnt)?,
+
+        let evnt = match keymap.fold(c, evnt)? {
+            Event::Noop => Event::Noop,
+            evnt => match &mut self.inner {
+                Inner::Regular => self.w.on_event(c, evnt)?,
+                Inner::Command { w, .. } => w.on_event(c, evnt)?,
+            },
         };
+
         *self = match mem::replace(&mut c.w, Default::default()) {
             Window::Code(w) => *w,
             _ => unreachable!(),
         };
+        self.keymap = keymap;
+
         Ok(evnt)
     }
 
