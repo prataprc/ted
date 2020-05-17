@@ -2,7 +2,7 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
 use std::{convert::TryFrom, ffi, fmt, fs, mem, path, result};
 
-use crate::{location::Location, window::Spanline, window::Window, Error, Result};
+use crate::{location::Location, window::Window, Error, Result};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DP {
@@ -188,7 +188,7 @@ pub enum Ted {
     UseBuffer { buffer_id: String },
     PromptReply { input: String },
     StatusFile,
-    StatusCursor { spanline: Spanline },
+    StatusCursor,
 }
 
 impl fmt::Display for Ted {
@@ -202,10 +202,7 @@ impl fmt::Display for Ted {
             }
             Ted::PromptReply { input } => write!(f, "prompt_reply({})", input),
             Ted::StatusFile => write!(f, "status_file"),
-            Ted::StatusCursor { spanline: sl } => {
-                //
-                write!(f, "status_cursor({})", sl.is_empty())
-            }
+            Ted::StatusCursor => write!(f, "status_cursor"),
         }
     }
 }

@@ -1,11 +1,6 @@
 use tree_sitter as ts;
 
-use crate::{
-    event::Event,
-    state::Context,
-    window::{Span, Spanline},
-    Error, Result,
-};
+use crate::{event::Event, state::Context, window::Span, window_code as wcode, Error, Result};
 
 extern "C" {
     fn tree_sitter_txt_en() -> ts::Language;
@@ -70,7 +65,7 @@ impl Text {
 
         let evnt = match evnt {
             Event::Noop => Event::Noop,
-            Td(Ted::StatusCursor { .. }) => self.to_status_cursor(c, evnt)?,
+            Td(Ted::StatusCursor) => self.to_status_cursor(c, evnt)?,
             evnt => evnt,
         };
 
@@ -81,11 +76,7 @@ impl Text {
         Ok(evnt)
     }
 
-    fn to_status_cursor(&mut self, _: &mut Context, _: Event) -> Result<Event> {
-        use crate::event::{Event::Td, Ted};
-
-        let mut sl: Spanline = Default::default();
-
+    fn to_status_cursor(&mut self, c: &mut Context, _: Event) -> Result<Event> {
         match &self.tree {
             None => Ok(Event::Noop),
             Some(tree) => {
@@ -105,9 +96,9 @@ impl Text {
                     }
                     prev_kind = Some(node.kind());
                 }
-                let span = format!("{} {} {} {}", ws, ls, ss, ps);
-                sl.add_span(Span::new(&span));
-                Ok(Td(Ted::StatusCursor { spanline: sl }))
+                let span: Span = format!("{} {} {} {}", ws, ls, ss, ps).into();
+                c.post(wcode::Message::Status(span));
+                Ok(Event::Noop)
             }
         }
     }

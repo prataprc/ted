@@ -324,9 +324,9 @@ impl<'a> Context<'a> {
 }
 
 impl<'a> Context<'a> {
-    pub fn post<T>(&mut self, name: &str, msg: T) {
+    pub fn post<T>(&mut self, msg: T) {
         let mut w = mem::replace(&mut self.w, Default::default());
-        w.post(self, name, msg);
+        w.post(self, msg);
         self.w = w;
     }
 

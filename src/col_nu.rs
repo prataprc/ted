@@ -47,9 +47,8 @@ impl ColNu {
             Some(nu) => format!("{:>width$} ", nu, width = (self.width as usize)),
             None => String::from_iter(repeat(' ').take(self.width as usize)),
         };
-        let mut span = Span::new(&s);
-        span.set_fg(self.fg).set_bg(self.bg).set_attr(self.attr);
-        span
+        let span: Span = s.into();
+        span.with(self.fg).on(self.bg).attribute(self.attr)
     }
 }
 

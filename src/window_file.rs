@@ -133,7 +133,7 @@ impl WindowFile {
         if self.is_left_margin() {
             let st = s.as_ref().left_margin_char.to_string();
             for _i in 0..hgt {
-                err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
+                err_at!(Fatal, queue!(stdout, span!((col, row), st: st.clone())))?;
             }
         }
 

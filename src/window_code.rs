@@ -50,7 +50,7 @@ impl WindowCode {
 
 impl WindowCode {
     #[inline]
-    pub fn post<Message>(&mut self, _: &mut Context, _name: &str, _msg: Message) {
+    pub fn post<Message>(&mut self, _: &mut Context, _msg: Message) {
         //match (name, msg) {
         //    ("status", Message::Status(sl)) -> self.stsline.set(sl),
         //    ("tabcomplete", Message::TabComplete(sl) -> self.tbcline.set(sl),

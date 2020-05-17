@@ -1,12 +1,12 @@
 use crossterm::{
-    self, cursor as term_cursor,
-    style::{self, Attribute, Color},
+    style::{self, Attribute, Color, StyledContent},
     Command,
 };
 
 use std::{
     convert::{TryFrom, TryInto},
     fmt,
+    iter::FromIterator,
     ops::Add,
     result,
 };
@@ -29,42 +29,40 @@ macro_rules! cursor {
 #[macro_export]
 macro_rules! span {
     (fg:$fg:expr, bg:$bg:expr, st:$text:expr) => {{
-        let mut spn = Span::new(&$text);
-        spn.set_fg($fg).set_bg($bg);
-        spn
+        let span: Span = $text.into();
+        span.with($fg).on($bg)
     }};
     (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), st:$text:expr) => {{
-        let mut spn = Span::new(&$text);
-        spn.set_cursor(Cursor { col: $col, row: $row });
-        spn.set_fg($fg).set_bg($bg);
-        spn
+        let mut span: Span = $text.into();
+        span.set_cursor(Cursor { col: $col, row: $row });
+        span.with($fg).on($bg)
     }};
     (($col:expr, $row:expr), st:$text:expr) => {{
-        let mut spn = Span::new(&$text);
-        spn.set_cursor(Cursor { col: $col, row: $row });
-        spn
+        let mut span: Span = $text.into();
+        span.set_cursor(Cursor { col: $col, row: $row });
+        span
     }};
     (st:$text:expr) => {{
-        Span::new(&$text)
+        let span: Span = $text.into();
+        span
     }};
     (fg:$fg:expr, bg:$bg:expr, $($s:expr),*) => {{
-        let mut spn = Span::new(&format!($($s),*));
-        spn.set_fg($fg).set_bg($bg);
-        spn
+        let span: Span = format!($($s),*).into();
+        span.with($fg).on($bg)
     }};
     (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), $($s:expr),*) => {{
-        let mut spn = Span::new(&format!($($s),*));
-        spn.set_cursor(Cursor { col: $col, row: $row });
-        spn.set_fg($fg).set_bg($bg);
-        spn
+        let mut span: Span = format!($($s),*).into();
+        span.set_cursor(Cursor { col: $col, row: $row });
+        span.with($fg).on($bg)
     }};
     (($col:expr, $row:expr), $($s:expr),*) => {{
-        let mut spn = Span::new(&format!($($s),*));
-        spn.set_cursor(Cursor { col: $col, row: $row });
-        spn
+        let mut span: Span = format!($($s),*).into();
+        span.set_cursor(Cursor { col: $col, row: $row });
+        span
     }};
     ($($s:expr),*) => {{
-        Span::new(&format!($($s),*))
+        let span: Span = format!($($s),*).into();
+        span
     }};
 }
 
@@ -132,9 +130,9 @@ impl Default for Window {
 }
 
 impl Window {
-    pub fn post<T>(&mut self, c: &mut Context, name: &str, msg: T) {
+    pub fn post<T>(&mut self, c: &mut Context, msg: T) {
         match self {
-            Window::Code(w) => w.post(c, name, msg),
+            Window::Code(w) => w.post(c, msg),
             Window::Prompt(_) => (),
             Window::None => (),
         }
@@ -322,43 +320,45 @@ impl Cursor {
 }
 
 // Span object to render on screen.
-#[derive(Clone, Default, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct Span {
-    text: String,
-    fg: Option<Color>,
-    bg: Option<Color>,
-    attr: Option<Attribute>,
+    text: StyledContent<String>,
     cursor: Option<Cursor>,
 }
 
-impl Span {
-    pub fn new(text: &str) -> Span {
+impl From<StyledContent<String>> for Span {
+    fn from(text: StyledContent<String>) -> Span {
+        Span { text, cursor: None }
+    }
+}
+
+impl From<String> for Span {
+    fn from(text: String) -> Span {
         Span {
-            text: text.to_string(),
-            fg: Default::default(),
-            bg: Default::default(),
-            attr: Default::default(),
-            cursor: Default::default(),
+            text: style::style(text),
+            cursor: None,
         }
+    }
+}
+
+impl Span {
+    pub fn on(mut self, color: Color) -> Self {
+        self.text = self.text.on(color);
+        self
+    }
+
+    pub fn with(mut self, color: Color) -> Self {
+        self.text = self.text.with(color);
+        self
+    }
+
+    pub fn attribute(mut self, attr: Attribute) -> Self {
+        self.text = self.text.attribute(attr);
+        self
     }
 
     pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
         self.cursor = Some(cursor);
-        self
-    }
-
-    pub fn set_fg(&mut self, fg: Color) -> &mut Self {
-        self.fg = Some(fg);
-        self
-    }
-
-    pub fn set_bg(&mut self, bg: Color) -> &mut Self {
-        self.bg = Some(bg);
-        self
-    }
-
-    pub fn set_attr(&mut self, attr: Attribute) -> &mut Self {
-        self.attr = Some(attr);
         self
     }
 }
@@ -367,49 +367,42 @@ impl Command for Span {
     type AnsiType = String;
 
     fn ansi_code(&self) -> Self::AnsiType {
+        use crossterm::cursor::MoveTo;
+
         let mut s = match &self.cursor {
-            Some(Cursor { col, row }) => {
-                //
-                term_cursor::MoveTo(*col, *row).to_string()
-            }
+            Some(Cursor { col, row }) => MoveTo(*col, *row).to_string(),
             None => Default::default(),
         };
-        s.push_str(&{
-            let mut ss = style::style(&self.text);
-            if let Some(bg) = &self.bg {
-                ss = ss.on(*bg);
-            }
-            if let Some(fg) = &self.fg {
-                ss = ss.with(*fg);
-            }
-            if let Some(attr) = &self.attr {
-                ss = ss.attribute(*attr);
-            }
-            ss.to_string()
-        });
-
+        s.push_str(&self.text.to_string());
         s
     }
 }
 
 // Spanline object to render on screen.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct Spanline {
-    fg: Option<Color>,
-    bg: Option<Color>,
-    attr: Option<Attribute>,
-    cursor: Option<Cursor>,
     spans: Vec<Span>,
+    cursor: Option<Cursor>,
+}
+
+impl FromIterator<Span> for Spanline {
+    fn from_iter<T>(iter: T) -> Spanline
+    where
+        T: IntoIterator<Item = Span>,
+    {
+        let spans: Vec<Span> = iter.into_iter().collect();
+        Spanline {
+            cursor: None,
+            spans,
+        }
+    }
 }
 
 impl Default for Spanline {
     fn default() -> Spanline {
         Spanline {
-            fg: Default::default(),
-            bg: Default::default(),
-            attr: Default::default(),
-            cursor: Default::default(),
             spans: Default::default(),
+            cursor: None,
         }
     }
 }
@@ -417,21 +410,6 @@ impl Default for Spanline {
 impl Spanline {
     pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
         self.cursor = Some(cursor);
-        self
-    }
-
-    pub fn set_fg(&mut self, fg: Color) -> &mut Self {
-        self.fg = Some(fg);
-        self
-    }
-
-    pub fn set_bg(&mut self, bg: Color) -> &mut Self {
-        self.bg = Some(bg);
-        self
-    }
-
-    pub fn set_attr(&mut self, attr: Attribute) -> &mut Self {
-        self.attr = Some(attr);
         self
     }
 
@@ -449,24 +427,13 @@ impl Command for Spanline {
     type AnsiType = String;
 
     fn ansi_code(&self) -> Self::AnsiType {
+        use crossterm::cursor::MoveTo;
+
         let mut s = match &self.cursor {
-            Some(Cursor { col, row }) => {
-                //
-                term_cursor::MoveTo(*col, *row).to_string()
-            }
+            Some(Cursor { col, row }) => MoveTo(*col, *row).to_string(),
             None => Default::default(),
         };
-
-        for mut span in self.spans.clone().into_iter() {
-            if let (None, Some(bg)) = (&span.bg, &self.bg) {
-                span.set_bg(*bg);
-            }
-            if let (None, Some(fg)) = (&span.fg, &self.fg) {
-                span.set_fg(*fg);
-            }
-            if let (None, Some(attr)) = (&span.attr, &self.attr) {
-                span.set_attr(*attr);
-            }
+        for span in self.spans.clone().into_iter() {
             s.push_str(&span.ansi_code());
         }
         s

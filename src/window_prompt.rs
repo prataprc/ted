@@ -136,13 +136,12 @@ impl WindowPrompt {
         let mut stdout = io::stdout();
 
         let span = {
-            let mut span = Span::new(
-                &self
-                    .buffer
-                    .as_ref()
-                    .map(|b| b.to_string())
-                    .unwrap_or("".to_string()),
-            );
+            let mut span: Span = self
+                .buffer
+                .as_ref()
+                .map(|b| b.to_string())
+                .unwrap_or("".to_string())
+                .into();
             span.set_cursor(self.prompt_cursor);
             span
         };

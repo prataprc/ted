@@ -98,10 +98,7 @@ impl KeyTed {
                 _ => (eno, Event::Noop),
             },
             G(n) if empty => match evnt {
-                Char('g', _) if ctrl => {
-                    let spanline = Default::default();
-                    (eno, Td(Ted::StatusCursor { spanline }))
-                }
+                Char('g', _) if ctrl => (eno, Td(Ted::StatusCursor)),
                 Char('g', _) => (eno, Mt(Mto::Row(n, DP::Caret))),
                 Char('e', _) => (eno, Mt(Mto::Word(n, DP::Left, DP::End))),
                 Char('E', _) => (eno, Mt(Mto::WWord(n, DP::Left, DP::End))),
