@@ -19,7 +19,7 @@ impl Default for File {
 }
 
 impl File {
-    fn to_name(&self) -> String {
+    pub fn to_name(&self) -> String {
         match self {
             File::Initial { name } => name.clone(),
             File::TabComp { name, .. } => name.clone(),

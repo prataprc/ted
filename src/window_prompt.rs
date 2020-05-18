@@ -10,7 +10,8 @@ use std::{
 
 use crate::{
     buffer::Buffer,
-    event::{self, Event, DP},
+    event::{Event, DP},
+    location,
     state::Context,
     window::{Coord, Cursor, Span},
     Error, Result,
@@ -50,26 +51,26 @@ impl From<Vec<Span>> for WindowPrompt {
     }
 }
 
-impl TryFrom<event::OpenFile> for WindowPrompt {
+impl TryFrom<location::OpenFile> for WindowPrompt {
     type Error = Error;
 
-    fn try_from(of: event::OpenFile) -> Result<WindowPrompt> {
+    fn try_from(of: location::OpenFile) -> Result<WindowPrompt> {
         let fg = Color::AnsiValue(9);
         let bg = Color::AnsiValue(15);
         let spans = match of {
-            event::OpenFile::ReadOnly(_, file) => vec![
+            location::OpenFile::ReadOnly(_, file) => vec![
                 span!(fg: fg, bg: bg, "-- Read only file {:?}", file),
                 span!(fg: fg, bg: bg, "-- Press c or space to continue --"),
             ],
-            event::OpenFile::NotFound(file) => vec![
+            location::OpenFile::NotFound(file) => vec![
                 span!(fg: fg, bg: bg, "-- File not found {:?}", file),
                 span!(fg: fg, bg: bg, "-- Press c or space to continue --"),
             ],
-            event::OpenFile::NoPermission(file) => vec![
+            location::OpenFile::NoPermission(file) => vec![
                 span!(fg: fg, bg: bg, "-- Permission denied {:?}", file),
                 span!(fg: fg, bg: bg, "-- Press c or space to continue --"),
             ],
-            event::OpenFile::ReadWrite(_, file) => {
+            location::OpenFile::ReadWrite(_, file) => {
                 err_at!(FailConvert, msg: format!("{:?}", file))?;
                 unreachable!()
             }

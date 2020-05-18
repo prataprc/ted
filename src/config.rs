@@ -2,7 +2,7 @@ use log::{info, warn};
 use serde_derive::Deserialize;
 use toml;
 
-use std::{convert::TryFrom, convert::TryInto, ffi, fs, path};
+use std::{convert::TryFrom, convert::TryInto, ffi, fs, path, str::FromStr};
 
 use crate::{Error, Result};
 
@@ -47,11 +47,11 @@ config![
     (top_margin_char, char, '-')
 ];
 
-impl<'a> TryFrom<&'a str> for ConfigToml {
-    type Error = Error;
+impl FromStr for ConfigToml {
+    type Err = Error;
 
-    fn try_from(toml_text: &str) -> Result<Self> {
-        let ctml: ConfigToml = err_at!(FailConvert, toml::from_str(toml_text))?;
+    fn from_str(s: &str) -> Result<Self> {
+        let ctml: ConfigToml = err_at!(FailConvert, s.parse())?;
         Ok(ctml)
     }
 }

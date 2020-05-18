@@ -17,11 +17,11 @@ macro_rules! parse_n {
 }
 
 #[derive(Clone, Default)]
-pub struct KeyTed {
+pub struct KeyCode {
     prefix: Event,
 }
 
-impl KeyTed {
+impl KeyCode {
     pub fn fold(&mut self, c: &Context, evnt: Event) -> Result<Event> {
         match c.as_buffer().to_mode() {
             "insert" => self.insert_fold(c, evnt),

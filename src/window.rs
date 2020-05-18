@@ -130,14 +130,6 @@ impl Default for Window {
 }
 
 impl Window {
-    pub fn post<T>(&mut self, c: &mut Context, msg: T) {
-        match self {
-            Window::Code(w) => w.post(c, msg),
-            Window::Prompt(_) => (),
-            Window::None => (),
-        }
-    }
-
     pub fn to_cursor(&self) -> Cursor {
         match self {
             Window::Code(w) => w.to_cursor(),

@@ -6,6 +6,7 @@ use std::{fmt, result};
 #[macro_use]
 pub mod util;
 pub mod location;
+mod tabc;
 
 #[macro_use]
 pub mod window;
@@ -26,7 +27,7 @@ mod ftype;
 mod ftype_txt_en;
 
 mod keymap;
-mod keymap_ted;
+mod keymap_code;
 
 mod cmd;
 mod cmd_edit;
@@ -39,6 +40,7 @@ pub enum Error {
     Fatal(String),
     BadPattern(String),
     IOError(String),
+    Invalid(String),
     FailConvert(String),
     FailBuffer(String),
 }
@@ -49,6 +51,7 @@ impl fmt::Display for Error {
             Error::Fatal(msg) => write!(f, "Fatal: {}", msg),
             Error::BadPattern(msg) => write!(f, "BadPattern: {}", msg),
             Error::IOError(msg) => write!(f, "IOError: {}", msg),
+            Error::Invalid(msg) => write!(f, "Invalid: {}", msg),
             Error::FailConvert(msg) => write!(f, "FailConvert: {}", msg),
             Error::FailBuffer(msg) => write!(f, "FailBuffer: {}", msg),
         }

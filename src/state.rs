@@ -9,7 +9,6 @@ use log::trace;
 use std::{
     convert::TryInto,
     io::{self, Write},
-    mem,
     time::{Duration, SystemTime},
 };
 
@@ -104,12 +103,16 @@ impl State {
         res
     }
 
-    fn to_context(&mut self) -> Context {
-        Context::new(self)
+    fn add_buffer(&mut self, buffer: Buffer) {
+        self.buffers.insert(0, buffer)
     }
 }
 
 impl State {
+    fn to_context(&mut self) -> Context {
+        Context::new(self)
+    }
+
     pub fn as_buffer(&self, id: &str) -> &Buffer {
         for b in self.buffers.iter() {
             if b.to_id() == id {
@@ -324,14 +327,8 @@ impl<'a> Context<'a> {
 }
 
 impl<'a> Context<'a> {
-    pub fn post<T>(&mut self, msg: T) {
-        let mut w = mem::replace(&mut self.w, Default::default());
-        w.post(self, msg);
-        self.w = w;
-    }
-
     pub fn add_buffer(&mut self, buffer: Buffer) {
-        self.state.buffers.insert(0, buffer)
+        self.state.add_buffer(buffer)
     }
 
     pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {

@@ -13,7 +13,7 @@ use crate::{
 
 pub enum Message {
     Status(Span),
-    TabComplete(Span),
+    TabComplete(TabComplete),
 }
 
 #[derive(Clone, Default)]
@@ -58,7 +58,7 @@ impl WindowCode {
 
 impl WindowCode {
     #[inline]
-    pub fn post<Message>(&mut self, _: &mut Context, _msg: Message) {
+    pub fn post(&mut self, _: &mut Context, _msg: Message) -> Result<()> {
         //match (name, msg) {
         //    ("status", Message::Status(sl)) -> self.stsline.set(sl),
         //    ("tabcomplete", Message::TabComplete(sl) -> self.tbcline.set(sl),
