@@ -31,8 +31,8 @@ impl Iterator for TabComplete {
             None => Some(0),
         };
         match &self.choice {
-            Some(choice) => Ok(self.choices[choice].clone()),
-            None => Ok(self.span.clone()),
+            Some(choice) => Some(self.choices[*choice].clone()),
+            None => Some(self.span.clone()),
         }
     }
 }

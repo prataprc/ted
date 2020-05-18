@@ -97,7 +97,8 @@ impl Text {
                     prev_kind = Some(node.kind());
                 }
                 let span: Span = format!("{} {} {} {}", ws, ls, ss, ps).into();
-                c.post(wcode::Message::Status(span));
+                let x = 100; // TODO: V
+                             // c.post(wcode::Message::Status(span));
                 Ok(Event::Noop)
             }
         }

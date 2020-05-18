@@ -1,6 +1,5 @@
 use log::{info, warn};
 use serde_derive::Deserialize;
-use toml;
 
 use std::{convert::TryFrom, convert::TryInto, ffi, fs, path, str::FromStr};
 
@@ -62,7 +61,8 @@ impl<'a> TryFrom<&'a [u8]> for ConfigToml {
     fn try_from(toml_bin: &[u8]) -> Result<Self> {
         use std::str::from_utf8;
 
-        err_at!(FailConvert, from_utf8(toml_bin))?.try_into()
+        let s = err_at!(FailConvert, from_utf8(toml_bin))?;
+        err_at!(FailConvert, s.parse())
     }
 }
 

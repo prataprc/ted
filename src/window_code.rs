@@ -5,6 +5,7 @@ use crate::{
     event::Event,
     keymap::Keymap,
     state::Context,
+    tabc::TabComplete,
     window::{new_window_line, Coord, Cursor, Span, Window},
     window_file::WindowFile,
     window_line::WindowLine,
@@ -63,6 +64,7 @@ impl WindowCode {
         //    ("status", Message::Status(sl)) -> self.stsline.set(sl),
         //    ("tabcomplete", Message::TabComplete(sl) -> self.tbcline.set(sl),
         //}
+        Ok(())
     }
 
     pub fn to_cursor(&self) -> Cursor {
