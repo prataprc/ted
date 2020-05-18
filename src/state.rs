@@ -9,6 +9,7 @@ use log::trace;
 use std::{
     convert::TryInto,
     io::{self, Write},
+    mem,
     time::{Duration, SystemTime},
 };
 
@@ -268,42 +269,6 @@ pub struct Context<'a> {
     pub buffer: Option<Buffer>,
 }
 
-impl<'a> AsRef<Buffer> for Context<'a> {
-    fn as_ref(&self) -> &Buffer {
-        self.buffer.as_ref().unwrap()
-    }
-}
-
-impl<'a> AsMut<Buffer> for Context<'a> {
-    fn as_mut(&mut self) -> &mut Buffer {
-        self.buffer.as_mut().unwrap()
-    }
-}
-
-impl<'a> AsRef<State> for Context<'a> {
-    fn as_ref(&self) -> &State {
-        &self.state
-    }
-}
-
-impl<'a> AsMut<State> for Context<'a> {
-    fn as_mut(&mut self) -> &mut State {
-        &mut self.state
-    }
-}
-
-impl<'a> AsRef<Window> for Context<'a> {
-    fn as_ref(&self) -> &Window {
-        &self.w
-    }
-}
-
-impl<'a> AsMut<Window> for Context<'a> {
-    fn as_mut(&mut self) -> &mut Window {
-        &mut self.w
-    }
-}
-
 impl<'a> Context<'a> {
     pub fn new(state: &mut State) -> Context {
         Context {
@@ -312,9 +277,24 @@ impl<'a> Context<'a> {
             buffer: Default::default(),
         }
     }
+
+    #[inline]
+    pub fn set_window(&mut self, w: Window) -> Window {
+        mem::replace(&mut self.w, w)
+    }
 }
 
 impl<'a> Context<'a> {
+    #[inline]
+    pub fn as_state(&self) -> &State {
+        &self.state
+    }
+
+    #[inline]
+    pub fn as_mut_state(&mut self) -> &mut State {
+        &mut self.state
+    }
+
     #[inline]
     pub fn as_buffer(&self) -> &Buffer {
         self.buffer.as_ref().unwrap()
@@ -323,6 +303,11 @@ impl<'a> Context<'a> {
     #[inline]
     pub fn as_mut_buffer(&mut self) -> &mut Buffer {
         self.buffer.as_mut().unwrap()
+    }
+
+    #[inline]
+    pub fn to_window(&mut self) -> Window {
+        mem::replace(&mut self.w, Default::default())
     }
 }
 

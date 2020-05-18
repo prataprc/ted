@@ -3,7 +3,7 @@ use std::{fmt, result};
 use crate::{
     buffer::{self, Buffer},
     event::{Event, Ted},
-    state::{Context, State},
+    state::Context,
     view,
     window::{Coord, Cursor},
     Result,
@@ -66,7 +66,7 @@ impl WindowEdit {
     }
 
     pub fn on_refresh(&mut self, c: &mut Context) -> Result<()> {
-        let state: &State = c.as_ref();
+        let state = c.as_state();
         self.cursor = if state.as_ref().wrap {
             let v = view::Wrap::new(self.coord, self.cursor, self.obc_xy);
             let buf = state.as_buffer(&self.buffer_id);

@@ -3,7 +3,7 @@ use std::{fmt, result};
 use crate::{
     buffer::{self, Buffer},
     event::Event,
-    state::{Context, State},
+    state::Context,
     view,
     window::{Coord, Cursor},
     Result,
@@ -65,11 +65,10 @@ impl WindowLine {
     }
 
     pub fn on_refresh(&mut self, c: &mut Context) -> Result<()> {
-        let state: &State = c.as_ref();
         self.cursor = match self.buffer.as_ref() {
             Some(buffer) => {
                 let v = view::NoWrap::new(self.coord, self.cursor, self.obc_xy);
-                v.render(state, buffer)?
+                v.render(c.as_state(), buffer)?
             }
             None => self.cursor,
         };

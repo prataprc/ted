@@ -1,6 +1,11 @@
 use tree_sitter as ts;
 
-use crate::{event::Event, state::Context, window::Span, window_code as wcode, Error, Result};
+use crate::{
+    event::Event,
+    state::Context,
+    window::{Span, Window},
+    Error, Result,
+};
 
 extern "C" {
     fn tree_sitter_txt_en() -> ts::Language;
@@ -77,6 +82,8 @@ impl Text {
     }
 
     fn to_status_cursor(&mut self, c: &mut Context, _: Event) -> Result<Event> {
+        use crate::window_code::Message;
+
         match &self.tree {
             None => Ok(Event::Noop),
             Some(tree) => {
@@ -97,8 +104,14 @@ impl Text {
                     prev_kind = Some(node.kind());
                 }
                 let span: Span = format!("{} {} {} {}", ws, ls, ss, ps).into();
-                let x = 100; // TODO: V
-                             // c.post(wcode::Message::Status(span));
+                let w = match c.to_window() {
+                    Window::Code(mut w) => {
+                        w.post(c, Message::Status(span));
+                        Window::Code(w)
+                    }
+                    w => w,
+                };
+                c.set_window(w);
                 Ok(Event::Noop)
             }
         }

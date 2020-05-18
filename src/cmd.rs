@@ -1,4 +1,4 @@
-use log::{error, warn};
+use log::error;
 
 use crate::{
     cmd_edit::Edit, cmd_file::File, cmd_write::Write, state::Context, tabc::TabComplete,
@@ -60,7 +60,7 @@ impl Commands {
                 *self = Commands::TabComp { tabc, cmds };
             }
             Commands::TabComp { tabc, .. } if tabc.is_same(&span) => (),
-            Commands::TabComp { tabc, cmds } => {
+            Commands::TabComp { tabc: _, cmds } => {
                 let tabc = {
                     let choices = Self::to_choices(&span, cmds);
                     TabComplete::new(span, choices)
@@ -71,20 +71,25 @@ impl Commands {
         }
 
         match self {
-            Commands::TabComp { tabc, .. } => match c.as_mut() {
-                Window::Code(w) => {
-                    use crate::window_code::Message;
-                    // w.post(c, Message::TabComplete(tabc.clone()))?;
-                }
-                _ => warn!("failed to tab-complete"),
-            },
+            Commands::TabComp { tabc, .. } => {
+                use crate::window_code::Message;
+
+                let w = match c.to_window() {
+                    Window::Code(mut w) => {
+                        w.post(c, Message::TabComplete(tabc.clone()))?;
+                        Window::Code(w)
+                    }
+                    w => w,
+                };
+                c.set_window(w);
+            }
             Commands::Initial { .. } => error!("unreachable"),
         }
 
         Ok(())
     }
 
-    pub fn on_command(&mut self, c: &mut Context) -> Result<()> {
+    pub fn on_command(&mut self, _: &mut Context) -> Result<()> {
         todo!()
     }
 }
