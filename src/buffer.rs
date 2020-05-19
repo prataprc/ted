@@ -78,7 +78,6 @@ impl PartialEq for Cursor {
 impl Eq for Cursor {}
 
 impl PartialOrd for Cursor {
-    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         if self.row == other.row {
             self.col.partial_cmp(&other.col)
@@ -89,7 +88,6 @@ impl PartialOrd for Cursor {
 }
 
 impl Ord for Cursor {
-    #[inline]
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         if self.row == other.row {
             self.row.cmp(&other.row)

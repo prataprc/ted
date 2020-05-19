@@ -9,6 +9,7 @@ use std::{
     iter::FromIterator,
     ops::Add,
     result,
+    sync::mpsc,
 };
 
 use crate::{
@@ -77,6 +78,25 @@ pub fn new_window_line(typ: &str, mut coord: Coord) -> WindowLine {
     };
     coord = Coord::new(col, row, 1, wth);
     WindowLine::new("cmd-line", coord)
+}
+
+pub enum WMsg {
+    Message(Message),
+    Request(Request, mpsc::SyncSender<Response>),
+    Response(Response),
+    None,
+}
+
+pub enum Message {
+    None,
+}
+
+pub enum Request {
+    None,
+}
+
+pub enum Response {
+    None,
 }
 
 #[derive(Clone)]

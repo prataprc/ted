@@ -7,9 +7,11 @@ use crossterm::{
 use log::trace;
 
 use std::{
+    cmp,
     convert::TryInto,
     io::{self, Write},
     mem,
+    sync::mpsc,
     time::{Duration, SystemTime},
 };
 
@@ -17,7 +19,7 @@ use crate::{
     buffer::Buffer,
     config::Config,
     event::Event,
-    window::{Cursor, Window},
+    window::{Cursor, Message, Request, Response, WMsg, Window},
     Error, Result,
 };
 
@@ -247,6 +249,79 @@ impl<'a> Context<'a> {
         match i {
             Some(i) => Some(self.state.buffers.remove(i)),
             None => None,
+        }
+    }
+}
+
+#[derive(Default)]
+struct PubSub {
+    topics: Vec<Subscriber>,
+}
+
+#[derive(Clone)]
+struct Subscriber {
+    topic: String,
+    tx: mpsc::Sender<WMsg>,
+}
+
+impl Eq for Subscriber {}
+
+impl PartialEq for Subscriber {
+    fn eq(&self, other: &Self) -> bool {
+        self.topic.eq(&other.topic)
+    }
+}
+
+impl PartialOrd for Subscriber {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        self.topic.partial_cmp(&other.topic)
+    }
+}
+
+impl Ord for Subscriber {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.topic.cmp(&other.topic)
+    }
+}
+
+impl PubSub {
+    fn subscribe(&mut self, topic: String) -> mpsc::Receiver<WMsg> {
+        let (tx, rx) = mpsc::channel();
+        self.topics.push(Subscriber { topic, tx });
+        self.topics.sort();
+        rx
+    }
+
+    fn find_topic(tp: &str, subs: &[Subscriber]) -> Option<usize> {
+        match subs.len() {
+            0 => None,
+            1 if subs[0].topic == tp => Some(0),
+            1 => None,
+            m if tp < &subs[m / 2].topic => Self::find_topic(tp, &subs[..m / 2]),
+            m => Self::find_topic(tp, &subs[m / 2..]).map(|n| (m / 2) + n),
+        }
+    }
+
+    fn post(&self, topic: String, msg: Message) -> Result<()> {
+        match Self::find_topic(&topic, &self.topics) {
+            Some(n) => {
+                assert!(self.topics[n].topic == topic);
+                err_at!(IPC, self.topics[n].tx.send(WMsg::Message(msg)))?;
+                Ok(())
+            }
+            None => Ok(()),
+        }
+    }
+
+    fn request(&self, topic: String, msg: Request) -> Result<Response> {
+        match Self::find_topic(&topic, &self.topics) {
+            Some(n) => {
+                assert!(self.topics[n].topic == topic);
+                let (tx, rx) = mpsc::sync_channel(1);
+                err_at!(IPC, self.topics[n].tx.send(WMsg::Request(msg, tx)))?;
+                err_at!(IPC, rx.recv())
+            }
+            None => Ok(Response::None),
         }
     }
 }
