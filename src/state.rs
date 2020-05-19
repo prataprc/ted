@@ -21,6 +21,44 @@ use crate::{
     Error, Result,
 };
 
+pub struct Terminal {
+    stdout: io::Stdout,
+    pub cols: u16,
+    pub rows: u16,
+}
+
+impl Terminal {
+    fn init() -> Result<Terminal> {
+        let mut stdout = io::stdout();
+        err_at!(Fatal, terminal::enable_raw_mode())?;
+        err_at!(
+            Fatal,
+            execute!(
+                stdout,
+                EnterAlternateScreen,
+                EnableMouseCapture,
+                term_cursor::Hide
+            )
+        )?;
+
+        let (cols, rows) = err_at!(Fatal, terminal::size())?;
+        Ok(Terminal { stdout, cols, rows })
+    }
+}
+
+impl Drop for Terminal {
+    fn drop(&mut self) {
+        execute!(
+            self.stdout,
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            term_cursor::Show
+        )
+        .unwrap();
+        terminal::disable_raw_mode().unwrap();
+    }
+}
+
 // Application state
 pub struct State {
     pub tm: Terminal,
@@ -142,41 +180,74 @@ impl State {
     }
 }
 
-pub struct Terminal {
-    stdout: io::Stdout,
-    pub cols: u16,
-    pub rows: u16,
+pub struct Context<'a> {
+    pub state: &'a mut State,
+    pub w: Window,
+    pub buffer: Option<Buffer>,
 }
 
-impl Terminal {
-    fn init() -> Result<Terminal> {
-        let mut stdout = io::stdout();
-        err_at!(Fatal, terminal::enable_raw_mode())?;
-        err_at!(
-            Fatal,
-            execute!(
-                stdout,
-                EnterAlternateScreen,
-                EnableMouseCapture,
-                term_cursor::Hide
-            )
-        )?;
+impl<'a> Context<'a> {
+    pub fn new(state: &mut State) -> Context {
+        Context {
+            state,
+            w: Default::default(),
+            buffer: Default::default(),
+        }
+    }
 
-        let (cols, rows) = err_at!(Fatal, terminal::size())?;
-        Ok(Terminal { stdout, cols, rows })
+    #[inline]
+    pub fn set_window(&mut self, w: Window) -> Window {
+        mem::replace(&mut self.w, w)
     }
 }
 
-impl Drop for Terminal {
-    fn drop(&mut self) {
-        execute!(
-            self.stdout,
-            LeaveAlternateScreen,
-            DisableMouseCapture,
-            term_cursor::Show
-        )
-        .unwrap();
-        terminal::disable_raw_mode().unwrap();
+impl<'a> Context<'a> {
+    #[inline]
+    pub fn as_state(&self) -> &State {
+        &self.state
+    }
+
+    #[inline]
+    pub fn as_mut_state(&mut self) -> &mut State {
+        &mut self.state
+    }
+
+    #[inline]
+    pub fn as_buffer(&self) -> &Buffer {
+        self.buffer.as_ref().unwrap()
+    }
+
+    #[inline]
+    pub fn as_mut_buffer(&mut self) -> &mut Buffer {
+        self.buffer.as_mut().unwrap()
+    }
+
+    #[inline]
+    pub fn to_window(&mut self) -> Window {
+        mem::replace(&mut self.w, Default::default())
+    }
+}
+
+impl<'a> Context<'a> {
+    pub fn add_buffer(&mut self, buffer: Buffer) {
+        self.state.add_buffer(buffer)
+    }
+
+    pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
+        let i = {
+            let mut iter = self.state.buffers.iter().enumerate();
+            loop {
+                match iter.next() {
+                    Some((i, b)) if b.to_id() == id => break Some(i),
+                    None => break None,
+                    _ => (),
+                }
+            }
+        };
+        match i {
+            Some(i) => Some(self.state.buffers.remove(i)),
+            None => None,
+        }
     }
 }
 
@@ -259,77 +330,6 @@ impl Latency {
             if n > 0 {
                 println!("{}  {} percentile = {}", prefix, duration, n);
             }
-        }
-    }
-}
-
-pub struct Context<'a> {
-    pub state: &'a mut State,
-    pub w: Window,
-    pub buffer: Option<Buffer>,
-}
-
-impl<'a> Context<'a> {
-    pub fn new(state: &mut State) -> Context {
-        Context {
-            state,
-            w: Default::default(),
-            buffer: Default::default(),
-        }
-    }
-
-    #[inline]
-    pub fn set_window(&mut self, w: Window) -> Window {
-        mem::replace(&mut self.w, w)
-    }
-}
-
-impl<'a> Context<'a> {
-    #[inline]
-    pub fn as_state(&self) -> &State {
-        &self.state
-    }
-
-    #[inline]
-    pub fn as_mut_state(&mut self) -> &mut State {
-        &mut self.state
-    }
-
-    #[inline]
-    pub fn as_buffer(&self) -> &Buffer {
-        self.buffer.as_ref().unwrap()
-    }
-
-    #[inline]
-    pub fn as_mut_buffer(&mut self) -> &mut Buffer {
-        self.buffer.as_mut().unwrap()
-    }
-
-    #[inline]
-    pub fn to_window(&mut self) -> Window {
-        mem::replace(&mut self.w, Default::default())
-    }
-}
-
-impl<'a> Context<'a> {
-    pub fn add_buffer(&mut self, buffer: Buffer) {
-        self.state.add_buffer(buffer)
-    }
-
-    pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
-        let i = {
-            let mut iter = self.state.buffers.iter().enumerate();
-            loop {
-                match iter.next() {
-                    Some((i, b)) if b.to_id() == id => break Some(i),
-                    None => break None,
-                    _ => (),
-                }
-            }
-        };
-        match i {
-            Some(i) => Some(self.state.buffers.remove(i)),
-            None => None,
         }
     }
 }
