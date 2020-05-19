@@ -80,22 +80,12 @@ pub fn new_window_line(typ: &str, mut coord: Coord) -> WindowLine {
     WindowLine::new("cmd-line", coord)
 }
 
-pub enum WMsg {
-    Message(Message),
-    Request(Request, mpsc::SyncSender<Response>),
-    Response(Response),
-    None,
-}
-
 pub enum Message {
+    Notify(Notify),
     None,
 }
 
-pub enum Request {
-    None,
-}
-
-pub enum Response {
+pub enum Notify {
     None,
 }
 

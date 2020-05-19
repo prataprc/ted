@@ -19,7 +19,7 @@ use crate::{
     buffer::Buffer,
     config::Config,
     event::Event,
-    window::{Cursor, Message, Request, Response, WMsg, Window},
+    window::{Cursor, Message, Notify, Window},
     Error, Result,
 };
 
@@ -261,7 +261,7 @@ struct PubSub {
 #[derive(Clone)]
 struct Subscriber {
     topic: String,
-    tx: mpsc::Sender<WMsg>,
+    tx: mpsc::Sender<Message>,
 }
 
 impl Eq for Subscriber {}
@@ -285,7 +285,7 @@ impl Ord for Subscriber {
 }
 
 impl PubSub {
-    fn subscribe(&mut self, topic: String) -> mpsc::Receiver<WMsg> {
+    fn subscribe(&mut self, topic: String) -> mpsc::Receiver<Message> {
         let (tx, rx) = mpsc::channel();
         self.topics.push(Subscriber { topic, tx });
         self.topics.sort();
@@ -302,26 +302,14 @@ impl PubSub {
         }
     }
 
-    fn post(&self, topic: String, msg: Message) -> Result<()> {
+    fn notify(&self, topic: String, msg: Notify) -> Result<()> {
         match Self::find_topic(&topic, &self.topics) {
             Some(n) => {
                 assert!(self.topics[n].topic == topic);
-                err_at!(IPC, self.topics[n].tx.send(WMsg::Message(msg)))?;
+                err_at!(IPC, self.topics[n].tx.send(Message::Notify(msg)))?;
                 Ok(())
             }
             None => Ok(()),
-        }
-    }
-
-    fn request(&self, topic: String, msg: Request) -> Result<Response> {
-        match Self::find_topic(&topic, &self.topics) {
-            Some(n) => {
-                assert!(self.topics[n].topic == topic);
-                let (tx, rx) = mpsc::sync_channel(1);
-                err_at!(IPC, self.topics[n].tx.send(WMsg::Request(msg, tx)))?;
-                err_at!(IPC, rx.recv())
-            }
-            None => Ok(Response::None),
         }
     }
 }
