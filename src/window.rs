@@ -6,9 +6,10 @@ use crossterm::{
 use std::{fmt, iter::FromIterator, ops::Add, result};
 
 use crate::{
+    buffer::Buffer,
     //
     event::Event,
-    state::Context,
+    state::State,
     window_code::WindowCode,
     window_edit::WindowEdit,
     window_file::WindowFile,
@@ -119,6 +120,28 @@ impl Default for Window {
 }
 
 impl Window {
+    pub fn as_buffer(&self) -> &Buffer {
+        match self {
+            Window::Code(w) => w.as_buffer(),
+            Window::File(w) => w.as_buffer(),
+            Window::Edit(w) => w.as_buffer(),
+            Window::Line(w) => w.as_buffer(),
+            Window::Prompt(w) => w.as_buffer(),
+            Window::None => Buffer::empty(),
+        }
+    }
+
+    pub fn as_mut_buffer(&mut self) -> &mut Buffer {
+        match self {
+            Window::Code(w) => w.as_mut_buffer(),
+            Window::File(w) => w.as_mut_buffer(),
+            Window::Edit(w) => w.as_mut_buffer(),
+            Window::Line(w) => w.as_mut_buffer(),
+            Window::Prompt(w) => w.as_mut_buffer(),
+            Window::None => Buffer::empty(),
+        }
+    }
+
     pub fn to_cursor(&self) -> Cursor {
         match self {
             Window::Code(w) => w.to_cursor(),
@@ -130,24 +153,24 @@ impl Window {
         }
     }
 
-    pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         match self {
-            Window::Code(w) => w.on_event(c, evnt),
-            Window::File(w) => w.on_event(c, evnt),
-            Window::Edit(w) => w.on_event(c, evnt),
-            Window::Line(w) => w.on_event(c, evnt),
-            Window::Prompt(w) => w.on_event(c, evnt),
+            Window::Code(w) => w.on_event(s, evnt),
+            Window::File(w) => w.on_event(s, evnt),
+            Window::Edit(w) => w.on_event(s, evnt),
+            Window::Line(w) => w.on_event(s, evnt),
+            Window::Prompt(w) => w.on_event(s, evnt),
             Window::None => Ok(evnt),
         }
     }
 
-    pub fn on_refresh(&mut self, c: &mut Context) -> Result<()> {
+    pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
         match self {
-            Window::Code(w) => w.on_refresh(c),
-            Window::File(w) => w.on_refresh(c),
-            Window::Edit(w) => w.on_refresh(c),
-            Window::Line(w) => w.on_refresh(c),
-            Window::Prompt(w) => w.on_refresh(c),
+            Window::Code(w) => w.on_refresh(s),
+            Window::File(w) => w.on_refresh(s),
+            Window::Edit(w) => w.on_refresh(s),
+            Window::Line(w) => w.on_refresh(s),
+            Window::Prompt(w) => w.on_refresh(s),
             Window::None => Ok(()),
         }
     }

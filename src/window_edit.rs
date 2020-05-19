@@ -3,7 +3,7 @@ use std::{fmt, result};
 use crate::{
     buffer::{self, Buffer},
     event::{Event, Ted},
-    state::Context,
+    state::State,
     view,
     window::{Coord, Cursor},
     Result,
@@ -37,6 +37,16 @@ impl WindowEdit {
 
 impl WindowEdit {
     #[inline]
+    pub fn as_buffer(&self, s: &mut State) -> &Buffer {
+        self.buffer_id.clone()
+    }
+
+    #[inline]
+    pub fn to_buffer_id(&self) -> String {
+        self.buffer_id.clone()
+    }
+
+    #[inline]
     pub fn to_buffer_id(&self) -> String {
         self.buffer_id.clone()
     }
@@ -46,18 +56,22 @@ impl WindowEdit {
         self.coord.to_top_left() + self.cursor
     }
 
-    pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         match evnt {
-            Event::Td(Ted::UseBuffer { buffer_id }) => {
+            Event::Td(Ted::NewBuffer) => {
+                let buffer_id = {
+                    let buffer = Buffer::empty();
+                    let buffer_id = buffer.to_id();
+                    s.add_buffer(buffer);
+                    buffer_id
+                };
                 self.buffer_id = buffer_id;
                 Ok(Event::Noop)
             }
-            mut evnt => match c.take_buffer(&self.buffer_id) {
+            mut evnt => match s.take_buffer(&self.buffer_id) {
                 Some(buffer) => {
-                    c.buffer = Some(buffer);
-                    evnt = Buffer::on_event(c, evnt)?;
-                    let buffer = c.buffer.take().unwrap();
-                    c.add_buffer(buffer);
+                    let evnt = buffer.on_event(s, evnt)?;
+                    s.add_buffer(buffer);
                     Ok(evnt)
                 }
                 None => Ok(evnt),
@@ -65,16 +79,15 @@ impl WindowEdit {
         }
     }
 
-    pub fn on_refresh(&mut self, c: &mut Context) -> Result<()> {
-        let state = c.as_state();
-        self.cursor = if state.as_ref().wrap {
+    pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
+        self.cursor = if s.as_ref().wrap {
             let v = view::Wrap::new(self.coord, self.cursor, self.obc_xy);
-            let buf = state.as_buffer(&self.buffer_id);
-            v.render(&state, buf)?
+            let buf = s.as_buffer(&self.buffer_id);
+            v.render(&s, buf)?
         } else {
             let v = view::NoWrap::new(self.coord, self.cursor, self.obc_xy);
-            let buf = state.as_buffer(&self.buffer_id);
-            v.render(&state, buf)?
+            let buf = s.as_buffer(&self.buffer_id);
+            v.render(&s, buf)?
         };
 
         Ok(())

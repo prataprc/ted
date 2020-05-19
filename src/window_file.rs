@@ -10,7 +10,7 @@ use std::{
 use crate::{
     buffer::Buffer,
     event::{Event, Ted},
-    state::{Context, State},
+    state::State,
     window::{new_window_line, Coord, Cursor, Span},
     window_edit::WindowEdit,
     window_line::WindowLine,
@@ -143,14 +143,13 @@ impl WindowFile {
 
 impl WindowFile {
     #[inline]
-    pub fn status(&self, _span: Span) {
-        // self.stsline.render(span)
-        todo!()
+    pub fn as_buffer(&self) -> &Buffer {
+        self.we.as_buffer()
     }
 
     #[inline]
-    pub fn tab_complete(&self, _span: Span) {
-        ()
+    pub fn as_mut_buffer(&self) -> &mut Buffer {
+        self.we.as_mut_buffer()
     }
 
     #[inline]
@@ -158,20 +157,10 @@ impl WindowFile {
         self.we.to_cursor()
     }
 
-    pub fn on_event(&mut self, c: &mut Context, mut evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, s: &mut State, mut evnt: Event) -> Result<Event> {
         use crate::event::Event::Td;
 
-        evnt = match evnt {
-            Td(Ted::NewBuffer) => {
-                let buffer = Buffer::empty();
-                let buffer_id = buffer.to_id();
-                c.add_buffer(buffer);
-                Event::Td(Ted::UseBuffer { buffer_id })
-            }
-            evnt => evnt,
-        };
-
-        match self.we.on_event(c, evnt)? {
+        match self.we.on_event(s, evnt)? {
             Td(Ted::StatusFile { .. }) => {
                 self.show_statusfile = true;
                 Ok(Event::Noop)
@@ -180,13 +169,13 @@ impl WindowFile {
         }
     }
 
-    pub fn on_refresh(&mut self, c: &mut Context) -> Result<()> {
-        self.do_refresh(&mut c.state)?;
-        self.we.on_refresh(c)?;
+    pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
+        self.do_refresh(&mut s)?;
+        self.we.on_refresh(s)?;
 
         if self.show_statusfile {
             let mut stdout = io::stdout();
-            let span = self.status_line(&mut c.state)?;
+            let span = self.status_line(&mut s)?;
             err_at!(Fatal, queue!(stdout, span))?;
             self.show_statusfile = false;
         }

@@ -12,7 +12,7 @@ use crate::{
     buffer::Buffer,
     event::{Event, DP},
     location,
-    state::Context,
+    state::State,
     window::{Coord, Cursor, Span},
     Error, Result,
 };
@@ -121,19 +121,14 @@ impl WindowPrompt {
         Cursor::new(col, row)
     }
 
-    pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Noop),
-            evnt => {
-                c.buffer = self.buffer.take();
-                let evnt = Buffer::on_event(c, evnt)?;
-                self.buffer = c.buffer.take();
-                Ok(evnt)
-            }
+            evnt => self.buffer.on_event(s, evnt)?,
         }
     }
 
-    pub fn on_refresh(&mut self, _: &mut Context) -> Result<()> {
+    pub fn on_refresh(&mut self, _: &mut State) -> Result<()> {
         let mut stdout = io::stdout();
 
         let span = {

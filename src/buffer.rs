@@ -19,7 +19,7 @@ use crate::{
     event::{Event, Mto, DP},
     ftype::FType,
     location::Location,
-    state::Context,
+    state::State,
     {err_at, Error, Result},
 };
 
@@ -471,19 +471,16 @@ impl Buffer {
 }
 
 impl Buffer {
-    pub fn on_event(c: &mut Context, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         let evnt_up = {
-            let mut ftype = {
-                let b = c.as_mut_buffer();
-                mem::replace(&mut b.ftype, Default::default())
-            };
-            let evnt_up = ftype.on_event(c, evnt.clone())?;
-            c.as_mut_buffer().ftype = ftype;
+            let mut ftype = mem::replace(&mut b.ftype, Default::default());
+            let evnt_up = ftype.on_event(self, s, evnt.clone())?;
+            b.ftype = ftype;
             evnt_up
         };
         // If event is not handled handle it as default behaviour.
         let evnt = if evnt_up == evnt {
-            Self::handle_event(c, evnt)?
+            self.handle_event(s, evnt)?
         } else {
             evnt_up
         };
@@ -520,7 +517,7 @@ impl Buffer {
         }
     }
 
-    fn ex_n_insert(c: &mut Context, evnt: Event) -> Result<Event> {
+    fn ex_n_insert(s: &mut Context, evnt: Event) -> Result<Event> {
         use crate::event::{Event::Md, Mod};
 
         let nr = mem::replace(&mut c.as_mut_buffer().inner, Default::default());
@@ -1019,11 +1016,11 @@ impl Change {
     }
 }
 
-pub fn mto_left(c: &mut Context, n: usize, dp: DP) -> Result<Event> {
-    let mut cursor = c.as_buffer().to_cursor();
+pub fn mto_left(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+    let mut cursor = buf.to_cursor();
     cursor = match dp {
         DP::LineBound => {
-            let home = c.as_buffer().line_home();
+            let home = buf.line_home();
             let new_cursor = cursor.saturating_sub(n);
             Ok(if_else!(new_cursor > home, new_cursor, home))
         }
@@ -1031,14 +1028,13 @@ pub fn mto_left(c: &mut Context, n: usize, dp: DP) -> Result<Event> {
         _ => err_at!(Fatal, msg: format!("unreachable")),
     }?;
 
-    c.as_mut_buffer().set_cursor(cursor);
+    buf.set_cursor(cursor);
     Ok(Event::Noop)
 }
 
-pub fn mto_right(c: &mut Context, n: usize, dp: DP) -> Result<Event> {
-    let b = c.as_mut_buffer();
-    let mut cursor = b.to_cursor();
-    for ch in b.chars_at(cursor, DP::Right)?.take(n) {
+pub fn mto_right(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+    let mut cursor = buf.to_cursor();
+    for ch in buf.chars_at(cursor, DP::Right)?.take(n) {
         match dp {
             DP::LineBound if ch == NL => break,
             DP::Nobound | DP::LineBound => (),
@@ -1047,7 +1043,7 @@ pub fn mto_right(c: &mut Context, n: usize, dp: DP) -> Result<Event> {
         cursor += 1
     }
 
-    b.set_cursor(cursor);
+    buf.set_cursor(cursor);
     Ok(Event::Noop)
 }
 

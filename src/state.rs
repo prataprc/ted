@@ -110,9 +110,8 @@ impl State {
             err_at!(Fatal, queue!(stdout, term_cursor::Hide))?;
             for evnt in evnt {
                 let evnt = {
-                    let mut c = self.to_context();
-                    let evnt = w.on_event(&mut c, evnt)?;
-                    w.on_refresh(&mut c)?;
+                    let evnt = w.on_event(&mut self, evnt)?;
+                    w.on_refresh(&mut self)?;
                     evnt
                 };
                 for evnt in evnt {
@@ -143,16 +142,29 @@ impl State {
         res
     }
 
-    fn add_buffer(&mut self, buffer: Buffer) {
+    pub fn add_buffer(&mut self, buffer: Buffer) {
         self.buffers.insert(0, buffer)
+    }
+
+    pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
+        let i = {
+            let mut iter = self.state.buffers.iter().enumerate();
+            loop {
+                match iter.next() {
+                    Some((i, b)) if b.to_id() == id => break Some(i),
+                    None => break None,
+                    _ => (),
+                }
+            }
+        };
+        match i {
+            Some(i) => Some(self.state.buffers.remove(i)),
+            None => None,
+        }
     }
 }
 
 impl State {
-    fn to_context(&mut self) -> Context {
-        Context::new(self)
-    }
-
     pub fn as_buffer(&self, id: &str) -> &Buffer {
         for b in self.buffers.iter() {
             if b.to_id() == id {
@@ -178,77 +190,6 @@ impl State {
             }
         }
         None
-    }
-}
-
-pub struct Context<'a> {
-    pub state: &'a mut State,
-    pub window: Window,
-    pub buffer: Option<Buffer>,
-}
-
-impl<'a> Context<'a> {
-    pub fn new(state: &mut State) -> Context {
-        Context {
-            state,
-            window: Default::default(),
-            buffer: Default::default(),
-        }
-    }
-
-    #[inline]
-    pub fn set_window(&mut self, w: Window) -> Window {
-        mem::replace(&mut self.window, w)
-    }
-}
-
-impl<'a> Context<'a> {
-    #[inline]
-    pub fn as_state(&self) -> &State {
-        &self.state
-    }
-
-    #[inline]
-    pub fn as_mut_state(&mut self) -> &mut State {
-        &mut self.state
-    }
-
-    #[inline]
-    pub fn as_buffer(&self) -> &Buffer {
-        self.buffer.as_ref().unwrap()
-    }
-
-    #[inline]
-    pub fn as_mut_buffer(&mut self) -> &mut Buffer {
-        self.buffer.as_mut().unwrap()
-    }
-
-    #[inline]
-    pub fn to_window(&mut self) -> Window {
-        mem::replace(&mut self.window, Default::default())
-    }
-}
-
-impl<'a> Context<'a> {
-    pub fn add_buffer(&mut self, buffer: Buffer) {
-        self.state.add_buffer(buffer)
-    }
-
-    pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
-        let i = {
-            let mut iter = self.state.buffers.iter().enumerate();
-            loop {
-                match iter.next() {
-                    Some((i, b)) if b.to_id() == id => break Some(i),
-                    None => break None,
-                    _ => (),
-                }
-            }
-        };
-        match i {
-            Some(i) => Some(self.state.buffers.remove(i)),
-            None => None,
-        }
     }
 }
 

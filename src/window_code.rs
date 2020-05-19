@@ -4,7 +4,7 @@ use crate::{
     cmd::Command,
     event::Event,
     keymap::Keymap,
-    state::Context,
+    state::State,
     tabc::TabComplete,
     window::{new_window_line, Coord, Cursor, Span, Window},
     window_file::WindowFile,
@@ -63,7 +63,7 @@ impl WindowCode {
 
 impl WindowCode {
     #[inline]
-    pub fn post(&mut self, _: &mut Context, _msg: Message) -> Result<()> {
+    pub fn post(&mut self, s: &mut State, msg: Message) -> Result<()> {
         //match (name, msg) {
         //    ("status", Message::Status(sl)) -> self.stsline.set(sl),
         //    ("tabcomplete", Message::TabComplete(sl) -> self.tbcline.set(sl),
@@ -78,28 +78,28 @@ impl WindowCode {
         }
     }
 
-    pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         let mut keymap = mem::replace(&mut self.keymap, Default::default());
 
-        let evnt = with_window!(c, self, Code, keymap.fold(c, evnt))?;
+        let evnt = keymap.fold(s, evnt)?;
         let evnt = match &mut self.inner {
-            Inner::Regular { .. } => self.wfile.on_event(c, evnt)?,
-            Inner::Command { cmdline, .. } => cmdline.on_event(c, evnt)?,
+            Inner::Regular { .. } => self.wfile.on_event(s, evnt)?,
+            Inner::Command { cmdline, .. } => cmdline.on_event(s, evnt)?,
         };
 
         self.keymap = keymap;
         Ok(evnt)
     }
 
-    pub fn on_refresh(&mut self, c: &mut Context) -> Result<()> {
-        self.wfile.on_refresh(c)?;
+    pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
+        self.wfile.on_refresh(s)?;
         match &mut self.inner {
-            Inner::Regular { stsline } => stsline.on_refresh(c)?,
+            Inner::Regular { stsline } => stsline.on_refresh(s)?,
             Inner::Command { cmdline, cmd } => {
-                // self.cmd.on_refresh(c)?;
-                cmdline.on_refresh(c)?;
+                // self.cmd.on_refresh(s)?;
+                cmdline.on_refresh(s)?;
             }
         }
-        self.tbcline.on_refresh(c)
+        self.tbcline.on_refresh(s)
     }
 }
