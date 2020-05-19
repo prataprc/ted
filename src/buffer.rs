@@ -473,9 +473,9 @@ impl Buffer {
 impl Buffer {
     pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         let evnt_up = {
-            let mut ftype = mem::replace(&mut b.ftype, Default::default());
+            let mut ftype = mem::replace(&mut self.ftype, Default::default());
             let evnt_up = ftype.on_event(self, s, evnt.clone())?;
-            b.ftype = ftype;
+            self.ftype = ftype;
             evnt_up
         };
         // If event is not handled handle it as default behaviour.
@@ -517,39 +517,39 @@ impl Buffer {
         }
     }
 
-    fn ex_n_insert(s: &mut Context, evnt: Event) -> Result<Event> {
+    fn ex_n_insert(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         use crate::event::{Event::Md, Mod};
 
-        let nr = mem::replace(&mut c.as_mut_buffer().inner, Default::default());
+        let nr = mem::replace(&mut self.inner, Default::default());
         let (inner, evnt) = match nr {
             Inner::Normal(nb) => match evnt {
                 Md(Mod::Insert(n, pos)) if n > 0 => {
-                    c.as_mut_buffer().insert_repeat = n - 1;
+                    self.insert_repeat = n - 1;
                     if pos == DP::Caret {
-                        mto_home(c, DP::Caret)?;
+                        mto_home(self, DP::Caret)?;
                     }
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Append(n, pos)) if n > 0 => {
-                    c.as_mut_buffer().insert_repeat = n - 1;
+                    self.insert_repeat = n - 1;
                     if pos == DP::End {
-                        mto_end(c)?;
+                        mto_end(self)?;
                     }
-                    mto_right(c, 1, DP::Nobound)?;
+                    mto_right(self, 1, DP::Nobound)?;
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Open(n, DP::Left)) if n > 0 => {
-                    c.as_mut_buffer().insert_repeat = n - 1;
-                    mto_home(c, DP::Nope)?;
-                    c.as_mut_buffer().cmd_insert_char(NL)?;
-                    mto_left(c, 1, DP::Nobound)?;
+                    self.insert_repeat = n - 1;
+                    mto_home(self, DP::Nope)?;
+                    self.cmd_insert_char(NL)?;
+                    mto_left(self, 1, DP::Nobound)?;
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Open(n, DP::Right)) if n > 0 => {
-                    c.as_mut_buffer().insert_repeat = n - 1;
-                    mto_end(c)?;
-                    mto_right(c, 1, DP::Nobound)?;
-                    c.as_mut_buffer().cmd_insert_char(NL)?;
+                    self.insert_repeat = n - 1;
+                    mto_end(self)?;
+                    mto_right(self, 1, DP::Nobound)?;
+                    self.cmd_insert_char(NL)?;
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 _ => (Inner::Normal(nb), Event::Noop),
@@ -557,26 +557,26 @@ impl Buffer {
             inner @ Inner::Insert(_) => (inner, evnt),
         };
 
-        c.as_mut_buffer().inner = inner;
+        self.inner = inner;
         Ok(evnt)
     }
 
-    fn handle_event(c: &mut Context, evnt: Event) -> Result<Event> {
-        match c.as_buffer().to_mode() {
-            "insert" => Self::handle_i_event(c, evnt),
-            "normal" => Self::handle_n_event(c, evnt),
+    fn handle_event(&mut self, evnt: Event) -> Result<Event> {
+        match self.to_mode() {
+            "insert" => Self::handle_i_event(self, evnt),
+            "normal" => Self::handle_n_event(self, evnt),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
-    fn handle_n_event(c: &mut Context, evnt: Event) -> Result<Event> {
+    fn handle_n_event(&mut self, evnt: Event) -> Result<Event> {
         use crate::event::Event::Mt;
 
         // switch to insert mode.
         let evnt = match Self::to_insert_n(evnt) {
             (Some(n), evnt) if n > 0 => {
-                let evnt = Self::ex_n_insert(c, evnt)?;
-                return Self::handle_i_event(c, evnt);
+                let evnt = self.ex_n_insert(evnt)?;
+                return self.handle_i_event(evnt);
             }
             (_, evnt) => evnt,
         };
@@ -584,40 +584,40 @@ impl Buffer {
         let evnt = match evnt {
             Event::Noop => Event::Noop,
             // execute motion command.
-            Mt(Mto::Left(n, dp)) => mto_left(c, n, dp)?,
-            Mt(Mto::Right(n, dp)) => mto_right(c, n, dp)?,
-            Mt(Mto::Up(n, dp)) => mto_up(c, n, dp)?,
-            Mt(Mto::Down(n, dp)) => mto_down(c, n, dp)?,
-            Mt(Mto::Col(n)) => mto_column(c, n)?,
-            Mt(Mto::Home(dp)) => mto_home(c, dp)?,
-            Mt(Mto::End) => mto_end(c)?,
-            Mt(Mto::Row(n, dp)) => mto_row(c, n, dp)?,
-            Mt(Mto::Percent(n)) => mto_percent(c, n)?,
-            Mt(Mto::Cursor(n)) => mto_cursor(c, n)?,
+            Mt(Mto::Left(n, dp)) => mto_left(self, n, dp)?,
+            Mt(Mto::Right(n, dp)) => mto_right(self, n, dp)?,
+            Mt(Mto::Up(n, dp)) => mto_up(self, n, dp)?,
+            Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
+            Mt(Mto::Col(n)) => mto_column(self, n)?,
+            Mt(Mto::Home(dp)) => mto_home(self, dp)?,
+            Mt(Mto::End) => mto_end(self)?,
+            Mt(Mto::Row(n, dp)) => mto_row(self, n, dp)?,
+            Mt(Mto::Percent(n)) => mto_percent(self, n)?,
+            Mt(Mto::Cursor(n)) => mto_cursor(self, n)?,
             Mt(e @ Mto::CharF(_, _, _)) => {
-                c.as_mut_buffer().mto_find_char = e.clone();
-                mto_char(c, e)?
+                self.mto_find_char = e.clone();
+                mto_char(self, e)?
             }
             Mt(e @ Mto::CharT(_, _, _)) => {
-                c.as_mut_buffer().mto_find_char = e.clone();
-                mto_char(c, e)?
+                self.mto_find_char = e.clone();
+                mto_char(self, e)?
             }
             Mt(Mto::CharR(n, dir)) => {
-                let e = c.as_mut_buffer().mto_find_char.clone();
-                mto_char(c, e.transform(n, dir)?)?
+                let e = self.mto_find_char.clone();
+                mto_char(self, e.transform(n, dir)?)?
             }
-            Mt(e @ Mto::Word(_, _, _)) => mto_words(c, e)?,
-            Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(c, e)?,
-            Mt(e @ Mto::Sentence(_, _)) => mto_sentence(c, e)?,
-            Mt(e @ Mto::Para(_, _)) => mto_para(c, e)?,
-            Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(c, e)?,
+            Mt(e @ Mto::Word(_, _, _)) => mto_words(self, e)?,
+            Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
+            Mt(e @ Mto::Sentence(_, _)) => mto_sentence(self, e)?,
+            Mt(e @ Mto::Para(_, _)) => mto_para(self, e)?,
+            Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(self, e)?,
             Mt(e @ Mto::Pattern(_, Some(_), _)) => {
-                c.as_mut_buffer().mto_pattern = e.clone();
-                mto_pattern(c, e)?
+                self.mto_pattern = e.clone();
+                mto_pattern(self, e)?
             }
             Mt(Mto::PatternR(n, dir)) => {
-                let e = c.as_mut_buffer().mto_pattern.clone();
-                mto_pattern(c, e.transform(n, dir)?)?
+                let e = self.mto_pattern.clone();
+                mto_pattern(self, e.transform(n, dir)?)?
             }
             evnt => evnt,
         };
@@ -625,55 +625,55 @@ impl Buffer {
         Ok(evnt)
     }
 
-    fn handle_i_event(c: &mut Context, evnt: Event) -> Result<Event> {
+    fn handle_i_event(&mut self, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Noop => Ok(Event::Noop),
             evnt => {
-                c.as_mut_buffer().last_inserts.push(evnt.clone());
-                Self::ex_i_event(c, evnt)
+                self.last_inserts.push(evnt.clone());
+                self.ex_i_event(evnt)
             }
         }
     }
 
-    fn ex_i_event(c: &mut Context, evnt: Event) -> Result<Event> {
+    fn ex_i_event(&mut self, evnt: Event) -> Result<Event> {
         use crate::event::Event::{Backspace, Char, Delete, Enter, Esc, Mt, Tab};
 
         let evnt = match evnt {
             // movement
-            Mt(Mto::Left(n, dp)) => mto_left(c, n, dp)?,
-            Mt(Mto::Right(n, dp)) => mto_right(c, n, dp)?,
-            Mt(Mto::Up(n, dp)) => mto_up(c, n, dp)?,
-            Mt(Mto::Down(n, dp)) => mto_down(c, n, dp)?,
-            Mt(Mto::Home(dp)) => mto_home(c, dp)?,
-            Mt(Mto::End) => mto_end(c)?,
+            Mt(Mto::Left(n, dp)) => mto_left(self, n, dp)?,
+            Mt(Mto::Right(n, dp)) => mto_right(self, n, dp)?,
+            Mt(Mto::Up(n, dp)) => mto_up(self, n, dp)?,
+            Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
+            Mt(Mto::Home(dp)) => mto_home(self, dp)?,
+            Mt(Mto::End) => mto_end(self)?,
             // Handle mode events.
             Esc => {
-                Self::repeat(c)?;
-                mto_left(c, 1, DP::LineBound)?;
-                c.as_mut_buffer().mode_normal()?;
+                self.repeat()?;
+                mto_left(self, 1, DP::LineBound)?;
+                self.mode_normal()?;
                 Event::Noop
             }
             // on going insert
             Char(ch, _) => {
-                c.as_mut_buffer().cmd_insert_char(ch)?;
+                self.cmd_insert_char(ch)?;
                 Event::Noop
             }
             Backspace => {
-                c.as_mut_buffer().cmd_backspace(1)?;
+                self.cmd_backspace(1)?;
                 Event::Noop
             }
             Enter => {
-                c.as_mut_buffer().cmd_insert_char(NL)?;
+                self.cmd_insert_char(NL)?;
                 Event::Noop
             }
             Tab => {
-                c.as_mut_buffer().cmd_insert_char('\t')?;
+                self.cmd_insert_char('\t')?;
                 Event::Noop
             }
             Delete => {
-                let from = Bound::Included(c.as_mut_buffer().to_cursor());
+                let from = Bound::Included(self.to_cursor());
                 let to = from.clone();
-                c.as_mut_buffer().cmd_remove_at(from, to)?;
+                self.cmd_remove_at(from, to)?;
                 Event::Noop
             }
             evnt => evnt,
@@ -682,31 +682,29 @@ impl Buffer {
         Ok(evnt)
     }
 
-    fn repeat(c: &mut Context) -> Result<()> {
+    fn repeat(&mut self) -> Result<()> {
         use crate::event::Event::{Backspace, Char, Delete, Enter, Tab};
         let (last_inserts, insert_repeat) = {
-            let b = c.as_mut_buffer();
-            let evnts: Vec<Event> = b.last_inserts.drain(..).collect();
+            let evnts: Vec<Event> = self.last_inserts.drain(..).collect();
             let valid = evnts.iter().all(|evnt| match evnt {
                 Char(_, _) | Enter | Tab | Backspace | Delete => true,
                 _ => false,
             });
             if valid {
-                (evnts, b.insert_repeat)
+                (evnts, self.insert_repeat)
             } else {
-                (vec![], b.insert_repeat)
+                (vec![], self.insert_repeat)
             }
         };
 
         for _ in 0..insert_repeat {
             for evnt in last_inserts.iter() {
-                Self::ex_i_event(c, evnt.clone())?;
+                self.ex_i_event(evnt.clone())?;
             }
         }
 
-        let b = c.as_mut_buffer();
-        b.insert_repeat = 0;
-        b.last_inserts = last_inserts;
+        self.insert_repeat = 0;
+        self.last_inserts = last_inserts;
         Ok(())
     }
 }
@@ -1047,12 +1045,11 @@ pub fn mto_right(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-pub fn mto_home(c: &mut Context, pos: DP) -> Result<Event> {
-    let b = c.as_mut_buffer();
-    b.set_cursor(b.line_home());
+pub fn mto_home(buf: &mut Buffer, pos: DP) -> Result<Event> {
+    buf.set_cursor(buf.line_home());
     match pos {
         DP::Caret => {
-            b.skip_whitespace(DP::Right);
+            buf.skip_whitespace(DP::Right);
         }
         DP::Nope => (),
         _ => err_at!(Fatal, msg: format!("unreachable"))?,
@@ -1060,23 +1057,22 @@ pub fn mto_home(c: &mut Context, pos: DP) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-pub fn mto_up(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
-    let b = c.as_mut_buffer();
-    let mut cursor = b.to_cursor();
-    match b.char_to_line(cursor) {
+pub fn mto_up(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
+    let mut cursor = buf.to_cursor();
+    match buf.char_to_line(cursor) {
         0 => Ok(Event::Noop),
         row => {
             let row = row.saturating_sub(n);
             cursor = {
                 let col = {
-                    let n_chars = b.line_len(row);
-                    cmp::min(n_chars.saturating_sub(2), b.to_col())
+                    let n_chars = buf.line_len(row);
+                    cmp::min(n_chars.saturating_sub(2), buf.to_col())
                 };
-                b.line_to_char(row) + col
+                buf.line_to_char(row) + col
             };
-            b.set_cursor(cursor);
+            buf.set_cursor(cursor);
             match pos {
-                DP::Caret => mto_home(c, DP::Caret),
+                DP::Caret => mto_home(buf, DP::Caret),
                 DP::Nope => Ok(Event::Noop),
                 _ => {
                     err_at!(Fatal, msg: format!("unreachable"))?;
@@ -1087,22 +1083,21 @@ pub fn mto_up(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
     }
 }
 
-pub fn mto_down(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
-    let b = c.as_mut_buffer();
-    let row = b.char_to_line(b.to_cursor());
+pub fn mto_down(buf: &mut Buf, n: usize, pos: DP) -> Result<Event> {
+    let row = buf.char_to_line(buf.to_cursor());
     match b.n_lines() {
         0 => Ok(Event::Noop),
         n_rows if row == n_rows => Ok(Event::Noop),
         n_rows => {
             let row = limite!(row.saturating_add(n), n_rows);
             let cursor = {
-                let n_chars = b.line_len(row);
-                let col = cmp::min(n_chars.saturating_sub(2), b.to_col());
-                b.line_to_char(row) + col
+                let n_chars = buf.line_len(row);
+                let col = cmp::min(n_chars.saturating_sub(2), buf.to_col());
+                buf.line_to_char(row) + col
             };
-            b.set_cursor(cursor);
+            buf.set_cursor(cursor);
             match pos {
-                DP::Caret => mto_home(c, DP::Caret),
+                DP::Caret => mto_home(buf, DP::Caret),
                 DP::Nope => Ok(Event::Noop),
                 _ => {
                     err_at!(Fatal, msg: format!("unreachable"))?;
@@ -1113,58 +1108,56 @@ pub fn mto_down(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
     }
 }
 
-pub fn mto_column(c: &mut Context, n: usize) -> Result<Event> {
-    let b = c.as_mut_buffer();
+pub fn mto_column(buf: &mut Buffer, n: usize) -> Result<Event> {
     let n = {
-        let m = b.line_len(b.char_to_line(b.to_cursor())).saturating_sub(1);
+        let m = {
+            let cursor = buf.to_cursor();
+            buf.line_len(buf.char_to_line(cursor)).saturating_sub(1)
+        };
         cmp::min(m, n).saturating_sub(1)
     };
-    b.set_cursor(b.line_home() + n);
+    buf.set_cursor(buf.line_home() + n);
     Ok(Event::Noop)
 }
 
-pub fn mto_row(c: &mut Context, n: usize, pos: DP) -> Result<Event> {
-    let b = c.as_buffer();
-    let row = b.char_to_line(b.to_cursor());
+pub fn mto_row(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
+    let row = buf.char_to_line(buf.to_cursor());
     let n = n.saturating_sub(1);
-    match b.n_lines() {
+    match buf.n_lines() {
         0 => Ok(Event::Noop),
-        n_rows if n == 0 => mto_down(c, n_rows.saturating_sub(1), pos),
-        _ if n < row => mto_up(c, row - n, pos),
-        n_rows if n <= n_rows => mto_down(c, n - row, pos),
-        n_rows => mto_down(c, n_rows.saturating_sub(1), pos),
+        n_rows if n == 0 => mto_down(buf, n_rows.saturating_sub(1), pos),
+        _ if n < row => mto_up(buf, row - n, pos),
+        n_rows if n <= n_rows => mto_down(buf, n - row, pos),
+        n_rows => mto_down(buf, n_rows.saturating_sub(1), pos),
     }
 }
 
-pub fn mto_percent(c: &mut Context, n: usize) -> Result<Event> {
-    let b = c.as_buffer();
-    let row = b.char_to_line(b.to_cursor());
-    match b.n_lines() {
+pub fn mto_percent(buf: &mut Buffer, n: usize) -> Result<Event> {
+    let row = buf.char_to_line(buf.to_cursor());
+    match buf.n_lines() {
         0 => Ok(Event::Noop),
         mut n_rows if n < 100 => {
             n_rows = n_rows.saturating_sub(1);
             match (((n_rows as f64) * (n as f64)) / (100 as f64)) as usize {
-                n if n < row => mto_up(c, row - n, DP::Caret),
-                n => mto_down(c, n - row, DP::Caret),
+                n if n < row => mto_up(buf, row - n, DP::Caret),
+                n => mto_down(buf, n - row, DP::Caret),
             }
         }
-        n_rows => mto_down(c, n_rows.saturating_sub(1), DP::Caret),
+        n_rows => mto_down(buf, n_rows.saturating_sub(1), DP::Caret),
     }
 }
 
-pub fn mto_cursor(c: &mut Context, n: usize) -> Result<Event> {
-    let b = c.as_mut_buffer();
-    let cursor = b.to_cursor();
-    b.set_cursor(limite!(cursor + n, b.n_chars()));
+pub fn mto_cursor(buf: &mut Buffer, n: usize) -> Result<Event> {
+    let cursor = buf.to_cursor();
+    buf.set_cursor(limite!(cursor + n, buf.n_chars()));
     Ok(Event::Noop)
 }
 
 // TODO: create an option of having sticky cursor.
-pub fn mto_end(c: &mut Context) -> Result<Event> {
-    let b = c.as_mut_buffer();
-    let mut cursor = b.to_cursor();
+pub fn mto_end(buf: &mut Buffer) -> Result<Event> {
+    let mut cursor = buf.to_cursor();
     {
-        let mut iter = b.chars_at(b.to_cursor(), DP::Right)?;
+        let mut iter = buf.chars_at(buf.to_cursor(), DP::Right)?;
         loop {
             match iter.next() {
                 Some(NL) => break (),
@@ -1173,11 +1166,11 @@ pub fn mto_end(c: &mut Context) -> Result<Event> {
             }
         }
     }
-    b.set_cursor(cursor);
+    buf.set_cursor(cursor);
     Ok(Event::Noop)
 }
 
-pub fn mto_char(c: &mut Context, evnt: Mto) -> Result<Event> {
+pub fn mto_char(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     let (mut n, ch, dp, pos) = match evnt {
         Mto::CharF(n, Some(ch), dp) => (n, ch, dp, DP::Find),
         Mto::CharT(n, Some(ch), dp) => (n, ch, dp, DP::Till),
@@ -1185,12 +1178,11 @@ pub fn mto_char(c: &mut Context, evnt: Mto) -> Result<Event> {
         _ => unreachable!(),
     };
 
-    let b = c.as_mut_buffer();
-    let mut cursor = b.to_cursor();
-    let home = b.line_home();
+    let mut cursor = buf.to_cursor();
+    let home = buf.line_home();
     cursor = match dp {
         DP::Right => {
-            let mut iter = b.chars_at(cursor, DP::Right)?.enumerate();
+            let mut iter = buf.chars_at(cursor, DP::Right)?.enumerate();
             loop {
                 match iter.next() {
                     Some((_, NL)) => break cursor,
@@ -1206,7 +1198,7 @@ pub fn mto_char(c: &mut Context, evnt: Mto) -> Result<Event> {
             }
         }
         DP::Left => {
-            let mut iter = b.chars_at(cursor, DP::Left)?.enumerate();
+            let mut iter = buf.chars_at(cursor, DP::Left)?.enumerate();
             loop {
                 match iter.next() {
                     Some((_, NL)) => break cursor,
@@ -1224,27 +1216,27 @@ pub fn mto_char(c: &mut Context, evnt: Mto) -> Result<Event> {
         _ => unreachable!(),
     };
 
-    b.set_cursor(if_else!(cursor > home, cursor, home));
+    buf.set_cursor(if_else!(cursor > home, cursor, home));
     Ok(Event::Noop)
 }
 
-pub fn mto_words(c: &mut Context, evnt: Mto) -> Result<Event> {
+pub fn mto_words(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     match evnt {
         Mto::Word(n, DP::Left, pos) => {
             for _ in 0..n {
-                let n = c.as_mut_buffer().skip_whitespace(DP::Left);
+                let n = buf.skip_whitespace(DP::Left);
                 match pos {
                     DP::End if n == 0 => {
-                        c.as_mut_buffer().skip_alphanumeric(DP::Left);
-                        mto_right(c, 1, DP::Nobound)?;
+                        buf.skip_alphanumeric(DP::Left);
+                        mto_right(buf, 1, DP::Nobound)?;
                     }
                     DP::End => {
-                        c.as_mut_buffer().skip_alphanumeric(DP::Left);
-                        mto_right(c, 1, DP::Nobound)?;
+                        buf.skip_alphanumeric(DP::Left);
+                        mto_right(buf, 1, DP::Nobound)?;
                     }
                     DP::Start if n == 0 => {
-                        c.as_mut_buffer().skip_alphanumeric(DP::Left);
-                        c.as_mut_buffer().skip_whitespace(DP::Left);
+                        buf.skip_alphanumeric(DP::Left);
+                        buf.skip_whitespace(DP::Left);
                     }
                     DP::Start => (),
                     _ => unreachable!(),
@@ -1254,19 +1246,19 @@ pub fn mto_words(c: &mut Context, evnt: Mto) -> Result<Event> {
         }
         Mto::Word(n, DP::Right, pos) => {
             for _ in 0..n {
-                let n = c.as_mut_buffer().skip_whitespace(DP::Right);
+                let n = buf.skip_whitespace(DP::Right);
                 match pos {
                     DP::End if n == 0 => {
-                        c.as_mut_buffer().skip_alphanumeric(DP::Right);
-                        mto_left(c, 1, DP::Nobound)?;
+                        buf.skip_alphanumeric(DP::Right);
+                        mto_left(buf, 1, DP::Nobound)?;
                     }
                     DP::End => {
-                        c.as_mut_buffer().skip_alphanumeric(DP::Right);
-                        mto_left(c, 1, DP::Nobound)?;
+                        buf.skip_alphanumeric(DP::Right);
+                        mto_left(buf, 1, DP::Nobound)?;
                     }
                     DP::Start if n == 0 => {
-                        c.as_mut_buffer().skip_alphanumeric(DP::Right);
-                        c.as_mut_buffer().skip_whitespace(DP::Right);
+                        buf.skip_alphanumeric(DP::Right);
+                        buf.skip_whitespace(DP::Right);
                     }
                     DP::Start => (),
                     _ => unreachable!(),
@@ -1278,23 +1270,23 @@ pub fn mto_words(c: &mut Context, evnt: Mto) -> Result<Event> {
     }
 }
 
-pub fn mto_wwords(c: &mut Context, evnt: Mto) -> Result<Event> {
+pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     match evnt {
         Mto::WWord(n, DP::Left, pos) => {
             for _ in 0..n {
-                let n = c.as_mut_buffer().skip_whitespace(DP::Left);
+                let n = buf.skip_whitespace(DP::Left);
                 match pos {
                     DP::Start if n == 0 => {
-                        c.as_mut_buffer().skip_non_whitespace(DP::Left);
-                        mto_right(c, 1, DP::Nobound)?;
+                        buf.skip_non_whitespace(DP::Left);
+                        mto_right(buf, 1, DP::Nobound)?;
                     }
                     DP::Start => {
-                        c.as_mut_buffer().skip_non_whitespace(DP::Left);
-                        mto_right(c, 1, DP::Nobound)?;
+                        buf.skip_non_whitespace(DP::Left);
+                        mto_right(buf, 1, DP::Nobound)?;
                     }
                     DP::End if n == 0 => {
-                        c.as_mut_buffer().skip_non_whitespace(DP::Left);
-                        c.as_mut_buffer().skip_whitespace(DP::Left);
+                        buf.skip_non_whitespace(DP::Left);
+                        buf.skip_whitespace(DP::Left);
                     }
                     DP::End => (),
                     _ => unreachable!(),
@@ -1304,19 +1296,19 @@ pub fn mto_wwords(c: &mut Context, evnt: Mto) -> Result<Event> {
         }
         Mto::WWord(n, DP::Right, pos) => {
             for _ in 0..n {
-                let n = c.as_mut_buffer().skip_whitespace(DP::Right);
+                let n = buf.skip_whitespace(DP::Right);
                 match pos {
                     DP::End if n == 0 => {
-                        c.as_mut_buffer().skip_non_whitespace(DP::Right);
-                        mto_left(c, 1, DP::Nobound)?;
+                        buf.skip_non_whitespace(DP::Right);
+                        mto_left(buf, 1, DP::Nobound)?;
                     }
                     DP::End => {
-                        c.as_mut_buffer().skip_non_whitespace(DP::Right);
-                        mto_left(c, 1, DP::Nobound)?;
+                        buf.skip_non_whitespace(DP::Right);
+                        mto_left(buf, 1, DP::Nobound)?;
                     }
                     DP::Start if n == 0 => {
-                        c.as_mut_buffer().skip_non_whitespace(DP::Right);
-                        c.as_mut_buffer().skip_whitespace(DP::Right);
+                        buf.skip_non_whitespace(DP::Right);
+                        buf.skip_whitespace(DP::Right);
                     }
                     DP::Start => (),
                     _ => unreachable!(),
@@ -1328,15 +1320,14 @@ pub fn mto_wwords(c: &mut Context, evnt: Mto) -> Result<Event> {
     }
 }
 
-pub fn mto_sentence(c: &mut Context, e: Mto) -> Result<Event> {
+pub fn mto_sentence(buf: &mut Buffer, e: Mto) -> Result<Event> {
     let is_ws = |ch: char| ch.is_whitespace();
 
-    let b = c.as_mut_buffer();
-    let mut cursor = b.to_cursor();
+    let mut cursor = buf.to_cursor();
     let mut pch: Option<char> = None;
     cursor = match e {
         Mto::Sentence(mut n, DP::Left) => {
-            let mut iter = b.chars_at(cursor, DP::Left)?.enumerate();
+            let mut iter = buf.chars_at(cursor, DP::Left)?.enumerate();
             Ok(loop {
                 pch = match (iter.next(), pch) {
                     (Some((i, '.')), Some(pch)) if is_ws(pch) => {
@@ -1361,7 +1352,7 @@ pub fn mto_sentence(c: &mut Context, e: Mto) -> Result<Event> {
             })
         }
         Mto::Sentence(mut n, DP::Right) => {
-            let mut iter = b.chars_at(cursor, DP::Right)?.enumerate();
+            let mut iter = buf.chars_at(cursor, DP::Right)?.enumerate();
             Ok(loop {
                 pch = match (pch, iter.next()) {
                     (Some('.'), Some((i, ch))) if is_ws(ch) => {
@@ -1382,7 +1373,7 @@ pub fn mto_sentence(c: &mut Context, e: Mto) -> Result<Event> {
                     }
                     (_, Some((_, ch))) => Some(ch),
                     (_, None) => {
-                        break b.n_chars().saturating_sub(1);
+                        break buf.n_chars().saturating_sub(1);
                     }
                 };
             })
@@ -1390,28 +1381,27 @@ pub fn mto_sentence(c: &mut Context, e: Mto) -> Result<Event> {
         _ => err_at!(Fatal, msg: format!("unreachable")),
     }?;
 
-    b.set_cursor(cursor);
-    b.skip_whitespace(DP::Right);
+    buf.set_cursor(cursor);
+    buf.skip_whitespace(DP::Right);
 
     Ok(Event::Noop)
 }
 
-pub fn mto_para(c: &mut Context, evnt: Mto) -> Result<Event> {
-    let b = c.as_mut_buffer();
-    let mut cursor = b.to_cursor();
-    let row = b.char_to_line(cursor);
+pub fn mto_para(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
+    let mut cursor = buf.to_cursor();
+    let row = buf.char_to_line(cursor);
     cursor = match evnt {
         Mto::Para(mut n, DP::Left) => {
-            let mut iter = b.lines_at(row, DP::Left)?.enumerate();
+            let mut iter = buf.lines_at(row, DP::Left)?.enumerate();
             let cursor = loop {
                 match iter.next() {
                     Some((i, line)) => match line.chars().next() {
                         Some(NL) if n == 0 => {
-                            break b.line_to_char(row - (i + 1));
+                            break buf.line_to_char(row - (i + 1));
                         }
                         Some(NL) => n -= 1,
                         Some(_) => (),
-                        None => break b.line_to_char(row - (i + 1)),
+                        None => break buf.line_to_char(row - (i + 1)),
                     },
                     None => break 0,
                 }
@@ -1419,18 +1409,18 @@ pub fn mto_para(c: &mut Context, evnt: Mto) -> Result<Event> {
             Ok(cursor)
         }
         Mto::Para(mut n, DP::Right) => {
-            let mut iter = b.lines_at(row, DP::Right)?.enumerate();
+            let mut iter = buf.lines_at(row, DP::Right)?.enumerate();
             let cursor = loop {
                 match iter.next() {
                     Some((i, line)) => match line.chars().next() {
                         Some(NL) if n == 0 => {
-                            break b.line_to_char(row + i);
+                            break buf.line_to_char(row + i);
                         }
                         Some(NL) => n -= 1,
                         Some(_) => (),
-                        None => break b.line_to_char(row + i),
+                        None => break buf.line_to_char(row + i),
                     },
-                    None => break b.n_chars().saturating_sub(1),
+                    None => break buf.n_chars().saturating_sub(1),
                 }
             };
             Ok(cursor)
@@ -1438,17 +1428,16 @@ pub fn mto_para(c: &mut Context, evnt: Mto) -> Result<Event> {
         _ => err_at!(Fatal, msg: format!("unreachable")),
     }?;
 
-    b.set_cursor(cursor);
+    buf.set_cursor(cursor);
     Ok(Event::Noop)
 }
 
-pub fn mto_bracket(c: &mut Context, e: Mto) -> Result<Event> {
+pub fn mto_bracket(buf: &mut Buffer, e: Mto) -> Result<Event> {
     let mut m = 0;
-    let b = c.as_mut_buffer();
-    let mut cursor = b.to_cursor();
+    let mut cursor = buf.to_cursor();
     match e {
         Mto::Bracket(mut n, yin, yan, DP::Left) => {
-            let mut iter = b.chars_at(cursor, DP::Left)?.enumerate();
+            let mut iter = buf.chars_at(cursor, DP::Left)?.enumerate();
             cursor -= loop {
                 match iter.next() {
                     Some((_, ch)) if ch == yin && m > 0 => m -= 1,
@@ -1461,7 +1450,7 @@ pub fn mto_bracket(c: &mut Context, e: Mto) -> Result<Event> {
             };
         }
         Mto::Bracket(mut n, yin, yan, DP::Right) => {
-            let mut iter = b.chars_at(cursor, DP::Right)?.enumerate();
+            let mut iter = buf.chars_at(cursor, DP::Right)?.enumerate();
             cursor += {
                 loop {
                     match iter.next() {
@@ -1478,23 +1467,22 @@ pub fn mto_bracket(c: &mut Context, e: Mto) -> Result<Event> {
         _ => err_at!(Fatal, msg: format!("unreachable"))?,
     }
 
-    b.set_cursor(cursor);
+    buf.set_cursor(cursor);
     Ok(Event::Noop)
 }
 
-pub fn mto_pattern(c: &mut Context, evnt: Mto) -> Result<Event> {
+pub fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     let (n, pattern, dp) = match evnt {
         Mto::Pattern(n, Some(pattern), dp) => Ok((n, pattern, dp)),
         _ => err_at!(Fatal, msg: format!("unreachable")),
     }?;
 
-    let b = c.as_mut_buffer();
     let search = {
-        let text = b.to_string();
+        let text = buf.to_string();
         Search::new(&pattern, &text, dp)?
     };
-    let mut cursor = b.to_cursor();
-    let byte_off = b.char_to_byte(cursor);
+    let mut cursor = buf.to_cursor();
+    let byte_off = buf.char_to_byte(cursor);
 
     let n = n.saturating_sub(1);
     cursor = match dp {
@@ -1515,7 +1503,7 @@ pub fn mto_pattern(c: &mut Context, evnt: Mto) -> Result<Event> {
         _ => err_at!(Fatal, msg: format!("unreachable")),
     }?;
 
-    b.set_cursor(cursor);
+    buf.set_cursor(cursor);
     Ok(Event::Noop)
 }
 

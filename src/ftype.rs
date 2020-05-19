@@ -1,4 +1,4 @@
-use crate::{event::Event, ftype_txt_en, state::Context, Result};
+use crate::{buffer::Buffer, event::Event, ftype_txt_en, state::State, Result};
 
 #[derive(Clone)]
 pub enum FType {
@@ -12,9 +12,15 @@ impl Default for FType {
 }
 
 impl FType {
-    pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+    pub fn on_event(
+        //
+        &mut self,
+        buf: &mut Buffer,
+        s: &mut State,
+        evnt: Event,
+    ) -> Result<Event> {
         match self {
-            FType::Text(t) => t.on_event(c, evnt),
+            FType::Text(t) => t.on_event(buf, s, evnt),
         }
     }
 

@@ -1,7 +1,7 @@
 use log::error;
 
 use crate::{
-    cmd_edit::Edit, cmd_file::File, cmd_write::Write, state::Context, tabc::TabComplete,
+    cmd_edit::Edit, cmd_file::File, cmd_write::Write, state::State, tabc::TabComplete,
     window::Window, Result,
 };
 
@@ -47,7 +47,7 @@ impl Commands {
 }
 
 impl Commands {
-    pub fn on_tab(&mut self, c: &mut Context) -> Result<()> {
+    pub fn on_tab(&mut self, buf: &mut Context) -> Result<()> {
         let span = Self::to_command_name(c);
 
         match self {

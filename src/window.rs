@@ -87,6 +87,7 @@ pub enum Message {
 }
 
 pub enum Notify {
+    Status(Vec<Span>),
     None,
 }
 

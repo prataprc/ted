@@ -5,10 +5,13 @@ use std::{fmt, result};
 
 #[macro_use]
 pub mod util;
-#[macro_use]
-pub mod state;
 pub mod location;
 mod tabc;
+
+pub mod buffer;
+pub mod config;
+pub mod event;
+pub mod state;
 
 #[macro_use]
 pub mod window;
@@ -19,10 +22,6 @@ pub mod window_edit;
 pub mod window_file;
 pub mod window_line;
 pub mod window_prompt;
-
-pub mod buffer;
-pub mod config;
-pub mod event;
 
 mod ftype;
 mod ftype_txt_en;

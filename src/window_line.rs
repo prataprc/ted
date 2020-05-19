@@ -58,13 +58,10 @@ impl WindowLine {
     pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Esc),
-            evnt => {
-                let evnt = match &mut self.buffer {
-                    Some(buffer) => buffer.on_event(s, evnt)?;
-                    None => evnt,
-                };
-                Ok(evnt)
-            }
+            evnt => match &mut self.buffer {
+                Some(buffer) => buffer.on_event(s, evnt),
+                None => evnt,
+            },
         }
     }
 

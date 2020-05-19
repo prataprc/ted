@@ -22,20 +22,6 @@ use crate::{
     Error, Result,
 };
 
-#[macro_export]
-macro_rules! with_window {
-    ($c:expr, $self:expr, $wvar:ident, $eval:expr) => {{
-        let mut window = mem::replace($self, Default::default());
-        $c.window = Window::$wvar(window);
-        let res = $eval;
-        *$self = match mem::replace(&mut $c.window, Default::default()) {
-            Window::$wvar(w) => w,
-            _ => unreachable!(),
-        };
-        res
-    }};
-}
-
 pub struct Terminal {
     stdout: io::Stdout,
     pub cols: u16,

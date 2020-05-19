@@ -1,8 +1,9 @@
 use tree_sitter as ts;
 
 use crate::{
+    buffer::Buffer,
     event::Event,
-    state::Context,
+    state::State,
     window::{Span, Window},
     Error, Result,
 };
@@ -47,41 +48,56 @@ impl Text {
         "txt".to_string()
     }
 
-    pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
-        match c.as_buffer().to_mode() {
-            "insert" => self.on_i_event(c, evnt),
-            "normal" => self.on_n_event(c, evnt),
+    pub fn on_event(
+        //
+        &mut self,
+        buf: &mut Buffer,
+        s: &mut State,
+        evnt: Event,
+    ) -> Result<Event> {
+        match buf.to_mode() {
+            "insert" => self.on_i_event(buf, s, evnt),
+            "normal" => self.on_n_event(buf, s, evnt),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 }
 
 impl Text {
-    fn on_n_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
+    fn on_n_event(
+        //
+        &mut self,
+        buf: &mut Buffer,
+        s: &mut State,
+        evnt: Event,
+    ) -> Result<Event> {
         use crate::event::{Event::Td, Ted};
 
         self.tree = match self.tree.take() {
             tree @ Some(_) => tree,
-            None => {
-                let b = c.as_mut_buffer();
-                self.parser.parse(&b.to_string(), None)
-            }
+            None => self.parser.parse(&buf.to_string(), None),
         };
 
         let evnt = match evnt {
             Event::Noop => Event::Noop,
-            Td(Ted::StatusCursor) => self.to_status_cursor(c, evnt)?,
+            Td(Ted::StatusCursor) => self.to_status_cursor(s, evnt)?,
             evnt => evnt,
         };
 
         Ok(evnt)
     }
 
-    fn on_i_event(&mut self, _: &mut Context, evnt: Event) -> Result<Event> {
+    fn on_i_event(
+        //
+        &mut self,
+        buf: &mut Buffer,
+        _: &mut State,
+        evnt: Event,
+    ) -> Result<Event> {
         Ok(evnt)
     }
 
-    fn to_status_cursor(&mut self, c: &mut Context, _: Event) -> Result<Event> {
+    fn to_status_cursor(&mut self, s: &mut State, _: Event) -> Result<Event> {
         use crate::window_code::Message;
 
         match &self.tree {
@@ -104,14 +120,7 @@ impl Text {
                     prev_kind = Some(node.kind());
                 }
                 let span: Span = format!("{} {} {} {}", ws, ls, ss, ps).into();
-                let w = match c.to_window() {
-                    Window::Code(mut w) => {
-                        w.post(c, Message::Status(span));
-                        Window::Code(w)
-                    }
-                    w => w,
-                };
-                c.set_window(w);
+                s.notify("code", Notify::Status(vec![span]));
                 Ok(Event::Noop)
             }
         }

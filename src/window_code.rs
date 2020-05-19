@@ -81,7 +81,8 @@ impl WindowCode {
     pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         let mut keymap = mem::replace(&mut self.keymap, Default::default());
 
-        let evnt = keymap.fold(s, evnt)?;
+        let buf = self.wfile.as_mut_buffer();
+        let evnt = keymap.fold(buf, s, evnt)?;
         let evnt = match &mut self.inner {
             Inner::Regular { .. } => self.wfile.on_event(s, evnt)?,
             Inner::Command { cmdline, .. } => cmdline.on_event(s, evnt)?,
