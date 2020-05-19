@@ -8,7 +8,6 @@ use log::trace;
 
 use std::{
     cmp,
-    convert::TryInto,
     io::{self, Write},
     mem,
     sync::mpsc,
@@ -22,6 +21,20 @@ use crate::{
     window::{Cursor, Message, Notify, Window},
     Error, Result,
 };
+
+#[macro_export]
+macro_rules! with_window {
+    ($c:expr, $self:expr, $wvar:ident, $eval:expr) => {{
+        let mut window = mem::replace($self, Default::default());
+        $c.window = Window::$wvar(window);
+        let res = $eval;
+        *$self = match mem::replace(&mut $c.window, Default::default()) {
+            Window::$wvar(w) => w,
+            _ => unreachable!(),
+        };
+        res
+    }};
+}
 
 pub struct Terminal {
     stdout: io::Stdout,
@@ -84,13 +97,11 @@ impl State {
         })
     }
 
-    pub fn event_loop(mut self, w: Window, mut evnt: Event) -> Result<()> {
+    pub fn event_loop(mut self, mut w: Window, mut evnt: Event) -> Result<()> {
         let mut stdout = io::stdout();
         let mut stats = Latency::new();
 
         let mut start = SystemTime::now();
-
-        let mut windows = vec![w];
 
         // TODO: later statistics can be moved to a different release stream
         // and or controlled by command line option.
@@ -98,33 +109,21 @@ impl State {
             // hide cursor, handle event and refresh window
             err_at!(Fatal, queue!(stdout, term_cursor::Hide))?;
             for evnt in evnt {
-                let evnt = match windows.last_mut() {
-                    Some(w) => {
-                        let mut c = self.to_context();
-                        let evnt = w.on_event(&mut c, evnt)?;
-                        w.on_refresh(&mut c)?;
-                        evnt
-                    }
-                    None => break 'a Ok(()),
+                let evnt = {
+                    let mut c = self.to_context();
+                    let evnt = w.on_event(&mut c, evnt)?;
+                    w.on_refresh(&mut c)?;
+                    evnt
                 };
                 for evnt in evnt {
                     match evnt {
-                        Event::Char('q', m) if m.is_empty() => {
-                            //
-                            break 'a Ok(());
-                        }
-                        Event::__Push(w) => windows.push(w),
-                        Event::__Pop if windows.len() > 0 => {
-                            let evnt = windows.pop().unwrap().try_into()?;
-                            let mut c = self.to_context();
-                            windows.last_mut().map(|w| w.on_event(&mut c, evnt));
-                        }
+                        Event::Char('q', m) if m.is_empty() => break 'a Ok(()),
                         _ => (),
                     }
                 }
             }
             // show-cursor
-            let Cursor { col, row } = windows.last().unwrap().to_cursor();
+            let Cursor { col, row } = w.to_cursor();
             err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, row)))?;
             err_at!(Fatal, queue!(stdout, term_cursor::Show))?;
             err_at!(Fatal, stdout.flush())?;
@@ -184,7 +183,7 @@ impl State {
 
 pub struct Context<'a> {
     pub state: &'a mut State,
-    pub w: Window,
+    pub window: Window,
     pub buffer: Option<Buffer>,
 }
 
@@ -192,14 +191,14 @@ impl<'a> Context<'a> {
     pub fn new(state: &mut State) -> Context {
         Context {
             state,
-            w: Default::default(),
+            window: Default::default(),
             buffer: Default::default(),
         }
     }
 
     #[inline]
     pub fn set_window(&mut self, w: Window) -> Window {
-        mem::replace(&mut self.w, w)
+        mem::replace(&mut self.window, w)
     }
 }
 
@@ -226,7 +225,7 @@ impl<'a> Context<'a> {
 
     #[inline]
     pub fn to_window(&mut self) -> Window {
-        mem::replace(&mut self.w, Default::default())
+        mem::replace(&mut self.window, Default::default())
     }
 }
 

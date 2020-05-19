@@ -9,13 +9,25 @@ use crate::{
     Result,
 };
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct WindowLine {
     name: String,
     coord: Coord,
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     buffer: Option<Buffer>,
+}
+
+impl Default for WindowLine {
+    fn default() -> WindowLine {
+        WindowLine {
+            name: Default::default(),
+            coord: Default::default(),
+            cursor: Default::default(),
+            obc_xy: Default::default(),
+            buffer: Some(Buffer::empty()),
+        }
+    }
 }
 
 impl fmt::Display for WindowLine {

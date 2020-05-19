@@ -20,8 +20,7 @@ pub enum Message {
 #[derive(Clone, Default)]
 pub struct WindowCode {
     coord: Coord,
-    w: WindowFile,
-    stsline: WindowLine,
+    wfile: WindowFile,
     tbcline: WindowLine,
     keymap: Keymap,
     inner: Inner,
@@ -29,25 +28,30 @@ pub struct WindowCode {
 
 #[derive(Clone)]
 enum Inner {
-    Regular,
-    Command { w: WindowLine, cmd: Command },
+    Regular { stsline: WindowLine },
+    Command { cmdline: WindowLine, cmd: Command },
 }
 
 impl Default for Inner {
-    fn default() -> Inner {
-        Inner::Regular
+    fn default() -> Self {
+        Inner::Regular {
+            stsline: Default::default(),
+        }
     }
 }
 
 impl WindowCode {
     pub fn new(coord: Coord) -> WindowCode {
+        let inner = Inner::Regular {
+            stsline: new_window_line("stsline", coord),
+        };
+
         WindowCode {
             coord,
-            w: WindowFile::new(coord),
-            stsline: new_window_line("stsline", coord),
+            wfile: WindowFile::new(coord),
             tbcline: new_window_line("tbcline", coord),
-            inner: Default::default(),
             keymap: Default::default(),
+            inner,
         }
     }
 
@@ -69,41 +73,31 @@ impl WindowCode {
 
     pub fn to_cursor(&self) -> Cursor {
         match &self.inner {
-            Inner::Regular => self.w.to_cursor(),
-            Inner::Command { w, .. } => w.to_cursor(),
+            Inner::Regular { .. } => self.wfile.to_cursor(),
+            Inner::Command { cmdline, .. } => cmdline.to_cursor(),
         }
     }
 
     pub fn on_event(&mut self, c: &mut Context, evnt: Event) -> Result<Event> {
         let mut keymap = mem::replace(&mut self.keymap, Default::default());
-        c.w = Window::Code(Box::new(mem::replace(self, Default::default())));
 
-        let evnt = match keymap.fold(c, evnt)? {
-            Event::Noop => Event::Noop,
-            evnt => match &mut self.inner {
-                Inner::Regular => self.w.on_event(c, evnt)?,
-                Inner::Command { w, .. } => w.on_event(c, evnt)?,
-            },
+        let evnt = with_window!(c, self, Code, keymap.fold(c, evnt))?;
+        let evnt = match &mut self.inner {
+            Inner::Regular { .. } => self.wfile.on_event(c, evnt)?,
+            Inner::Command { cmdline, .. } => cmdline.on_event(c, evnt)?,
         };
 
-        *self = match mem::replace(&mut c.w, Default::default()) {
-            Window::Code(w) => *w,
-            _ => unreachable!(),
-        };
         self.keymap = keymap;
-
         Ok(evnt)
     }
 
     pub fn on_refresh(&mut self, c: &mut Context) -> Result<()> {
-        self.w.on_refresh(c)?;
-        self.stsline.on_refresh(c)?;
+        self.wfile.on_refresh(c)?;
         match &mut self.inner {
-            Inner::Regular => (),
-            Inner::Command { w: _w, cmd: _cmd } => {
+            Inner::Regular { stsline } => stsline.on_refresh(c)?,
+            Inner::Command { cmdline, cmd } => {
                 // self.cmd.on_refresh(c)?;
-                // w.on_refresh(c)?;
-                todo!()
+                cmdline.on_refresh(c)?;
             }
         }
         self.tbcline.on_refresh(c)

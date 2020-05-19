@@ -109,7 +109,7 @@ fn run(opts: Opt) -> Result<()> {
     };
     let w = {
         let coord = Coord::new(1, 1, state.tm.rows, state.tm.cols);
-        Window::Code(Box::new(WindowCode::new(coord)))
+        Window::Code(WindowCode::new(coord))
     };
 
     let evnt = if opts.files.len() == 0 {

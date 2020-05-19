@@ -2,7 +2,7 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
 use std::{fmt, mem, result};
 
-use crate::{location::Location, window::Window, Error, Result};
+use crate::{location::Location, Error, Result};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DP {
@@ -233,9 +233,6 @@ pub enum Event {
     Cmd(String, String), // (command-name, arguments)
     Prompt(String),
     Noop,
-    // internal events
-    __Push(Window),
-    __Pop,
 }
 
 impl Event {
@@ -290,7 +287,6 @@ impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         use Event::{BackTab, Cmd, FKey, List, Md, Mt, Noop, Op, Prompt, Td};
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
-        use Event::{__Pop, __Push};
 
         match self {
             Backspace => write!(f, "backspace"),
@@ -314,8 +310,6 @@ impl fmt::Display for Event {
             BackTab => write!(f, "backtab"),
             Prompt(s) => write!(f, "prompt({})", s),
             Noop => write!(f, "noop"),
-            __Push(w) => write!(f, "__push({})", w),
-            __Pop => write!(f, "__pop"),
         }
     }
 }
