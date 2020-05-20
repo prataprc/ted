@@ -16,11 +16,6 @@ pub mod state;
 
 #[macro_use]
 pub mod window;
-mod col_nu;
-mod view;
-pub mod window_edit;
-pub mod window_file;
-pub mod window_line;
 pub mod window_prompt;
 
 mod ftype;

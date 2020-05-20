@@ -16,7 +16,11 @@
 //mod cmd_write;
 
 mod config;
+mod ftype;
+mod ftype_txt_en;
 mod keymap;
+mod view;
+mod window_edit;
 mod window_file;
 mod window_line;
 

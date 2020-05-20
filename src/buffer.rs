@@ -17,9 +17,7 @@ use std::{
 
 use crate::{
     event::{Event, Mto, DP},
-    ftype::FType,
     location::Location,
-    state::State,
     {err_at, Error, Result},
 };
 
@@ -104,8 +102,6 @@ pub struct Buffer {
     pub location: Location,
     /// Mark this buffer read-only, in which case insert ops are not allowed.
     pub read_only: bool,
-    /// File-type plugin for this buffer.
-    pub ftype: FType,
 
     /// Globally counting buffer number.
     num: usize, // buffer number
@@ -151,7 +147,6 @@ impl Buffer {
             last_inserts: Default::default(),
             mto_find_char: Default::default(),
             mto_pattern: Default::default(),
-            ftype: Default::default(),
 
             inner: Inner::Normal(NormalBuffer::new(buf)),
         };
@@ -183,11 +178,6 @@ impl Buffer {
 
     pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
         self.read_only = read_only;
-        self
-    }
-
-    pub fn set_ftype(&mut self, ftype: FType) -> &mut Self {
-        self.ftype = ftype;
         self
     }
 }
@@ -245,12 +235,6 @@ impl Buffer {
     #[inline]
     pub fn to_num(&self) -> usize {
         self.num
-    }
-
-    /// Return buffer's file type.
-    #[inline]
-    pub fn to_file_type(&self) -> String {
-        self.ftype.to_type_name()
     }
 
     /// Return buffer's location.
@@ -471,7 +455,7 @@ impl Buffer {
 }
 
 impl Buffer {
-    pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
         let evnt_up = {
             let mut ftype = mem::replace(&mut self.ftype, Default::default());
             let evnt_up = ftype.on_event(self, s, evnt.clone())?;
@@ -517,7 +501,7 @@ impl Buffer {
         }
     }
 
-    fn ex_n_insert(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
+    fn ex_n_insert(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
         use crate::event::{Event::Md, Mod};
 
         let nr = mem::replace(&mut self.inner, Default::default());
@@ -561,7 +545,7 @@ impl Buffer {
         Ok(evnt)
     }
 
-    fn handle_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
+    fn handle_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
         match self.to_mode() {
             "insert" => self.handle_i_event(s, evnt),
             "normal" => self.handle_n_event(s, evnt),
@@ -569,7 +553,7 @@ impl Buffer {
         }
     }
 
-    fn handle_n_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
+    fn handle_n_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
         use crate::event::Event::Mt;
 
         // switch to insert mode.
@@ -625,7 +609,7 @@ impl Buffer {
         Ok(evnt)
     }
 
-    fn handle_i_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
+    fn handle_i_event(&mut self, s: &mut App, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Noop => Ok(Event::Noop),
             evnt => {

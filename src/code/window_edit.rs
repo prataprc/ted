@@ -14,6 +14,7 @@ pub struct WindowEdit {
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     buffer_id: String,
+    ftype: FType,
 }
 
 impl fmt::Display for WindowEdit {
@@ -30,7 +31,13 @@ impl WindowEdit {
             cursor: cursor!(0, 0),
             obc_xy: (0, 0).into(),
             buffer_id: Default::default(),
+            ftype: Default::default(),
         }
+    }
+
+    pub fn set_ftype(&mut self, ftype: FType) -> &mut Self {
+        self.ftype = ftype;
+        self
     }
 }
 
@@ -38,6 +45,11 @@ impl WindowEdit {
     #[inline]
     pub fn to_buffer_id(&self) -> String {
         self.buffer_id.clone()
+    }
+
+    #[inline]
+    pub fn to_file_type(&self) -> String {
+        self.ftype.to_type_name()
     }
 
     #[inline]
@@ -57,10 +69,14 @@ impl WindowEdit {
                 self.buffer_id = buffer_id;
                 Ok(Event::Noop)
             }
-            mut evnt => {
-                let buf = app.as_mut_buffer(&self.buffer_id);
-                buf.on_event(app, evnt)
-            }
+            mut evnt => match app.take_buffer(&self.buffer_id) {
+                Some(buf) => {
+                    let evnt = self.ftype.on_event(app, buf, evnt)?;
+                    app.add_buffer(buffer);
+                    Ok(evnt)
+                }
+                None => Ok(evnt),
+            },
         }
     }
 
@@ -68,11 +84,11 @@ impl WindowEdit {
         self.cursor = if app.as_ref().wrap {
             let v = view::Wrap::new(self.coord, self.cursor, self.obc_xy);
             let buf = app.as_buffer(&self.buffer_id);
-            v.render(&s, buf)?
+            v.render(app, buf)?
         } else {
             let v = view::NoWrap::new(self.coord, self.cursor, self.obc_xy);
             let buf = app.as_buffer(&self.buffer_id);
-            v.render(&s, buf)?
+            v.render(app, buf)?
         };
 
         Ok(())

@@ -2,8 +2,8 @@ use std::{fmt, result};
 
 use crate::{
     buffer::{self, Buffer},
+    code::App,
     event::Event,
-    state::State,
     view,
     window::{Coord, Cursor},
     Result,
@@ -15,7 +15,7 @@ pub struct WindowLine {
     coord: Coord,
     cursor: Cursor,
     obc_xy: buffer::Cursor,
-    buffer: Option<Buffer>,
+    buffer: Buffer,
 }
 
 impl Default for WindowLine {
@@ -25,7 +25,7 @@ impl Default for WindowLine {
             coord: Default::default(),
             cursor: Default::default(),
             obc_xy: Default::default(),
-            buffer: Some(Buffer::empty()),
+            buffer: Buffer::empty(),
         }
     }
 }
@@ -44,46 +44,32 @@ impl WindowLine {
             coord,
             cursor: cursor!(0, 0),
             obc_xy: (0, 0).into(),
-            buffer: Some(Buffer::empty()),
+            buffer: Buffer::empty(),
         }
     }
 }
 
 impl WindowLine {
     #[inline]
-    pub fn as_buffer<'a>(&self, s: &'a State) -> &'a Buffer {
-        todo!()
-    }
-
-    #[inline]
-    pub fn as_mut_buffer<'a>(&self, s: &'a mut State) -> &'a mut Buffer {
-        todo!()
-    }
-
-    #[inline]
     pub fn to_cursor(&self) -> Cursor {
         self.coord.to_top_left() + self.cursor
     }
 
-    pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Esc),
             evnt => match &mut self.buffer {
-                Some(buffer) => buffer.on_event(s, evnt),
+                Some(buffer) => buffer.on_event(app, evnt),
                 None => Ok(evnt),
             },
         }
     }
 
-    pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
-        self.cursor = match self.buffer.as_ref() {
-            Some(buffer) => {
-                let v = view::NoWrap::new(self.coord, self.cursor, self.obc_xy);
-                v.render(s, buffer)?
-            }
-            None => self.cursor,
+    pub fn on_refresh(&mut self, app: &mut App) -> Result<()> {
+        self.cursor = {
+            let v = view::NoWrap::new(self.coord, self.cursor, self.obc_xy);
+            v.render(app, &self.buffer)?
         };
-
         Ok(())
     }
 }

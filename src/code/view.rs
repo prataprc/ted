@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     buffer::{self, Buffer, NL},
-    col_nu::ColNu,
+    code::col_nu::ColNu,
     event::DP,
     window::{Coord, Cursor, Span},
     Error, Result,

@@ -3,7 +3,6 @@ use tree_sitter as ts;
 use crate::{
     buffer::Buffer,
     event::Event,
-    state::State,
     window::{Notify, Span, Window},
     Error, Result,
 };
@@ -51,13 +50,13 @@ impl Text {
     pub fn on_event(
         //
         &mut self,
+        app: &mut App,
         buf: &mut Buffer,
-        s: &mut State,
         evnt: Event,
     ) -> Result<Event> {
         match buf.to_mode() {
-            "insert" => self.on_i_event(buf, s, evnt),
-            "normal" => self.on_n_event(buf, s, evnt),
+            "insert" => self.on_i_event(app, buf, evnt),
+            "normal" => self.on_n_event(app, buf, evnt),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
@@ -67,8 +66,8 @@ impl Text {
     fn on_n_event(
         //
         &mut self,
+        app: &mut App,
         buf: &mut Buffer,
-        s: &mut State,
         evnt: Event,
     ) -> Result<Event> {
         use crate::event::{Event::Td, Ted};
@@ -80,7 +79,7 @@ impl Text {
 
         let evnt = match evnt {
             Event::Noop => Event::Noop,
-            Td(Ted::StatusCursor) => self.to_status_cursor(s, evnt)?,
+            Td(Ted::StatusCursor) => self.to_status_cursor(app, evnt)?,
             evnt => evnt,
         };
 
@@ -90,14 +89,14 @@ impl Text {
     fn on_i_event(
         //
         &mut self,
+        _app: &mut App,
         buf: &mut Buffer,
-        _: &mut State,
         evnt: Event,
     ) -> Result<Event> {
         Ok(evnt)
     }
 
-    fn to_status_cursor(&mut self, s: &mut State, _: Event) -> Result<Event> {
+    fn to_status_cursor(&mut self, app: &mut App, _: Event) -> Result<Event> {
         match &self.tree {
             None => Ok(Event::Noop),
             Some(tree) => {
@@ -118,7 +117,7 @@ impl Text {
                     prev_kind = Some(node.kind());
                 }
                 let span: Span = format!("{} {} {} {}", ws, ls, ss, ps).into();
-                s.notify("code", Notify::Status(vec![span]));
+                app.notify("code", Notify::Status(vec![span]));
                 Ok(Event::Noop)
             }
         }
