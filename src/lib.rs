@@ -5,11 +5,12 @@ use std::{fmt, result};
 
 #[macro_use]
 pub mod util;
+#[macro_use]
+pub mod config;
 pub mod location;
 mod tabc;
 
 pub mod buffer;
-pub mod config;
 pub mod event;
 pub mod state;
 
@@ -41,6 +42,7 @@ pub enum Error {
     BadPattern(String),
     IOError(String),
     IPC(String),
+    NoTopic,
     Invalid(String),
     FailConvert(String),
     FailBuffer(String),
@@ -53,6 +55,7 @@ impl fmt::Display for Error {
             Error::BadPattern(msg) => write!(f, "BadPattern: {}", msg),
             Error::IOError(msg) => write!(f, "IOError: {}", msg),
             Error::IPC(msg) => write!(f, "IPC: {}", msg),
+            Error::NoTopic(msg) => write!(f, "NoTopic"),
             Error::Invalid(msg) => write!(f, "Invalid: {}", msg),
             Error::FailConvert(msg) => write!(f, "FailConvert: {}", msg),
             Error::FailBuffer(msg) => write!(f, "FailBuffer: {}", msg),

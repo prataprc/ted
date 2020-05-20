@@ -1,56 +1,12 @@
 #![feature(backtrace)]
 #![feature(box_syntax)]
 
-use dirs;
-use simplelog;
-use structopt::StructOpt;
+use std::{process, fs};
 
-use std::{ffi, fs, path};
-
-use ted::{
-    config::Config,
-    err_at,
-    event::{Event, Ted},
-    location::Location,
-    state::State,
-    window::{Coord, Window},
-    window_code::WindowCode,
-    Error, Result,
-};
-
-#[derive(Debug, StructOpt)]
-pub struct Opt {
-    #[structopt(long = "app", default_value = "code")]
-    app: String,
-
-    #[structopt(short = "u", long = "config", default_value = "")]
-    toml_file: String,
-
-    #[structopt(long = "log", default_value = "")]
-    log_file: String,
-
-    #[structopt(short = "v", long = "verbose")]
-    verbose: bool,
-
-    #[structopt(long = "trace")]
-    trace: bool,
-
-    #[structopt(long = "stats")]
-    stats: bool,
-
-    files: Vec<String>,
-}
+use ted::{state::State, Result};
 
 fn main() {
     let opts = Opt::from_args();
-
-    match init_logger(&opts) {
-        Ok(()) => (),
-        Err(err) => {
-            println!("{}", err);
-            std::process::exit(1);
-        }
-    }
 
     std::panic::set_hook(box |panic_info| {
         let mut strng = format!(
@@ -61,62 +17,29 @@ fn main() {
         fs::write("ted-panic.out", strng.as_bytes()).unwrap();
     });
 
-    let res = match opts.app.as_str() {
-        "code" => run_code(opts)
-        _ => {
-            println!("invalid choice of application");
-            std::process::exit(1)
+    match State: new(opts) {
+        Ok(state) => match state.event_loop() {
+            Ok(_) => process::exit(0),
+            Err(err) => {
+                println!("{}", err);
+                process:exit(2),
+            }
+        Err(err) => {
+            println!("{}", err);
+            process:exit(1),
         }
-    };
-    match res {
-        Ok(_) => (),
-        Err(err) => println!("{}", err),
     }
-}
-
-fn init_logger(opts: &Opt) -> Result<()> {
-    let home_dir = err_at!(
-        Fatal,
-        dirs::home_dir().ok_or(format!("can't find home-directory"))
-    )?;
-    let log_file: path::PathBuf = if opts.log_file.is_empty() {
-        [home_dir, path::Path::new(".ted.log").to_path_buf()]
-    } else {
-        [home_dir, path::Path::new(&opts.log_file).to_path_buf()]
-    }
-    .iter()
-    .collect();
-
-    let level_filter = if opts.trace {
-        simplelog::LevelFilter::Trace
-    } else if opts.verbose {
-        simplelog::LevelFilter::Debug
-    } else {
-        simplelog::LevelFilter::Info
-    };
-
-    let mut lcnf = simplelog::ConfigBuilder::new();
-    lcnf.set_location_level(simplelog::LevelFilter::Error)
-        .set_target_level(simplelog::LevelFilter::Off)
-        .set_thread_mode(simplelog::ThreadLogMode::Both)
-        .set_thread_level(simplelog::LevelFilter::Error)
-        .set_time_to_local(true)
-        .set_time_format("%Y-%m-%dT%H-%M-%S%.3f".to_string());
-
-    let fs = err_at!(Fatal, fs::File::create(&log_file))?;
-    err_at!(
-        Fatal,
-        simplelog::WriteLogger::init(level_filter, lcnf.build(), fs)
-    )?;
-
-    Ok(())
 }
 
 fn run_code(opts: Opt) -> Result<()> {
-    let state = {
-        let config: code::Config = Default::default();
-        State::new(config)?
+    use std::ffi;
+    use ted::{
+        event::{Event, Ted},
+        location::Location,
+        window::{Coord, Window},
+        window_code::WindowCode,
     };
+
     let w = {
         let coord = Coord::new(1, 1, state.tm.rows, state.tm.cols);
         Window::Code(WindowCode::new(coord))
