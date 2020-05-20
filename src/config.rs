@@ -1,9 +1,12 @@
 use log::{info, warn};
-use serde_derive::Deserialize;
+use toml;
 
-use std::{convert::TryInto, ffi, path};
+use std::{
+    convert::{TryFrom, TryInto},
+    ffi, fs, path,
+};
 
-use crate::Result;
+use crate::{Error, Result};
 
 macro_rules! config {
     ($(($field:ident, $t:ty, $val:expr)),*) => (
@@ -46,7 +49,19 @@ impl<'a> From<&'a str> for ConfigFile {
     }
 }
 
-pub fn load(app: &str, ftype: &str) -> Result<Config> {
+impl TryFrom<ConfigFile> for toml::Value {
+    type Error = Error;
+
+    fn try_from(cf: ConfigFile) -> Result<Self> {
+        use std::str::from_utf8;
+
+        let bytes = err_at!(IOError, fs::read(cf.0))?;
+        let s = err_at!(FailConvert, from_utf8(&bytes))?;
+        err_at!(FailConvert, s.parse())
+    }
+}
+
+pub fn load(app: &str, ftype: &str) -> Result<toml::Value> {
     let files = match dirs::home_dir() {
         Some(home) => {
             let home = home.clone().into_os_string();
@@ -71,16 +86,22 @@ pub fn load(app: &str, ftype: &str) -> Result<Config> {
         None => vec![],
     };
 
-    let mut config: Config = Default::default();
+    let mut config: toml::map::Map<String, toml::Value> = Default::default();
     for fname in files.into_iter() {
         if path::Path::new(&fname).exists() {
-            let ctml: ConfigToml = fname.clone().into_os_string().try_into()?;
-            config = config.mixin(ctml);
-            info!("loading configuration file {:?}", fname);
+            let conf: toml::Value = {
+                let cf = ConfigFile(fname.clone().into_os_string());
+                cf.try_into()?
+            };
+            match conf.as_table() {
+                Some(table) => config.extend(table.clone().into_iter()),
+                None => warn!("config file {:?} not valid", fname),
+            };
+            info!("load configuration file {:?}", fname);
         } else {
-            warn!("try adding config file {:?}", fname);
+            warn!("fail reading config file {:?}", fname);
         }
     }
 
-    Ok(config)
+    Ok(toml::Value::Table(config))
 }

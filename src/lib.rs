@@ -7,19 +7,19 @@ use std::{fmt, result};
 pub mod util;
 #[macro_use]
 pub mod config;
-pub mod location;
-mod tabc;
-
-pub mod buffer;
-pub mod event;
-pub mod state;
-
-#[macro_use]
-pub mod window;
-pub mod window_prompt;
-
-mod ftype;
-mod ftype_txt_en;
+//pub mod location;
+//mod tabc;
+//
+//pub mod buffer;
+//pub mod event;
+//pub mod state;
+//
+//#[macro_use]
+//pub mod window;
+//pub mod window_prompt;
+//
+//mod ftype;
+//mod ftype_txt_en;
 
 pub type Result<T> = result::Result<T, Error>;
 
@@ -41,7 +41,7 @@ impl fmt::Display for Error {
             Error::BadPattern(msg) => write!(f, "BadPattern: {}", msg),
             Error::IOError(msg) => write!(f, "IOError: {}", msg),
             Error::IPC(msg) => write!(f, "IPC: {}", msg),
-            Error::NoTopic(msg) => write!(f, "NoTopic"),
+            Error::NoTopic => write!(f, "NoTopic"),
             Error::Invalid(msg) => write!(f, "Invalid: {}", msg),
             Error::FailConvert(msg) => write!(f, "FailConvert: {}", msg),
             Error::FailBuffer(msg) => write!(f, "FailBuffer: {}", msg),
