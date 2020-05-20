@@ -6,8 +6,7 @@ use std::mem;
 use crate::{
     buffer::Buffer,
     event::{Event, Mod, Mto, Ted, DP},
-    state::State,
-    Error, Result,
+    Result,
 };
 
 macro_rules! parse_n {
@@ -18,30 +17,24 @@ macro_rules! parse_n {
 }
 
 #[derive(Clone, Default)]
-pub struct KeyCode {
+pub struct Keymap {
     prefix: Event,
 }
 
 impl KeyCode {
-    pub fn fold(
-        //
-        &mut self,
-        buf: &mut Buffer,
-        s: &State,
-        evnt: Event,
-    ) -> Result<Event> {
+    pub fn fold(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
-            "insert" => self.insert_fold(s, evnt),
-            "normal" => self.normal_fold(s, evnt),
+            "insert" => self.insert_fold(evnt),
+            "normal" => self.normal_fold(evnt),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
-    fn insert_fold(&mut self, _: &State, e: Event) -> Result<Event> {
+    fn insert_fold(&mut self, e: Event) -> Result<Event> {
         Ok(e)
     }
 
-    fn normal_fold(&mut self, _: &State, evnt: Event) -> Result<Event> {
+    fn normal_fold(&mut self, evnt: Event) -> Result<Event> {
         use crate::event::Event::{Backspace, Char, Enter};
         use crate::event::Event::{Md, Mt, Td, B, F, G, N, T};
         let noop = Event::Noop;

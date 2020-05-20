@@ -12,7 +12,6 @@ use crate::{
     buffer::{self, Buffer, NL},
     col_nu::ColNu,
     event::DP,
-    state::State,
     window::{Coord, Cursor, Span},
     Error, Result,
 };
@@ -43,10 +42,10 @@ impl Wrap {
         o.exclude_nu(o.nu.to_width())
     }
 
-    pub fn render(mut self, s: &State, buf: &Buffer) -> Result<Cursor> {
-        self = self.shift(s, buf);
+    pub fn render(mut self, app: &App, buf: &Buffer) -> Result<Cursor> {
+        self = self.shift(app, buf);
         let cursor = self.cursor;
-        self.refresh(s, buf)?;
+        self.refresh(app, buf)?;
         Ok(cursor)
     }
 
@@ -86,11 +85,11 @@ impl Wrap {
         n
     }
 
-    fn shift(mut self, s: &State, buf: &Buffer) -> Self {
+    fn shift(mut self, app: &App, buf: &Buffer) -> Self {
         use crate::event::DP::{Left, Right};
         use std::cmp::Ordering::{Equal, Greater, Less};
 
-        let scroll_off = s.as_ref().scroll_off; // accounting for scroll-offset.
+        let scroll_off = app.as_ref().scroll_off; // accounting for scroll-offset.
         let nbc_xy = buf.to_xy_cursor();
 
         // create possible cursor positions.
@@ -129,7 +128,7 @@ impl Wrap {
         self
     }
 
-    fn refresh(self, s: &State, buf: &Buffer) -> Result<()> {
+    fn refresh(self, app: &App, buf: &Buffer) -> Result<()> {
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         trace!(
@@ -146,7 +145,7 @@ impl Wrap {
         let full_coord = self.outer_coord();
         let (col, mut row) = full_coord.to_origin_cursor();
         let max_row = row + full_coord.hgt;
-        let line_number = s.as_ref().line_number;
+        let line_number = app.as_ref().line_number;
 
         let mut wv = WrapView::new(line_idx, self.coord, buf)?;
         wv.align(buf.to_cursor(), self.cursor);
@@ -180,7 +179,7 @@ impl Wrap {
                 }
             }
         }
-        empty_lines(tail_line(row, full_coord, &self.nu, buf)?, full_coord, s)
+        empty_lines(tail_line(row, full_coord, &self.nu, buf)?, full_coord, app)
     }
 
     fn exclude_nu(mut self, nu_wth: u16) -> Self {
@@ -245,15 +244,15 @@ impl NoWrap {
         o.exclude_nu(o.nu.to_width())
     }
 
-    pub fn render(mut self, s: &State, buf: &Buffer) -> Result<Cursor> {
-        self = self.shift(s, buf);
+    pub fn render(mut self, app: &App, buf: &Buffer) -> Result<Cursor> {
+        self = self.shift(app, buf);
         let cursor = self.cursor;
-        self.refresh(s, buf)?;
+        self.refresh(app, buf)?;
         Ok(cursor)
     }
 
-    fn shift(self, s: &State, buf: &Buffer) -> Self {
-        let scroll_off = s.as_ref().scroll_off; // accounting for scroll-offset.
+    fn shift(self, app: &App, buf: &Buffer) -> Self {
+        let scroll_off = app.as_ref().scroll_off; // accounting for scroll-offset.
 
         let (r_min, r_max) = if self.coord.hgt < (scroll_off * 2) {
             (0, (self.coord.hgt.saturating_sub(1) as isize))
@@ -310,7 +309,7 @@ impl NoWrap {
         }
     }
 
-    fn refresh(self, s: &State, buf: &Buffer) -> Result<()> {
+    fn refresh(self, app: &App, buf: &Buffer) -> Result<()> {
         use std::iter::repeat;
 
         let nbc_xy = buf.to_xy_cursor();
@@ -340,7 +339,7 @@ impl NoWrap {
             row += 1;
         }
 
-        empty_lines(tail_line(row, full_coord, &self.nu, buf)?, full_coord, s)
+        empty_lines(tail_line(row, full_coord, &self.nu, buf)?, full_coord, app)
     }
 
     fn outer_coord(&self) -> Coord {
@@ -358,7 +357,7 @@ impl NoWrap {
     }
 }
 
-fn empty_lines(mut row: u16, coord: Coord, s: &State) -> Result<()> {
+fn empty_lines(mut row: u16, coord: Coord, app: &App) -> Result<()> {
     use std::iter::repeat;
 
     let mut stdout = io::stdout();
@@ -369,7 +368,7 @@ fn empty_lines(mut row: u16, coord: Coord, s: &State) -> Result<()> {
         trace!("empty lines {} {}", row, hgt);
         for _ in row..hgt {
             let mut st: String = if_else!(
-                s.as_ref().line_number,
+                app.as_ref().line_number,
                 format!("{} ", '~'),
                 Default::default()
             );

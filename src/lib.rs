@@ -18,7 +18,6 @@ pub mod state;
 pub mod window;
 mod col_nu;
 mod view;
-pub mod window_code;
 pub mod window_edit;
 pub mod window_file;
 pub mod window_line;
@@ -26,14 +25,6 @@ pub mod window_prompt;
 
 mod ftype;
 mod ftype_txt_en;
-
-mod keymap;
-mod keymap_code;
-
-mod cmd;
-mod cmd_edit;
-mod cmd_file;
-mod cmd_write;
 
 pub type Result<T> = result::Result<T, Error>;
 

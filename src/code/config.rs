@@ -1,8 +1,7 @@
-use log::{info, warn};
 use serde_derive::Deserialize;
 use toml;
 
-use std::{convert::TryFrom, convert::TryInto, ffi, fs, path, str::FromStr};
+use std::{convert::TryFrom, convert::TryInto, ffi, fs, str::FromStr};
 
 use crate::{Error, Result};
 

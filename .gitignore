@@ -1,6 +1,6 @@
 *.swp
-*/*.swp
-*/*.swo
+**/*.swp
+**/*.swo
 */out
 ted-panic.out
 */ted-panic.out

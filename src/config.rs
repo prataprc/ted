@@ -1,10 +1,9 @@
 use log::{info, warn};
 use serde_derive::Deserialize;
-use toml;
 
-use std::{convert::TryFrom, convert::TryInto, ffi, fs, path, str::FromStr};
+use std::{convert::TryInto, ffi, path};
 
-use crate::{Error, Result};
+use crate::Result;
 
 macro_rules! config {
     ($(($field:ident, $t:ty, $val:expr)),*) => (

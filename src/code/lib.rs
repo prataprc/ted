@@ -15,12 +15,51 @@
 //mod cmd_file;
 //mod cmd_write;
 
-use crate::{buffer::Buffer, code::config::Config, state::PubSub};
+mod config;
+mod keymap;
+mod window_file;
+mod window_line;
 
-struct App {
+use std::mem;
+
+use crate::{
+    buffer::Buffer,
+    code::{config::Config, keymap::Keymap},
+    code::{window_file::WindowFile, window_line::WindowLine},
+    event::Event,
+    pubsub::PubSub,
+    window::{Coord, Cursor, Message, Span},
+    Result,
+};
+
+pub fn new_window_line(typ: &str, mut coord: Coord) -> WindowLine {
+    let (col, _) = coord.to_origin();
+    let (hgt, wth) = coord.to_size();
+    let row = match typ {
+        "cmdline" => hgt.saturating_sub(2),
+        "stsline" => hgt.saturating_sub(2),
+        "tbcline" => hgt.saturating_sub(3),
+        _ => unreachable!(),
+    };
+    coord = Coord::new(col, row, 1, wth);
+    WindowLine::new(typ, coord)
+}
+
+pub struct App {
     config: Config,
     subscribers: PubSub,
     buffers: Vec<Buffer>,
+
+    coord: Coord,
+    wfile: WindowFile,
+    tbcline: WindowLine,
+    keymap: Keymap,
+    inner: Inner,
+}
+
+enum Inner {
+    Regular { stsline: WindowLine },
+    Command { cmdline: WindowLine, cmd: Command },
 }
 
 impl AsRef<Config> for App {
@@ -30,11 +69,21 @@ impl AsRef<Config> for App {
 }
 
 impl App {
-    pub fn new(config: toml::Value, subscribers: PubSub) -> App {
+    pub fn new(config: toml::Value, subscribers: PubSub, coord: Coord) -> App {
+        let inner = Inner::Regular {
+            stsline: new_window_line("stsline", coord),
+        };
+
         App {
             config,
             subscribers,
             buffers: Default::default(),
+
+            coord,
+            wfile: WindowFile::new(coord),
+            tbcline: new_window_line("tbcline", coord),
+            keymap: Default::default(),
+            inner: inner,
         }
     }
 
@@ -85,5 +134,73 @@ impl App {
             }
         }
         unreachable!()
+    }
+}
+
+impl App {
+    #[inline]
+    pub fn post(&mut self, msg: Message) -> Result<()> {
+        //match (name, msg) {
+        //    ("status", Message::Status(sl)) -> self.stsline.set(sl),
+        //    ("tabcomplete", Message::TabComplete(sl) -> self.tbcline.set(sl),
+        //}
+        Ok(())
+    }
+
+    pub fn to_cursor(&self) -> Cursor {
+        match &self.inner {
+            Inner::Regular { .. } => self.wfile.to_cursor(),
+            Inner::Command { cmdline, .. } => cmdline.to_cursor(),
+        }
+    }
+
+    pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
+        let mut keymap = mem::replace(&mut self.keymap, Default::default());
+        let evnt = {
+            let buf = self.as_mut_buffer(&self.wfile.to_buffer_id());
+            let evnt = keymap.fold(buf, evnt)?;
+            evnt
+        };
+        self.keymap = keymap;
+
+        let evnt = match &mut self.inner {
+            Inner::Regular { .. } => {
+                let wfile = mem::replace(&mut self.wfile, Default::default());
+                let evnt = wfile.on_event(self, evnt)?;
+                self.wfile = wfile;
+                evnt
+            }
+            Inner::Command { cmdline, .. } => {
+                let wline = mem::replace(cmdline, Default::default());
+                let evnt = wline.on_event(app, evnt)?;
+                *cmdline = wline;
+                evnt
+            }
+        };
+
+        Ok(evnt)
+    }
+
+    pub fn on_refresh(&mut self) -> Result<()> {
+        let wfile = mem::replace(&mut self.wfile, Default::default());
+        self.wfile.on_refresh(app)?;
+        self.wfile = wfile;
+
+        match &mut self.inner {
+            Inner::Regular { stsline } => {
+                let wline = mem::replace(stsline, Default::default());
+                wline.on_refresh()?;
+                *stsline = wline;
+            }
+            Inner::Command { cmdline, cmd } => {
+                // self.cmd.on_refresh()?;
+                let wline = mem::replace(cmdline, Default::default());
+                wline.on_refresh()?;
+                *cmdline = wline;
+            }
+        }
+        let wline = mem::replace(&mut self.tbcline, Default::default());
+        self.tbcline.on_refresh()?;
+        self.tbcline = wline;
     }
 }

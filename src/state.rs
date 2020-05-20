@@ -18,6 +18,7 @@ use std::{
 
 use crate::{
     event::Event,
+    code,
     window::{Cursor, Message, Notify},
     Error, Result,
 };
@@ -110,7 +111,10 @@ impl State {
         };
         let subscribers: PubSub = Default::default(),
         let app = match &opts.app {
-            "code" => Ok(code::App::new(app_config, subscribers.clone())),
+            "code" => {
+                let coord = Coord::new(1, 1, tm.rows, tm.cols);
+                Ok(code::App::new(app_config, subscribers.clone(), coord))
+            }
             _ => err_at!(Invalid, st: format("invalid app {:?}", &opts.app)),
         }?;
         Ok(State {

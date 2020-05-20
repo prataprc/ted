@@ -98,8 +98,6 @@ impl Text {
     }
 
     fn to_status_cursor(&mut self, s: &mut State, _: Event) -> Result<Event> {
-        use crate::window_code::Message;
-
         match &self.tree {
             None => Ok(Event::Noop),
             Some(tree) => {

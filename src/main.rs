@@ -32,29 +32,30 @@ fn main() {
 }
 
 fn run_code(opts: Opt) -> Result<()> {
-    use std::ffi;
-    use ted::{
-        event::{Event, Ted},
-        location::Location,
-        window::{Coord, Window},
-        window_code::WindowCode,
-    };
+    //use std::ffi;
+    //use ted::{
+    //    event::{Event, Ted},
+    //    location::Location,
+    //    window::{Coord, Window},
+    //    window_code::WindowCode,
+    //};
 
-    let w = {
-        let coord = Coord::new(1, 1, state.tm.rows, state.tm.cols);
-        Window::Code(WindowCode::new(coord))
-    };
+    //let w = {
+    //    let coord = Coord::new(1, 1, state.tm.rows, state.tm.cols);
+    //    Window::Code(WindowCode::new(coord))
+    //};
 
-    let evnt = if opts.files.len() == 0 {
-        Event::Td(Ted::NewBuffer)
-    } else {
-        let mut flocs = vec![];
-        for f in opts.files.clone().into_iter() {
-            let f: ffi::OsString = f.into();
-            flocs.push(Location::new_disk(&f));
-        }
-        Event::Td(Ted::OpenFiles { flocs })
-    };
+    //let evnt = if opts.files.len() == 0 {
+    //    Event::Td(Ted::NewBuffer)
+    //} else {
+    //    let mut flocs = vec![];
+    //    for f in opts.files.clone().into_iter() {
+    //        let f: ffi::OsString = f.into();
+    //        flocs.push(Location::new_disk(&f));
+    //    }
+    //    Event::Td(Ted::OpenFiles { flocs })
+    //};
 
-    state.event_loop(w, evnt)
+    //state.event_loop(w, evnt)
+    todo!()
 }

@@ -5,18 +5,7 @@ use crossterm::{
 
 use std::{fmt, iter::FromIterator, ops::Add, result};
 
-use crate::{
-    buffer::Buffer,
-    //
-    event::Event,
-    state::State,
-    window_code::WindowCode,
-    window_edit::WindowEdit,
-    window_file::WindowFile,
-    window_line::WindowLine,
-    window_prompt::WindowPrompt,
-    Result,
-};
+use crate::{buffer::Buffer, event::Event, state::State, Result};
 
 #[macro_export]
 macro_rules! cursor {
@@ -68,19 +57,6 @@ macro_rules! span {
     }};
 }
 
-pub fn new_window_line(typ: &str, mut coord: Coord) -> WindowLine {
-    let (col, _) = coord.to_origin();
-    let (hgt, wth) = coord.to_size();
-    let row = match typ {
-        "cmdline" => hgt.saturating_sub(2),
-        "stsline" => hgt.saturating_sub(2),
-        "tbcline" => hgt.saturating_sub(3),
-        _ => unreachable!(),
-    };
-    coord = Coord::new(col, row, 1, wth);
-    WindowLine::new("cmd-line", coord)
-}
-
 pub enum Message {
     Notify(Notify),
     None,
@@ -89,92 +65,6 @@ pub enum Message {
 pub enum Notify {
     Status(Vec<Span>),
     None,
-}
-
-#[derive(Clone)]
-pub enum Window {
-    Code(WindowCode),
-    File(WindowFile),
-    Edit(WindowEdit),
-    Line(WindowLine),
-    Prompt(WindowPrompt),
-    None,
-}
-
-impl fmt::Display for Window {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        match self {
-            Window::Code(_) => write!(f, "window-code"),
-            Window::File(_) => write!(f, "window-file"),
-            Window::Edit(_) => write!(f, "window-edit"),
-            Window::Line(_) => write!(f, "window-line"),
-            Window::Prompt(_) => write!(f, "window-prompt"),
-            Window::None => write!(f, "window-none"),
-        }
-    }
-}
-
-impl Default for Window {
-    fn default() -> Window {
-        Window::None
-    }
-}
-
-impl Window {
-    pub fn as_buffer<'a>(&self, s: &'a State) -> &'a Buffer {
-        match self {
-            Window::Code(w) => w.as_buffer(s),
-            Window::File(w) => w.as_buffer(s),
-            Window::Edit(w) => w.as_buffer(s),
-            Window::Line(w) => w.as_buffer(s),
-            Window::Prompt(w) => w.as_buffer(s),
-            Window::None => todo!(),
-        }
-    }
-
-    pub fn as_mut_buffer<'a>(&mut self, s: &'a mut State) -> &'a mut Buffer {
-        match self {
-            Window::Code(w) => w.as_mut_buffer(s),
-            Window::File(w) => w.as_mut_buffer(s),
-            Window::Edit(w) => w.as_mut_buffer(s),
-            Window::Line(w) => w.as_mut_buffer(s),
-            Window::Prompt(w) => w.as_mut_buffer(s),
-            Window::None => todo!(),
-        }
-    }
-
-    pub fn to_cursor(&self) -> Cursor {
-        match self {
-            Window::Code(w) => w.to_cursor(),
-            Window::File(w) => w.to_cursor(),
-            Window::Edit(w) => w.to_cursor(),
-            Window::Line(w) => w.to_cursor(),
-            Window::Prompt(w) => w.to_cursor(),
-            Window::None => Default::default(),
-        }
-    }
-
-    pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
-        match self {
-            Window::Code(w) => w.on_event(s, evnt),
-            Window::File(w) => w.on_event(s, evnt),
-            Window::Edit(w) => w.on_event(s, evnt),
-            Window::Line(w) => w.on_event(s, evnt),
-            Window::Prompt(w) => w.on_event(s, evnt),
-            Window::None => Ok(evnt),
-        }
-    }
-
-    pub fn on_refresh(&mut self, s: &mut State) -> Result<()> {
-        match self {
-            Window::Code(w) => w.on_refresh(s),
-            Window::File(w) => w.on_refresh(s),
-            Window::Edit(w) => w.on_refresh(s),
-            Window::Line(w) => w.on_refresh(s),
-            Window::Prompt(w) => w.on_refresh(s),
-            Window::None => Ok(()),
-        }
-    }
 }
 
 // Terminal coordinates, describes the four corners of a window.
