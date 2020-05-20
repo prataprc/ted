@@ -4,22 +4,23 @@ use crossterm::{
     execute, queue,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use log::trace;
 use dirs;
+use log::trace;
 use simplelog;
 use structopt::StructOpt;
 
 use std::{
+    ffi, fs,
     io::{self, Write},
-    fs, ffi,
+    path,
     sync::mpsc,
     time::{Duration, SystemTime},
 };
 
 use crate::{
     event::Event,
-    code,
-    window::{Cursor, Message, Notify},
+    pubsub::PubSub,
+    window::{Coord, Cursor, Notify},
     Error, Result,
 };
 
@@ -87,7 +88,7 @@ impl Drop for Terminal {
 // Application state
 pub struct State {
     pub tm: Terminal,
-    pub app: code::App,
+    pub app: App,
     pub subscribers: PubSub,
 }
 
@@ -98,24 +99,29 @@ impl State {
         init_logger(&opts)?;
         let config: toml::Value = if opts.toml_file.len() > 0 {
             let toml_file: ffi::OsString = opts.toml_file.clone().into();
-            let toml_file = fs::canonicalize(&toml_file).to_os_string();
-            let bytes = err_at!(IOError, fs::read(toml_file))?
-            let s = err_at!(FailConvert, from_utf8(bytes))?
+            let toml_file = {
+                let p = err_at!(IOError, fs::canonicalize(&toml_file))?;
+                p.into_os_string()
+            };
+            let bytes = err_at!(IOError, fs::read(toml_file))?;
+            let s = err_at!(FailConvert, from_utf8(&bytes))?;
             err_at!(FailConvert, s.parse())?
+        } else {
+            toml::Value::Table(Default::default())
         };
 
         let tm = Terminal::init()?;
         let app_config: toml::Value = match config.get(&opts.app) {
             Some(value) => value.clone(),
-            None => Default::default(),
+            None => toml::Value::Table(Default::default()),
         };
-        let subscribers: PubSub = Default::default(),
-        let app = match &opts.app {
+        let subscribers: PubSub = Default::default();
+        let app = match opts.app.as_str() {
             "code" => {
                 let coord = Coord::new(1, 1, tm.rows, tm.cols);
                 Ok(code::App::new(app_config, subscribers.clone(), coord))
             }
-            _ => err_at!(Invalid, st: format("invalid app {:?}", &opts.app)),
+            _ => err_at!(Invalid, msg: format!("invalid app {:?}", &opts.app)),
         }?;
         Ok(State {
             tm,
@@ -124,7 +130,7 @@ impl State {
         })
     }
 
-    pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Message>) {
+    pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
         self.subscribers.subscribe(topic, tx.clone());
         self.app.subscribe(topic, tx);
     }
@@ -132,8 +138,8 @@ impl State {
     pub fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
         match self.subscribers.notify(topic, msg.clone()) {
             Ok(_) => Ok(()),
-            Error::NoTopic => self.app.notify(topic, msg.clone()),
-            err => Err(err),
+            Err(Error::NoTopic) => self.app.notify(topic, msg.clone()),
+            Err(err) => Err(err),
         }
     }
 }
@@ -147,9 +153,9 @@ impl State {
         // and or controlled by command line option.
         let res = 'a: loop {
             // new event
-            evnt = {
+            let evnt = {
                 let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
-                trace!("{:?} Cursor:({},{})", tevnt, col, row);
+                trace!("{:?} {}", tevnt, self.app.to_cursor());
                 tevnt.clone().into()
             };
 

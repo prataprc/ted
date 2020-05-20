@@ -78,6 +78,10 @@ impl App {
             stsline: new_window_line("stsline", coord),
         };
 
+        let config = {
+            let cnf: Config = Default::default();
+            cnf.mixin(config.into())
+        };
         App {
             config,
             subscribers,

@@ -7,19 +7,15 @@ use std::{fmt, result};
 pub mod util;
 #[macro_use]
 pub mod config;
-//pub mod location;
-//mod tabc;
-//
-//pub mod buffer;
-//pub mod event;
-//pub mod state;
-//
-//#[macro_use]
-//pub mod window;
-//pub mod window_prompt;
-//
-//mod ftype;
-//mod ftype_txt_en;
+pub mod location;
+mod tabc;
+
+pub mod buffer;
+pub mod event;
+pub mod pubsub;
+pub mod state;
+#[macro_use]
+pub mod window;
 
 pub type Result<T> = result::Result<T, Error>;
 

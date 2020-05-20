@@ -5,8 +5,6 @@ use crossterm::{
 
 use std::{fmt, iter::FromIterator, ops::Add, result};
 
-use crate::{buffer::Buffer, event::Event, state::State, Result};
-
 #[macro_export]
 macro_rules! cursor {
     ($col:expr, $row:expr) => {
@@ -57,11 +55,7 @@ macro_rules! span {
     }};
 }
 
-pub enum Message {
-    Notify(Notify),
-    None,
-}
-
+#[derive(Clone)]
 pub enum Notify {
     Status(Vec<Span>),
     None,

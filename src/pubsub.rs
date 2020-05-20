@@ -1,6 +1,6 @@
-use std::sync::mpsc;
+use std::{cmp, sync::mpsc};
 
-use crate::{window::Message, Error, Result};
+use crate::{window::Notify, Error, Result};
 
 #[derive(Clone, Default)]
 pub struct PubSub {
@@ -10,7 +10,7 @@ pub struct PubSub {
 #[derive(Clone)]
 struct Subscriber {
     topic: String,
-    tx: mpsc::Sender<Message>,
+    tx: mpsc::Sender<Notify>,
 }
 
 impl Eq for Subscriber {}
@@ -44,7 +44,7 @@ impl PubSub {
         }
     }
 
-    pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Message>) {
+    pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
         self.topics.push(Subscriber {
             topic: topic.to_string(),
             tx,
@@ -56,7 +56,7 @@ impl PubSub {
         match Self::find_topic(&topic, &self.topics) {
             Some(n) => {
                 assert!(self.topics[n].topic == topic);
-                err_at!(IPC, self.topics[n].tx.send(Message::Notify(msg)))?;
+                err_at!(IPC, self.topics[n].tx.send(msg))?;
                 Ok(())
             }
             None => Err(Error::NoTopic),

@@ -455,20 +455,12 @@ impl Buffer {
 }
 
 impl Buffer {
-    pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
-        let evnt_up = {
-            let mut ftype = mem::replace(&mut self.ftype, Default::default());
-            let evnt_up = ftype.on_event(self, s, evnt.clone())?;
-            self.ftype = ftype;
-            evnt_up
-        };
-        // If event is not handled handle it as default behaviour.
-        let evnt = if evnt_up == evnt {
-            self.handle_event(s, evnt)?
-        } else {
-            evnt_up
-        };
-
+    pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
+        let evnt = match self.to_mode() {
+            "insert" => self.handle_i_event(evnt),
+            "normal" => self.handle_n_event(evnt),
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }?;
         Ok(evnt)
     }
 
@@ -501,7 +493,7 @@ impl Buffer {
         }
     }
 
-    fn ex_n_insert(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
+    fn ex_n_insert(&mut self, evnt: Event) -> Result<Event> {
         use crate::event::{Event::Md, Mod};
 
         let nr = mem::replace(&mut self.inner, Default::default());
@@ -545,22 +537,14 @@ impl Buffer {
         Ok(evnt)
     }
 
-    fn handle_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
-        match self.to_mode() {
-            "insert" => self.handle_i_event(s, evnt),
-            "normal" => self.handle_n_event(s, evnt),
-            _ => err_at!(Fatal, msg: format!("unreachable")),
-        }
-    }
-
-    fn handle_n_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
+    fn handle_n_event(&mut self, evnt: Event) -> Result<Event> {
         use crate::event::Event::Mt;
 
         // switch to insert mode.
         let evnt = match Self::to_insert_n(evnt) {
             (Some(n), evnt) if n > 0 => {
-                let evnt = self.ex_n_insert(s, evnt)?;
-                return self.handle_i_event(s, evnt);
+                let evnt = self.ex_n_insert(evnt)?;
+                return self.handle_i_event(evnt);
             }
             (_, evnt) => evnt,
         };
@@ -609,7 +593,7 @@ impl Buffer {
         Ok(evnt)
     }
 
-    fn handle_i_event(&mut self, s: &mut App, evnt: Event) -> Result<Event> {
+    fn handle_i_event(&mut self, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Noop => Ok(Event::Noop),
             evnt => {

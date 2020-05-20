@@ -71,7 +71,10 @@ impl WindowEdit {
             }
             mut evnt => match app.take_buffer(&self.buffer_id) {
                 Some(buf) => {
-                    let evnt = self.ftype.on_event(app, buf, evnt)?;
+                    let evnt = match self.ftype.on_event(app, buf, evnt)? {
+                        Event::Noop => Event::Noop,
+                        evnt => buffer.on_event(evnt)?,
+                    };
                     app.add_buffer(buffer);
                     Ok(evnt)
                 }
