@@ -20,6 +20,9 @@ use ted::{
 
 #[derive(Debug, StructOpt)]
 pub struct Opt {
+    #[structopt(long = "app", default_value = "code")]
+    app: String,
+
     #[structopt(short = "u", long = "config", default_value = "")]
     toml_file: String,
 
@@ -58,7 +61,14 @@ fn main() {
         fs::write("ted-panic.out", strng.as_bytes()).unwrap();
     });
 
-    match run(opts) {
+    let res = match opts.app.as_str() {
+        "code" => run_code(opts)
+        _ => {
+            println!("invalid choice of application");
+            std::process::exit(1)
+        }
+    };
+    match res {
         Ok(_) => (),
         Err(err) => println!("{}", err),
     }
@@ -102,9 +112,9 @@ fn init_logger(opts: &Opt) -> Result<()> {
     Ok(())
 }
 
-fn run(opts: Opt) -> Result<()> {
+fn run_code(opts: Opt) -> Result<()> {
     let state = {
-        let config: Config = Default::default();
+        let config: code::Config = Default::default();
         State::new(config)?
     };
     let w = {

@@ -37,13 +37,13 @@ impl WindowEdit {
 
 impl WindowEdit {
     #[inline]
-    pub fn as_buffer(&self, s: &mut State) -> &Buffer {
-        self.buffer_id.clone()
+    pub fn as_buffer<'a>(&self, s: &'a State) -> &'a Buffer {
+        s.as_buffer(&self.buffer_id)
     }
 
     #[inline]
-    pub fn to_buffer_id(&self) -> String {
-        self.buffer_id.clone()
+    pub fn as_mut_buffer<'a>(&self, s: &'a mut State) -> &'a mut Buffer {
+        s.as_mut_buffer(&self.buffer_id)
     }
 
     #[inline]

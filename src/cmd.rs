@@ -28,27 +28,28 @@ impl Default for Commands {
 
 impl Commands {
     fn to_choices(span: &str, cmds: &[Command]) -> Vec<String> {
-        let iter = cmds.iter().filter_map(|c| {
-            let name = c.to_name();
+        let iter = cmds.iter().filter_map(|o| {
+            let name = o.to_name();
             if_else!(name.starts_with(span), Some(name), None)
         });
         iter.collect()
     }
 
-    fn to_command_name(c: &mut Context) -> String {
-        let s = c.as_buffer().to_string();
-        let parts: Vec<&str> = s.split(' ').collect();
-        match parts.as_slice() {
-            [name] => name.to_string(),
-            [name, ..] => name.to_string(),
-            [] => "".to_string(),
-        }
+    fn to_command_name(s: &mut State) -> String {
+        //let s = c.as_buffer().to_string();
+        //let parts: Vec<&str> = s.split(' ').collect();
+        //match parts.as_slice() {
+        //    [name] => name.to_string(),
+        //    [name, ..] => name.to_string(),
+        //    [] => "".to_string(),
+        //}
+        todo!()
     }
 }
 
 impl Commands {
-    pub fn on_tab(&mut self, buf: &mut Context) -> Result<()> {
-        let span = Self::to_command_name(c);
+    pub fn on_tab(&mut self, s: &mut State) -> Result<()> {
+        let span = Self::to_command_name(s);
 
         match self {
             Commands::Initial { cmds } => {
@@ -72,16 +73,16 @@ impl Commands {
 
         match self {
             Commands::TabComp { tabc, .. } => {
-                use crate::window_code::Message;
+                //use crate::window_code::Message;
 
-                let w = match c.to_window() {
-                    Window::Code(mut w) => {
-                        w.post(c, Message::TabComplete(tabc.clone()))?;
-                        Window::Code(w)
-                    }
-                    w => w,
-                };
-                c.set_window(w);
+                //let w = match c.to_window() {
+                //    Window::Code(mut w) => {
+                //        w.post(c, Message::TabComplete(tabc.clone()))?;
+                //        Window::Code(w)
+                //    }
+                //    w => w,
+                //};
+                //c.set_window(w);
             }
             Commands::Initial { .. } => error!("unreachable"),
         }
@@ -89,7 +90,7 @@ impl Commands {
         Ok(())
     }
 
-    pub fn on_command(&mut self, _: &mut Context) -> Result<()> {
+    pub fn on_command(&mut self, _: &mut State) -> Result<()> {
         todo!()
     }
 }
@@ -111,9 +112,9 @@ impl Default for Command {
 impl Command {
     fn to_name(&self) -> String {
         match self {
-            Command::Edit(c) => c.to_name(),
-            Command::File(c) => c.to_name(),
-            Command::Write(c) => c.to_name(),
+            Command::Edit(o) => o.to_name(),
+            Command::File(o) => o.to_name(),
+            Command::Write(o) => o.to_name(),
             Command::None => unreachable!(),
         }
     }

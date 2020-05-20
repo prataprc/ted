@@ -1,5 +1,6 @@
 use log::{info, warn};
 use serde_derive::Deserialize;
+use toml;
 
 use std::{convert::TryFrom, convert::TryInto, ffi, fs, path, str::FromStr};
 
@@ -45,6 +46,15 @@ config![
     (left_margin_char, char, '|'),
     (top_margin_char, char, '-')
 ];
+
+impl TryFrom<toml::Value> for ConfigToml {
+    type Error = Error;
+
+    fn try_from(value: toml::Value) -> Result<Self> {
+        let ctml: ConfigToml = err_at!(FailConvert, value.to_string().parse())?;
+        Ok(ctml)
+    }
+}
 
 impl FromStr for ConfigToml {
     type Err = Error;

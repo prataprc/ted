@@ -4,7 +4,7 @@ use crate::{
     buffer::Buffer,
     event::Event,
     state::State,
-    window::{Span, Window},
+    window::{Notify, Span, Window},
     Error, Result,
 };
 

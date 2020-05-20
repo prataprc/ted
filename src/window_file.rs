@@ -143,13 +143,13 @@ impl WindowFile {
 
 impl WindowFile {
     #[inline]
-    pub fn as_buffer(&self) -> &Buffer {
-        self.we.as_buffer()
+    pub fn as_buffer<'a>(&self, s: &'a State) -> &'a Buffer {
+        self.we.as_buffer(s)
     }
 
     #[inline]
-    pub fn as_mut_buffer(&self) -> &mut Buffer {
-        self.we.as_mut_buffer()
+    pub fn as_mut_buffer<'a>(&self, s: &'a mut State) -> &'a mut Buffer {
+        self.we.as_mut_buffer(s)
     }
 
     #[inline]

@@ -51,6 +51,16 @@ impl WindowLine {
 
 impl WindowLine {
     #[inline]
+    pub fn as_buffer<'a>(&self, s: &'a State) -> &'a Buffer {
+        todo!()
+    }
+
+    #[inline]
+    pub fn as_mut_buffer<'a>(&self, s: &'a mut State) -> &'a mut Buffer {
+        todo!()
+    }
+
+    #[inline]
     pub fn to_cursor(&self) -> Cursor {
         self.coord.to_top_left() + self.cursor
     }
@@ -60,7 +70,7 @@ impl WindowLine {
             Event::Esc => Ok(Event::Esc),
             evnt => match &mut self.buffer {
                 Some(buffer) => buffer.on_event(s, evnt),
-                None => evnt,
+                None => Ok(evnt),
             },
         }
     }

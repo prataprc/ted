@@ -4,6 +4,7 @@ use log::trace;
 use std::mem;
 
 use crate::{
+    buffer::Buffer,
     event::{Event, Mod, Mto, Ted, DP},
     state::State,
     Error, Result,

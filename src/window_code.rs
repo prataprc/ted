@@ -1,6 +1,7 @@
 use std::mem;
 
 use crate::{
+    buffer::Buffer,
     cmd::Command,
     event::Event,
     keymap::Keymap,
@@ -63,6 +64,16 @@ impl WindowCode {
 
 impl WindowCode {
     #[inline]
+    pub fn as_buffer<'a>(&self, s: &'a State) -> &'a Buffer {
+        self.wfile.as_buffer(s)
+    }
+
+    #[inline]
+    pub fn as_mut_buffer<'a>(&self, s: &'a mut State) -> &'a mut Buffer {
+        self.wfile.as_mut_buffer(s)
+    }
+
+    #[inline]
     pub fn post(&mut self, s: &mut State, msg: Message) -> Result<()> {
         //match (name, msg) {
         //    ("status", Message::Status(sl)) -> self.stsline.set(sl),
@@ -81,7 +92,7 @@ impl WindowCode {
     pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         let mut keymap = mem::replace(&mut self.keymap, Default::default());
 
-        let buf = self.wfile.as_mut_buffer();
+        let buf = self.wfile.as_mut_buffer(s);
         let evnt = keymap.fold(buf, s, evnt)?;
         let evnt = match &mut self.inner {
             Inner::Regular { .. } => self.wfile.on_event(s, evnt)?,

@@ -106,6 +106,16 @@ impl WindowPrompt {
 
 impl WindowPrompt {
     #[inline]
+    pub fn as_buffer<'a>(&self, s: &'a State) -> &'a Buffer {
+        todo!()
+    }
+
+    #[inline]
+    pub fn as_mut_buffer<'a>(&self, s: &'a mut State) -> &'a mut Buffer {
+        todo!()
+    }
+
+    #[inline]
     pub fn to_cursor(&self) -> Cursor {
         let n: usize = match &self.buffer {
             Some(buffer) => {
@@ -124,7 +134,10 @@ impl WindowPrompt {
     pub fn on_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Noop),
-            evnt => self.buffer.on_event(s, evnt)?,
+            evnt => match self.buffer.as_mut() {
+                Some(buf) => buf.on_event(s, evnt),
+                None => Ok(evnt),
+            },
         }
     }
 

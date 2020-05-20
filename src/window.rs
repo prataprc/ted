@@ -121,25 +121,25 @@ impl Default for Window {
 }
 
 impl Window {
-    pub fn as_buffer(&self) -> &Buffer {
+    pub fn as_buffer<'a>(&self, s: &'a State) -> &'a Buffer {
         match self {
-            Window::Code(w) => w.as_buffer(),
-            Window::File(w) => w.as_buffer(),
-            Window::Edit(w) => w.as_buffer(),
-            Window::Line(w) => w.as_buffer(),
-            Window::Prompt(w) => w.as_buffer(),
-            Window::None => Buffer::empty(),
+            Window::Code(w) => w.as_buffer(s),
+            Window::File(w) => w.as_buffer(s),
+            Window::Edit(w) => w.as_buffer(s),
+            Window::Line(w) => w.as_buffer(s),
+            Window::Prompt(w) => w.as_buffer(s),
+            Window::None => todo!(),
         }
     }
 
-    pub fn as_mut_buffer(&mut self) -> &mut Buffer {
+    pub fn as_mut_buffer<'a>(&mut self, s: &'a mut State) -> &'a mut Buffer {
         match self {
-            Window::Code(w) => w.as_mut_buffer(),
-            Window::File(w) => w.as_mut_buffer(),
-            Window::Edit(w) => w.as_mut_buffer(),
-            Window::Line(w) => w.as_mut_buffer(),
-            Window::Prompt(w) => w.as_mut_buffer(),
-            Window::None => Buffer::empty(),
+            Window::Code(w) => w.as_mut_buffer(s),
+            Window::File(w) => w.as_mut_buffer(s),
+            Window::Edit(w) => w.as_mut_buffer(s),
+            Window::Line(w) => w.as_mut_buffer(s),
+            Window::Prompt(w) => w.as_mut_buffer(s),
+            Window::None => todo!(),
         }
     }
 

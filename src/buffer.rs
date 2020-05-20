@@ -561,22 +561,22 @@ impl Buffer {
         Ok(evnt)
     }
 
-    fn handle_event(&mut self, evnt: Event) -> Result<Event> {
+    fn handle_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         match self.to_mode() {
-            "insert" => Self::handle_i_event(self, evnt),
-            "normal" => Self::handle_n_event(self, evnt),
+            "insert" => self.handle_i_event(s, evnt),
+            "normal" => self.handle_n_event(s, evnt),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
-    fn handle_n_event(&mut self, evnt: Event) -> Result<Event> {
+    fn handle_n_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         use crate::event::Event::Mt;
 
         // switch to insert mode.
         let evnt = match Self::to_insert_n(evnt) {
             (Some(n), evnt) if n > 0 => {
-                let evnt = self.ex_n_insert(evnt)?;
-                return self.handle_i_event(evnt);
+                let evnt = self.ex_n_insert(s, evnt)?;
+                return self.handle_i_event(s, evnt);
             }
             (_, evnt) => evnt,
         };
@@ -625,7 +625,7 @@ impl Buffer {
         Ok(evnt)
     }
 
-    fn handle_i_event(&mut self, evnt: Event) -> Result<Event> {
+    fn handle_i_event(&mut self, s: &mut State, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Noop => Ok(Event::Noop),
             evnt => {
@@ -1083,9 +1083,9 @@ pub fn mto_up(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
     }
 }
 
-pub fn mto_down(buf: &mut Buf, n: usize, pos: DP) -> Result<Event> {
+pub fn mto_down(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
     let row = buf.char_to_line(buf.to_cursor());
-    match b.n_lines() {
+    match buf.n_lines() {
         0 => Ok(Event::Noop),
         n_rows if row == n_rows => Ok(Event::Noop),
         n_rows => {

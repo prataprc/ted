@@ -134,7 +134,7 @@ impl State {
 
     pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
         let i = {
-            let mut iter = self.state.buffers.iter().enumerate();
+            let mut iter = self.buffers.iter().enumerate();
             loop {
                 match iter.next() {
                     Some((i, b)) if b.to_id() == id => break Some(i),
@@ -144,9 +144,13 @@ impl State {
             }
         };
         match i {
-            Some(i) => Some(self.state.buffers.remove(i)),
+            Some(i) => Some(self.buffers.remove(i)),
             None => None,
         }
+    }
+
+    pub fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
+        todo!()
     }
 }
 
@@ -228,7 +232,7 @@ impl PubSub {
         }
     }
 
-    fn notify(&self, topic: String, msg: Notify) -> Result<()> {
+    fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
         match Self::find_topic(&topic, &self.topics) {
             Some(n) => {
                 assert!(self.topics[n].topic == topic);
