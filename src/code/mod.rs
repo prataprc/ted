@@ -13,16 +13,18 @@ mod window_edit;
 mod window_file;
 mod window_line;
 
-use std::{mem, sync::mpsc};
+use std::{ffi, mem, sync::mpsc};
 
 use crate::{
     buffer::Buffer,
     code::{config::Config, keymap::Keymap},
     code::{window_file::WindowFile, window_line::WindowLine},
     event::Event,
+    location::Location,
     pubsub::PubSub,
-    window::{Coord, Cursor, Notify},
-    Result,
+    state::Opt,
+    window::{wait_ch, Coord, Cursor, Notify},
+    Error, Result,
 };
 
 pub fn new_window_line(typ: &str, mut coord: Coord) -> WindowLine {
@@ -69,7 +71,7 @@ impl AsRef<Config> for App {
 }
 
 impl App {
-    pub fn new(config: toml::Value, subscribers: PubSub, coord: Coord) -> App {
+    pub fn new(config: toml::Value, coord: Coord, opts: Opt) -> Result<App> {
         let inner = Inner::Regular {
             stsline: new_window_line("stsline", coord),
         };
@@ -78,17 +80,20 @@ impl App {
             let cnf: Config = Default::default();
             cnf.mixin(config.try_into().unwrap())
         };
-        App {
+
+        let mut app = App {
             config,
-            subscribers,
+            subscribers: Default::default(),
             buffers: Default::default(),
 
             coord,
-            wfile: WindowFile::new(coord),
+            wfile: WindowFile::new(coord, None),
             tbcline: new_window_line("tbcline", coord),
             keymap: Default::default(),
             inner: inner,
-        }
+        };
+        app.open_cmd_files(opts.files.clone())?;
+        Ok(app)
     }
 
     pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
@@ -209,6 +214,48 @@ impl App {
         let mut wline = mem::replace(&mut self.tbcline, Default::default());
         wline.on_refresh(self)?;
         self.tbcline = wline;
+        Ok(())
+    }
+}
+
+impl App {
+    fn open_cmd_files(&mut self, files: Vec<String>) -> Result<()> {
+        let locs: Vec<Location> = files
+            .into_iter()
+            .map(|f| {
+                let f: ffi::OsString = f.into();
+                Location::new_disk(&f)
+            })
+            .collect();
+        let mut e_files = vec![];
+        for loc in locs.into_iter() {
+            match loc.to_rw_file() {
+                Some(f) => match Buffer::from_reader(f) {
+                    Ok(buf) => self.add_buffer(buf),
+                    Err(err) => e_files.push((loc, err)),
+                },
+                None => match loc.to_r_file() {
+                    Some(f) => match Buffer::from_reader(f) {
+                        Ok(mut buf) => {
+                            buf.set_read_only(true);
+                            self.add_buffer(buf);
+                        }
+                        Err(err) => e_files.push((loc, err)),
+                    },
+                    None => {
+                        let err = "file missing/no-permission".to_string();
+                        e_files.push((loc, Error::IOError(err)))
+                    }
+                },
+            }
+        }
+
+        for (loc, err) in e_files.into_iter() {
+            println!("{:?} : {}", loc.to_long_string()?, err);
+            println!(" press any key to continue");
+            wait_ch(None);
+        }
+
         Ok(())
     }
 }

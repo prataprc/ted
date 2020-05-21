@@ -1,9 +1,12 @@
 use crossterm::{
+    event::{self as ct_event, Event as TermEvent},
     style::{self, Attribute, Color, StyledContent},
     Command,
 };
 
 use std::{fmt, iter::FromIterator, ops::Add, result};
+
+use crate::{Error, Result};
 
 #[macro_export]
 macro_rules! cursor {
@@ -336,4 +339,21 @@ impl Command for Spanline {
         }
         s
     }
+}
+
+pub fn wait_ch(ch: Option<char>) -> Result<()> {
+    loop {
+        let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
+        match ch {
+            Some(ch) => match tevnt {
+                TermEvent::Key(ct_event::KeyEvent {
+                    code: ct_event::KeyCode::Char(c),
+                    modifiers: _,
+                }) if ch == c => break,
+                _ => (),
+            },
+            None => break,
+        }
+    }
+    Ok(())
 }

@@ -25,27 +25,27 @@ use crate::{
     Error, Result,
 };
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Clone, StructOpt)]
 pub struct Opt {
     #[structopt(long = "app", default_value = "code")]
-    app: String,
+    pub app: String,
 
     #[structopt(short = "u", long = "config", default_value = "")]
-    toml_file: String,
+    pub toml_file: String,
 
     #[structopt(long = "log", default_value = "")]
-    log_file: String,
+    pub log_file: String,
 
     #[structopt(short = "v", long = "verbose")]
-    verbose: bool,
+    pub verbose: bool,
 
     #[structopt(long = "trace")]
-    trace: bool,
+    pub trace: bool,
 
     #[structopt(long = "stats")]
-    stats: bool,
+    pub stats: bool,
 
-    files: Vec<String>,
+    pub files: Vec<String>,
 }
 
 pub struct Terminal {
@@ -98,6 +98,7 @@ impl State {
         use std::str::from_utf8;
 
         init_logger(&opts)?;
+
         let config: toml::Value = if opts.toml_file.len() > 0 {
             let toml_file: ffi::OsString = opts.toml_file.clone().into();
             let toml_file = {
@@ -120,7 +121,11 @@ impl State {
         let app = match opts.app.as_str() {
             "code" => {
                 let coord = Coord::new(1, 1, tm.rows, tm.cols);
-                Ok(code::App::new(app_config, subscribers.clone(), coord))
+                let mut app = code::App::new(app_config, coord, opts.clone())?;
+                for (topic, tx) in subscribers.to_subscribers().into_iter() {
+                    app.subscribe(&topic, tx)
+                }
+                Ok(app)
             }
             _ => err_at!(Invalid, msg: format!("invalid app {:?}", &opts.app)),
         }?;
@@ -150,8 +155,6 @@ impl State {
         let mut stdout = io::stdout();
         let mut stats = Latency::new();
 
-        // TODO: later statistics can be moved to a different release stream
-        // and or controlled by command line option.
         let res = 'a: loop {
             // new event
             let evnt: Event = {

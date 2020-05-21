@@ -36,6 +36,26 @@ impl Location {
         }
     }
 
+    pub fn to_rw_file(&self) -> Option<fs::File> {
+        match self {
+            Location::Anonymous(_) => None,
+            Location::Disk(f) => {
+                let mut oo = fs::OpenOptions::new();
+                oo.read(true).write(true).open(f).ok()
+            }
+        }
+    }
+
+    pub fn to_r_file(&self) -> Option<fs::File> {
+        match self {
+            Location::Anonymous(_) => None,
+            Location::Disk(f) => {
+                let mut oo = fs::OpenOptions::new();
+                oo.read(true).open(f).ok()
+            }
+        }
+    }
+
     /// Return full path of the location, for display purpose.
     pub fn to_long_string(&self) -> Result<ffi::OsString> {
         match self {
@@ -118,88 +138,6 @@ impl fmt::Display for Location {
             Location::Disk(s) => {
                 let s = s.clone().into_string().unwrap();
                 write!(f, "{}", s)
-            }
-        }
-    }
-}
-
-pub enum OpenFile {
-    ReadWrite(fs::File, ffi::OsString),
-    ReadOnly(fs::File, ffi::OsString),
-    NotFound(ffi::OsString),
-    NoPermission(ffi::OsString),
-}
-
-impl Clone for OpenFile {
-    fn clone(&self) -> Self {
-        match self {
-            OpenFile::ReadWrite(_, floc) => {
-                let mut opts = fs::OpenOptions::new();
-                let fd = opts.read(true).write(true).open(floc).unwrap();
-                OpenFile::ReadWrite(fd, floc.clone())
-            }
-            OpenFile::ReadOnly(_, floc) => {
-                let mut opts = fs::OpenOptions::new();
-                let fd = opts.read(true).open(floc).unwrap();
-                OpenFile::ReadOnly(fd, floc.clone())
-            }
-            OpenFile::NotFound(floc) => OpenFile::NotFound(floc.clone()),
-            OpenFile::NoPermission(floc) => OpenFile::NoPermission(floc.clone()),
-        }
-    }
-}
-
-impl From<ffi::OsString> for OpenFile {
-    fn from(floc: ffi::OsString) -> Self {
-        let mut opts = fs::OpenOptions::new();
-        match opts.read(true).write(true).open(&floc) {
-            Ok(fd) => OpenFile::ReadWrite(fd, floc),
-            Err(_) => match opts.read(true).open(&floc) {
-                Ok(fd) => OpenFile::ReadOnly(fd, floc),
-                Err(_) => {
-                    let p = path::Path::new(&floc);
-                    if p.is_file() {
-                        OpenFile::NoPermission(floc)
-                    } else {
-                        OpenFile::NotFound(floc)
-                    }
-                }
-            },
-        }
-    }
-}
-
-impl From<String> for OpenFile {
-    fn from(floc: String) -> Self {
-        let f: &ffi::OsStr = floc.as_ref();
-        f.to_os_string().into()
-    }
-}
-
-impl TryFrom<OpenFile> for fs::File {
-    type Error = Error;
-
-    fn try_from(of: OpenFile) -> Result<fs::File> {
-        match of {
-            OpenFile::ReadWrite(fd, _) => Ok(fd),
-            OpenFile::ReadOnly(fd, _) => Ok(fd),
-            OpenFile::NotFound(floc) => {
-                let mut opts = fs::OpenOptions::new();
-                err_at!(
-                    IOError,
-                    opts.read(true).write(true).open(&floc),
-                    format!("{:?}", floc)
-                )?;
-                unreachable!()
-            }
-            OpenFile::NoPermission(floc) => {
-                let mut opts = fs::OpenOptions::new();
-                err_at!(
-                    IOError,
-                    opts.read(true).write(true).open(&floc),
-                    format!("{:?}", floc)
-                )?;
-                unreachable!()
             }
         }
     }

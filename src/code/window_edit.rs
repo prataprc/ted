@@ -25,12 +25,12 @@ impl fmt::Display for WindowEdit {
 
 impl WindowEdit {
     #[inline]
-    pub fn new(coord: Coord) -> WindowEdit {
+    pub fn new(coord: Coord, buf: Option<&Buffer>) -> WindowEdit {
         WindowEdit {
             coord,
             cursor: cursor!(0, 0),
             obc_xy: (0, 0).into(),
-            buffer_id: Default::default(),
+            buffer_id: buf.map(|b| b.to_id()).unwrap_or(Default::default()),
             ftype: Default::default(),
         }
     }

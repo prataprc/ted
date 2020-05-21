@@ -184,7 +184,6 @@ impl Mto {
 #[derive(Clone, Eq, PartialEq)]
 pub enum Ted {
     NewBuffer,
-    OpenFiles { flocs: Vec<Location> },
     UseBuffer { buffer_id: String },
     PromptReply { input: String },
     StatusFile,
@@ -195,7 +194,6 @@ impl fmt::Display for Ted {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
             Ted::NewBuffer => write!(f, "new_buffer"),
-            Ted::OpenFiles { flocs } => write!(f, "open_files({})", flocs.len()),
             Ted::UseBuffer { buffer_id } => {
                 //
                 write!(f, "use_buffer({})", buffer_id)
@@ -280,6 +278,31 @@ impl Iterator for Event {
                 Some(evnt)
             }
         }
+    }
+}
+
+impl Extend<Event> for Event {
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = Event>,
+    {
+        let mut evnts: Vec<Event> = iter.into_iter().collect();
+        let evnts = match mem::replace(self, Default::default()) {
+            Event::List(mut events) => {
+                events.extend(evnts);
+                events
+            }
+            Event::Noop => evnts,
+            evnt => {
+                evnts.insert(0, evnt);
+                evnts
+            }
+        };
+        *self = if evnts.len() > 0 {
+            Event::List(evnts)
+        } else {
+            Event::Noop
+        };
     }
 }
 

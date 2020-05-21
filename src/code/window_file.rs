@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::{
+    buffer::Buffer,
     code::App,
     code::{new_window_line, window_edit::WindowEdit, window_line::WindowLine},
     event::{Event, Ted},
@@ -42,10 +43,10 @@ impl fmt::Display for WindowFile {
 
 impl WindowFile {
     #[inline]
-    pub fn new(coord: Coord) -> WindowFile {
+    pub fn new(coord: Coord, buf: Option<&Buffer>) -> WindowFile {
         WindowFile {
             coord,
-            we: WindowEdit::new(coord.clone()),
+            we: WindowEdit::new(coord.clone(), buf),
             stsline: new_window_line("stsline", coord),
             we_hgt: 0,
             we_wth: 0,

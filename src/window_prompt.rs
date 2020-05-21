@@ -51,34 +51,6 @@ impl From<Vec<Span>> for WindowPrompt {
     }
 }
 
-impl TryFrom<location::OpenFile> for WindowPrompt {
-    type Error = Error;
-
-    fn try_from(of: location::OpenFile) -> Result<WindowPrompt> {
-        let fg = Color::AnsiValue(9);
-        let bg = Color::AnsiValue(15);
-        let spans = match of {
-            location::OpenFile::ReadOnly(_, file) => vec![
-                span!(fg: fg, bg: bg, "-- Read only file {:?}", file),
-                span!(fg: fg, bg: bg, "-- Press c or space to continue --"),
-            ],
-            location::OpenFile::NotFound(file) => vec![
-                span!(fg: fg, bg: bg, "-- File not found {:?}", file),
-                span!(fg: fg, bg: bg, "-- Press c or space to continue --"),
-            ],
-            location::OpenFile::NoPermission(file) => vec![
-                span!(fg: fg, bg: bg, "-- Permission denied {:?}", file),
-                span!(fg: fg, bg: bg, "-- Press c or space to continue --"),
-            ],
-            location::OpenFile::ReadWrite(_, file) => {
-                err_at!(FailConvert, msg: format!("{:?}", file))?;
-                unreachable!()
-            }
-        };
-        Ok(spans.into())
-    }
-}
-
 impl WindowPrompt {
     #[inline]
     pub fn new(prompt_lines: Vec<Span>) -> WindowPrompt {

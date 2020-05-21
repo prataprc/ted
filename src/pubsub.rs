@@ -62,4 +62,11 @@ impl PubSub {
             None => Err(Error::NoTopic),
         }
     }
+
+    pub fn to_subscribers(&self) -> Vec<(String, mpsc::Sender<Notify>)> {
+        self.topics
+            .iter()
+            .map(|s| (s.topic.clone(), s.tx.clone()))
+            .collect()
+    }
 }
