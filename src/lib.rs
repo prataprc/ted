@@ -17,6 +17,8 @@ pub mod state;
 #[macro_use]
 pub mod window;
 
+mod code;
+
 pub type Result<T> = result::Result<T, Error>;
 
 pub enum Error {

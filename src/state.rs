@@ -18,6 +18,7 @@ use std::{
 };
 
 use crate::{
+    code,
     event::Event,
     pubsub::PubSub,
     window::{Coord, Cursor, Notify},
@@ -88,7 +89,7 @@ impl Drop for Terminal {
 // Application state
 pub struct State {
     pub tm: Terminal,
-    pub app: App,
+    pub app: code::App,
     pub subscribers: PubSub,
 }
 
@@ -153,13 +154,13 @@ impl State {
         // and or controlled by command line option.
         let res = 'a: loop {
             // new event
-            let evnt = {
+            let evnt: Event = {
                 let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
                 trace!("{:?} {}", tevnt, self.app.to_cursor());
                 tevnt.clone().into()
             };
 
-            let mut start = SystemTime::now();
+            let start = SystemTime::now();
 
             // hide cursor, handle event and refresh window
             err_at!(Fatal, queue!(stdout, term_cursor::Hide))?;

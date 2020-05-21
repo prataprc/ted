@@ -8,11 +8,10 @@ use std::{
 };
 
 use crate::{
-    buffer::Buffer,
     code::App,
     code::{new_window_line, window_edit::WindowEdit, window_line::WindowLine},
     event::{Event, Ted},
-    window::{Coord, Cursor, Span},
+    window::{Coord, Cursor, Notify, Span},
     Error, Result,
 };
 
@@ -96,7 +95,7 @@ impl WindowFile {
             }
             ss.join(", ")
         };
-        let ft = b.to_file_type();
+        let ft = self.we.to_file_type();
 
         let long_ver = format!("{:?} {} [{}]", l_name, fstt, ft);
         let shrt_ver = format!("{:?} {} [{}]", s_name, fstt, ft);
@@ -130,7 +129,7 @@ impl WindowFile {
             let st = app.as_ref().left_margin_char.to_string();
             for _i in 0..hgt {
                 let string = st.clone();
-                err_at!(Fatal, queue!(stdout, span!((col, row), st: sting)))?;
+                err_at!(Fatal, queue!(stdout, span!((col, row), st: string)))?;
             }
         }
 
@@ -140,17 +139,22 @@ impl WindowFile {
 
 impl WindowFile {
     #[inline]
+    pub fn to_buffer_id(&self) -> String {
+        self.we.to_buffer_id()
+    }
+
+    #[inline]
     pub fn to_cursor(&self) -> Cursor {
         self.we.to_cursor()
     }
 
-    pub fn on_event(&mut self, app: &mut App, mut evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
         use crate::event::Event::Td;
 
         match self.we.on_event(app, evnt)? {
             Td(Ted::StatusFile { .. }) => {
-                let span = self.status_line(app);
-                app.notify("code", Notify::Status(span));
+                let span = self.status_line(app)?;
+                app.notify("code", Notify::Status(vec![span]));
                 Ok(Event::Noop)
             }
             evnt => Ok(evnt),
@@ -159,6 +163,6 @@ impl WindowFile {
 
     pub fn on_refresh(&mut self, app: &mut App) -> Result<()> {
         self.do_refresh(app)?;
-        self.we.on_refresh(app)?
+        self.we.on_refresh(app)
     }
 }

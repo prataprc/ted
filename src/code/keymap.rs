@@ -6,7 +6,7 @@ use std::mem;
 use crate::{
     buffer::Buffer,
     event::{Event, Mod, Mto, Ted, DP},
-    Result,
+    Error, Result,
 };
 
 macro_rules! parse_n {
@@ -21,7 +21,7 @@ pub struct Keymap {
     prefix: Event,
 }
 
-impl KeyCode {
+impl Keymap {
     pub fn fold(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
             "insert" => self.insert_fold(evnt),

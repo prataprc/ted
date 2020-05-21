@@ -16,7 +16,7 @@ macro_rules! config {
         }
 
         #[derive(Clone, Debug, Deserialize)]
-        struct ConfigToml {
+        pub struct ConfigToml {
             $(pub $field: Option<$t>,)*
         }
 
@@ -29,7 +29,7 @@ macro_rules! config {
         }
 
         impl Config {
-            fn mixin(mut self, other: ConfigToml) -> Config {
+            pub fn mixin(mut self, other: ConfigToml) -> Config {
                 $(
                     if let Some(value) = other.$field {
                         self.$field = value

@@ -2,9 +2,8 @@ use std::{fmt, result};
 
 use crate::{
     buffer::{self, Buffer},
-    code::App,
+    code::{view, App},
     event::Event,
-    view,
     window::{Coord, Cursor},
     Result,
 };
@@ -55,13 +54,10 @@ impl WindowLine {
         self.coord.to_top_left() + self.cursor
     }
 
-    pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, _app: &mut App, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Esc),
-            evnt => match &mut self.buffer {
-                Some(buffer) => buffer.on_event(app, evnt),
-                None => Ok(evnt),
-            },
+            evnt => self.buffer.on_event(evnt),
         }
     }
 

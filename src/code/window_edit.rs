@@ -2,7 +2,7 @@ use std::{fmt, result};
 
 use crate::{
     buffer::{self, Buffer},
-    code::view,
+    code::{ftype::FType, view, App},
     event::{Event, Ted},
     window::{Coord, Cursor},
     Result,
@@ -69,13 +69,13 @@ impl WindowEdit {
                 self.buffer_id = buffer_id;
                 Ok(Event::Noop)
             }
-            mut evnt => match app.take_buffer(&self.buffer_id) {
-                Some(buf) => {
-                    let evnt = match self.ftype.on_event(app, buf, evnt)? {
+            evnt => match app.take_buffer(&self.buffer_id) {
+                Some(mut buf) => {
+                    let evnt = match self.ftype.on_event(app, &mut buf, evnt)? {
                         Event::Noop => Event::Noop,
-                        evnt => buffer.on_event(evnt)?,
+                        evnt => buf.on_event(evnt)?,
                     };
-                    app.add_buffer(buffer);
+                    app.add_buffer(buf);
                     Ok(evnt)
                 }
                 None => Ok(evnt),

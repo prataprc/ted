@@ -1,4 +1,4 @@
-use crate::{buffer::Buffer, code::App, event::Event, ftype_txt_en, Result};
+use crate::{buffer::Buffer, code::ftype_txt_en, code::App, event::Event, Result};
 
 #[derive(Clone)]
 pub enum FType {

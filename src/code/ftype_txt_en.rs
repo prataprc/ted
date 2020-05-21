@@ -2,8 +2,9 @@ use tree_sitter as ts;
 
 use crate::{
     buffer::Buffer,
+    code::App,
     event::Event,
-    window::{Notify, Span, Window},
+    window::{Notify, Span},
     Error, Result,
 };
 
@@ -90,7 +91,7 @@ impl Text {
         //
         &mut self,
         _app: &mut App,
-        buf: &mut Buffer,
+        _buf: &mut Buffer,
         evnt: Event,
     ) -> Result<Event> {
         Ok(evnt)
