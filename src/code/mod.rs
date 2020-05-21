@@ -87,12 +87,21 @@ impl App {
             buffers: Default::default(),
 
             coord,
-            wfile: WindowFile::new(coord, None),
+            wfile: Default::default(),
             tbcline: new_window_line("tbcline", coord),
             keymap: Default::default(),
             inner: inner,
         };
         app.open_cmd_files(opts.files.clone())?;
+        app.wfile = match app.buffers.last() {
+            Some(buf) => WindowFile::new(coord, buf),
+            None => {
+                let buf = Buffer::empty();
+                let wfile = WindowFile::new(coord, &buf);
+                app.add_buffer(buf);
+                wfile
+            }
+        };
         Ok(app)
     }
 

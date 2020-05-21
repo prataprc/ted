@@ -43,7 +43,7 @@ impl fmt::Display for WindowFile {
 
 impl WindowFile {
     #[inline]
-    pub fn new(coord: Coord, buf: Option<&Buffer>) -> WindowFile {
+    pub fn new(coord: Coord, buf: &Buffer) -> WindowFile {
         WindowFile {
             coord,
             we: WindowEdit::new(coord.clone(), buf),
