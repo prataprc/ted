@@ -5,6 +5,8 @@ use std::{cmp, fmt, iter::FromIterator, result};
 use crate::window::Span;
 
 #[derive(Clone, Copy)]
+/// Line number rendering. Starts from 1 till last line the buffer, width is
+/// padded with adequate spaces on the left, and one space to the right.
 pub struct ColNu {
     width: u16,
     fg: Color,
@@ -19,9 +21,18 @@ impl fmt::Display for ColNu {
 }
 
 impl ColNu {
-    pub fn new(line_idx: usize) -> Self {
+    pub fn new(mut line_idx: usize) -> Self {
+        let width = {
+            use crate::buffer::MAX_LINES;
+
+            assert!(line_idx < MAX_LINES);
+            // line number rendering starts from 1..
+            line_idx += 1;
+            cmp::max(line_idx.to_string().len(), 3) as u16
+        };
+
         ColNu {
-            width: compute_nu_width(line_idx + 1),
+            width,
             fg: Color::Rgb {
                 r: 135,
                 g: 135,
@@ -50,11 +61,4 @@ impl ColNu {
         let span: Span = s.into();
         span.with(self.fg).on(self.bg).attribute(self.attr)
     }
-}
-
-fn compute_nu_width(line_idx: usize) -> u16 {
-    use crate::buffer::MAX_LINES;
-
-    assert!(line_idx < MAX_LINES);
-    (cmp::max(line_idx.to_string().len(), 2) + 1) as u16
 }

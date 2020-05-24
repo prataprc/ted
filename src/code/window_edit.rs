@@ -2,7 +2,7 @@ use std::{fmt, result};
 
 use crate::{
     buffer::{self, Buffer},
-    code::{ftype::FType, view, App},
+    code::{ftype::FType, App},
     event::{Event, Ted},
     window::{Coord, Cursor},
     Result,
@@ -84,14 +84,26 @@ impl WindowEdit {
     }
 
     pub fn on_refresh(&mut self, app: &mut App) -> Result<()> {
+        use crate::code::view::{NoWrap, Wrap};
+
         self.cursor = if app.as_ref().wrap {
-            let v = view::Wrap::new(self.coord, self.cursor, self.obc_xy);
+            let v = {
+                let mut v = Wrap::new(self.coord, self.cursor, self.obc_xy);
+                v.set_scroll_off(app.as_ref().scroll_off);
+                v.set_line_number(app.as_ref().line_number);
+                v
+            };
             let buf = app.as_buffer(&self.buffer_id);
-            v.render(app, buf)?
+            v.render(buf)?
         } else {
-            let v = view::NoWrap::new(self.coord, self.cursor, self.obc_xy);
+            let v = {
+                let mut v = NoWrap::new(self.coord, self.cursor, self.obc_xy);
+                v.set_scroll_off(app.as_ref().scroll_off);
+                v.set_line_number(app.as_ref().line_number);
+                v
+            };
             let buf = app.as_buffer(&self.buffer_id);
-            v.render(app, buf)?
+            v.render(buf)?
         };
 
         Ok(())

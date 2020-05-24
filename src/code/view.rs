@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     buffer::{self, Buffer, NL},
-    code::{col_nu::ColNu, App},
+    code::col_nu::ColNu,
     event::DP,
     window::{Coord, Cursor, Span},
     Error, Result,
@@ -22,6 +22,8 @@ pub struct Wrap {
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     nu: ColNu,
+    scroll_off: u16,
+    line_number: bool,
 }
 
 impl fmt::Display for Wrap {
@@ -38,14 +40,26 @@ impl Wrap {
             cursor,
             obc_xy,
             nu: ColNu::new(obc_xy.row),
+            scroll_off: 0,
+            line_number: false,
         };
         o.exclude_nu(o.nu.to_width())
     }
 
-    pub fn render(mut self, app: &App, buf: &Buffer) -> Result<Cursor> {
-        self = self.shift(app, buf);
+    pub fn set_scroll_off(&mut self, scroll_off: u16) -> &mut Self {
+        self.scroll_off = scroll_off;
+        self
+    }
+
+    pub fn set_line_number(&mut self, line_number: bool) -> &mut Self {
+        self.line_number = line_number;
+        self
+    }
+
+    pub fn render(mut self, buf: &Buffer) -> Result<Cursor> {
+        self = self.shift(buf);
         let cursor = self.cursor;
-        self.refresh(app, buf)?;
+        self.refresh(buf)?;
         Ok(cursor)
     }
 
@@ -85,11 +99,11 @@ impl Wrap {
         n
     }
 
-    fn shift(mut self, app: &App, buf: &Buffer) -> Self {
+    fn shift(mut self, buf: &Buffer) -> Self {
         use crate::event::DP::{Left, Right};
         use std::cmp::Ordering::{Equal, Greater, Less};
 
-        let scroll_off = app.as_ref().scroll_off; // accounting for scroll-offset.
+        let scroll_off = self.scroll_off; // accounting for scroll-offset.
         let nbc_xy = buf.to_xy_cursor();
 
         // create possible cursor positions.
@@ -128,7 +142,7 @@ impl Wrap {
         self
     }
 
-    fn refresh(self, app: &App, buf: &Buffer) -> Result<()> {
+    fn refresh(self, buf: &Buffer) -> Result<()> {
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         trace!(
@@ -145,7 +159,7 @@ impl Wrap {
         let full_coord = self.outer_coord();
         let (col, mut row) = full_coord.to_origin_cursor();
         let max_row = row + full_coord.hgt;
-        let line_number = app.as_ref().line_number;
+        let line_number = self.line_number;
 
         let mut wv = WrapView::new(line_idx, self.coord, buf)?;
         wv.align(buf.to_cursor(), self.cursor);
@@ -179,7 +193,11 @@ impl Wrap {
                 }
             }
         }
-        empty_lines(tail_line(row, full_coord, &self.nu, buf)?, full_coord, app)
+        empty_lines(
+            tail_line(row, full_coord, &self.nu, buf)?,
+            full_coord,
+            self.line_number,
+        )
     }
 
     fn exclude_nu(mut self, nu_wth: u16) -> Self {
@@ -216,6 +234,8 @@ impl Wrap {
             cursor: cursor,
             obc_xy: self.obc_xy,
             nu,
+            scroll_off: self.scroll_off,
+            line_number: self.line_number,
         }
     }
 
@@ -231,6 +251,8 @@ pub struct NoWrap {
     cursor: Cursor, // within full coordinate
     obc_xy: buffer::Cursor,
     nu: ColNu,
+    scroll_off: u16,
+    line_number: bool,
 }
 
 impl fmt::Display for NoWrap {
@@ -246,19 +268,31 @@ impl NoWrap {
             cursor,
             obc_xy,
             nu: ColNu::new(obc_xy.row),
+            scroll_off: 0,
+            line_number: false,
         };
         o.exclude_nu(o.nu.to_width())
     }
 
-    pub fn render(mut self, app: &App, buf: &Buffer) -> Result<Cursor> {
-        self = self.shift(app, buf);
+    pub fn set_scroll_off(&mut self, scroll_off: u16) -> &mut Self {
+        self.scroll_off = scroll_off;
+        self
+    }
+
+    pub fn set_line_number(&mut self, line_number: bool) -> &mut Self {
+        self.line_number = line_number;
+        self
+    }
+
+    pub fn render(mut self, buf: &Buffer) -> Result<Cursor> {
+        self = self.shift(buf);
         let cursor = self.cursor;
-        self.refresh(app, buf)?;
+        self.refresh(buf)?;
         Ok(cursor)
     }
 
-    fn shift(self, app: &App, buf: &Buffer) -> Self {
-        let scroll_off = app.as_ref().scroll_off; // accounting for scroll-offset.
+    fn shift(self, buf: &Buffer) -> Self {
+        let scroll_off = self.scroll_off; // accounting for scroll-offset.
 
         let (r_min, r_max) = if self.coord.hgt < (scroll_off * 2) {
             (0, (self.coord.hgt.saturating_sub(1) as isize))
@@ -277,14 +311,10 @@ impl NoWrap {
             let row = (row as isize) + diff_row;
             if row < r_min || row > r_max {
                 let nu = ColNu::new(nbc_xy.row);
-                let coord = {
-                    let wth = {
-                        let mut wth = self.coord.wth;
-                        wth += ColNu::new(self.obc_xy.row).to_width();
-                        wth - nu.to_width()
-                    };
-                    self.coord.resize_to(self.coord.hgt, wth)
-                };
+                let coord = self.coord.resize_to(
+                    self.coord.hgt,
+                    self.coord.wth + self.nu.to_width() - nu.to_width(),
+                );
                 (coord, nu)
             } else {
                 (self.coord, self.nu)
@@ -301,25 +331,23 @@ impl NoWrap {
             assert!(col < (coord.wth as isize));
             col as u16
         };
-
         let cursor = Cursor {
             col: new_col,
             row: new_row,
         };
 
-        let nw = NoWrap {
+        trace!("{}->{} {}->{}", self.coord, coord, self.cursor, cursor);
+        NoWrap {
             coord,
             cursor,
             obc_xy: self.obc_xy,
             nu,
-        };
-
-        trace!("wrap-shift {}", nw);
-
-        nw
+            scroll_off: self.scroll_off,
+            line_number: self.line_number,
+        }
     }
 
-    fn refresh(self, app: &App, buf: &Buffer) -> Result<()> {
+    fn refresh(self, buf: &Buffer) -> Result<()> {
         use std::iter::repeat;
 
         let nbc_xy = buf.to_xy_cursor();
@@ -355,7 +383,11 @@ impl NoWrap {
             row += 1;
         }
 
-        empty_lines(tail_line(row, full_coord, &self.nu, buf)?, full_coord, app)
+        empty_lines(
+            tail_line(row, full_coord, &self.nu, buf)?,
+            full_coord,
+            self.line_number,
+        )
     }
 
     fn outer_coord(&self) -> Coord {
@@ -368,12 +400,12 @@ impl NoWrap {
             let (hgt, wth) = self.coord.to_size();
             self.coord.resize_to(hgt, wth - nu_wth)
         };
-        self.cursor = self.cursor.move_by(-((nu_wth + 1) as i16), 0);
+        self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
         self
     }
 }
 
-fn empty_lines(mut row: u16, coord: Coord, app: &App) -> Result<()> {
+fn empty_lines(mut row: u16, coord: Coord, line_number: bool) -> Result<()> {
     use std::iter::repeat;
 
     let mut stdout = io::stdout();
@@ -384,7 +416,8 @@ fn empty_lines(mut row: u16, coord: Coord, app: &App) -> Result<()> {
         trace!("empty lines {} {}", row, hgt);
         for _ in row..hgt {
             let mut st: String = if_else!(
-                app.as_ref().line_number,
+                //
+                line_number,
                 format!("{} ", '~'),
                 Default::default()
             );

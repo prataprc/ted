@@ -2,7 +2,7 @@ use std::{fmt, result};
 
 use crate::{
     buffer::{self, Buffer},
-    code::{view, App},
+    code::App,
     event::Event,
     window::{Coord, Cursor},
     Result,
@@ -62,9 +62,16 @@ impl WindowLine {
     }
 
     pub fn on_refresh(&mut self, app: &mut App) -> Result<()> {
+        use crate::code::view::NoWrap;
+
         self.cursor = {
-            let v = view::NoWrap::new(self.coord, self.cursor, self.obc_xy);
-            v.render(app, &self.buffer)?
+            let v = {
+                let mut v = NoWrap::new(self.coord, self.cursor, self.obc_xy);
+                v.set_scroll_off(app.as_ref().scroll_off);
+                v.set_line_number(app.as_ref().line_number);
+                v
+            };
+            v.render(&self.buffer)?
         };
         Ok(())
     }
