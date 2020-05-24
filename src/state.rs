@@ -155,6 +155,8 @@ impl State {
         let mut stdout = io::stdout();
         let mut stats = Latency::new();
 
+        self.app.on_refresh()?;
+
         let res = 'a: loop {
             // new event
             let evnt: Event = {
@@ -312,5 +314,10 @@ fn init_logger(opts: &Opt) -> Result<()> {
         simplelog::WriteLogger::init(level_filter, lcnf.build(), fs)
     )?;
 
+    trace!(
+        "logging initialized file:{:?} trace:{}",
+        opts.log_file,
+        opts.trace
+    );
     Ok(())
 }

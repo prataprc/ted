@@ -3,7 +3,7 @@
 use dirs;
 use lazy_static::lazy_static;
 
-use std::{convert::TryFrom, env, ffi, fmt, fs, iter::FromIterator, path, result, sync::Mutex};
+use std::{env, ffi, fmt, fs, iter::FromIterator, path, result, sync::Mutex};
 
 use crate::{Error, Result};
 

@@ -132,7 +132,7 @@ impl Wrap {
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         trace!(
-            "{} {} {}@{} line_idx:{}",
+            "wrap-refresh {} {} {}@{} line_idx:{}",
             self.nu,
             nbc_xy,
             self.cursor,
@@ -233,6 +233,12 @@ pub struct NoWrap {
     nu: ColNu,
 }
 
+impl fmt::Display for NoWrap {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(f, "NoWrap<{},{},{}>", self.coord, self.cursor, self.nu)
+    }
+}
+
 impl NoWrap {
     pub fn new(coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> NoWrap {
         let o = NoWrap {
@@ -301,19 +307,29 @@ impl NoWrap {
             row: new_row,
         };
 
-        NoWrap {
+        let nw = NoWrap {
             coord,
             cursor,
             obc_xy: self.obc_xy,
             nu,
-        }
+        };
+
+        trace!("wrap-shift {}", nw);
+
+        nw
     }
 
     fn refresh(self, app: &App, buf: &Buffer) -> Result<()> {
         use std::iter::repeat;
 
         let nbc_xy = buf.to_xy_cursor();
-        trace!("{} {} {}@{}", self.nu, nbc_xy, self.cursor, self.coord);
+        trace!(
+            "nowrap-refresh {} {} {}@{}",
+            self.nu,
+            nbc_xy,
+            self.cursor,
+            self.coord
+        );
 
         let mut stdout = io::stdout();
 

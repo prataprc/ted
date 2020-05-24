@@ -2,7 +2,7 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
 use std::{fmt, mem, result};
 
-use crate::{location::Location, Error, Result};
+use crate::{Error, Result};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DP {

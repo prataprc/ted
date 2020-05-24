@@ -13,6 +13,8 @@ mod window_edit;
 mod window_file;
 mod window_line;
 
+use log::trace;
+
 use std::{ffi, mem, sync::mpsc};
 
 use crate::{
@@ -54,7 +56,7 @@ pub struct App {
 
 enum Inner {
     Regular { stsline: WindowLine },
-    // Command { cmdline: WindowLine, cmd: Command },
+    //Command { cmdline: WindowLine, cmd: Command },
     None,
 }
 
@@ -81,6 +83,8 @@ impl App {
             cnf.mixin(config.try_into().unwrap())
         };
 
+        trace!("starting app `code` config...\n{}", config);
+
         let mut app = App {
             config,
             subscribers: Default::default(),
@@ -90,7 +94,7 @@ impl App {
             wfile: Default::default(),
             tbcline: new_window_line("tbcline", coord),
             keymap: Default::default(),
-            inner: inner,
+            inner,
         };
         app.open_cmd_files(opts.files.clone())?;
         app.wfile = match app.buffers.last() {
@@ -102,9 +106,12 @@ impl App {
                 wfile
             }
         };
+
         Ok(app)
     }
+}
 
+impl App {
     pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
         self.subscribers.subscribe(topic, tx);
     }
@@ -158,9 +165,9 @@ impl App {
 impl App {
     #[inline]
     pub fn post(&mut self, msg: Notify) -> Result<()> {
-        //match (name, msg) {
-        //    ("status", Notify::Status(sl)) -> self.stsline.set(sl),
-        //    ("tabcomplete", Notify::TabComplete(sl) -> self.tbcline.set(sl),
+        //match msg {
+        //    Notify::Status(sl)) -> self.stsline.set(sl),
+        //    Notify::TabComplete(sl) -> self.tbcline.set(sl),
         //}
         Ok(())
     }
@@ -177,8 +184,7 @@ impl App {
         let mut keymap = mem::replace(&mut self.keymap, Default::default());
         let evnt = {
             let buf = self.as_mut_buffer(&self.wfile.to_buffer_id());
-            let evnt = keymap.fold(buf, evnt)?;
-            evnt
+            keymap.fold(buf, evnt)?
         };
         self.keymap = keymap;
 
