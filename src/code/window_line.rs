@@ -67,8 +67,7 @@ impl WindowLine {
         self.cursor = {
             let v = {
                 let mut v = NoWrap::new(self.coord, self.cursor, self.obc_xy);
-                v.set_scroll_off(app.as_ref().scroll_off);
-                v.set_line_number(app.as_ref().line_number);
+                v.set_scroll_off(0).set_line_number(false);
                 v
             };
             v.render(&self.buffer)?

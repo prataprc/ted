@@ -47,7 +47,12 @@ impl WindowFile {
         WindowFile {
             coord,
             we: WindowEdit::new(coord.clone(), buf),
-            stsline: new_window_line("stsline", coord),
+            stsline: {
+                let (col, row) = coord.to_origin();
+                let (_, wth) = coord.to_size();
+                let row = row.saturating_sub(1);
+                new_window_line("stsline", Coord::new(col, row, 1, wth))
+            },
             we_hgt: 0,
             we_wth: 0,
         }

@@ -75,7 +75,12 @@ impl AsRef<Config> for App {
 impl App {
     pub fn new(config: toml::Value, coord: Coord, opts: Opt) -> Result<App> {
         let inner = Inner::Regular {
-            stsline: new_window_line("stsline", coord),
+            stsline: {
+                let (col, row) = coord.to_origin();
+                let (_, wth) = coord.to_size();
+                let row = row.saturating_sub(1);
+                new_window_line("stsline", Coord::new(col, row, 1, wth))
+            },
         };
 
         let config = {
@@ -92,7 +97,12 @@ impl App {
 
             coord,
             wfile: Default::default(),
-            tbcline: new_window_line("tbcline", coord),
+            tbcline: {
+                let (col, row) = coord.to_origin();
+                let (_, wth) = coord.to_size();
+                let row = row.saturating_sub(2);
+                new_window_line("tbcline", Coord::new(col, row, 1, wth))
+            },
             keymap: Default::default(),
             inner,
         };

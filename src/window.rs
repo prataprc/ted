@@ -111,7 +111,7 @@ impl Coord {
 
     #[inline]
     pub fn to_origin_cursor(&self) -> (u16, u16) {
-        (self.col - 1, self.row - 1)
+        (self.col.saturating_sub(1), self.row.saturating_sub(1))
     }
 
     #[inline]

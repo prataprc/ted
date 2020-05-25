@@ -55,7 +55,7 @@ impl PubSub {
     pub fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
         match Self::find_topic(&topic, &self.topics) {
             Some(n) => {
-                assert!(self.topics[n].topic == topic);
+                assert!(self.topics[n].topic == topic, "assert {}", topic);
                 err_at!(IPC, self.topics[n].tx.send(msg))?;
                 Ok(())
             }

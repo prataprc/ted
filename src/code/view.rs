@@ -35,15 +35,14 @@ impl fmt::Display for Wrap {
 impl Wrap {
     // create a wrap view using previous cursor's nu_width.
     pub fn new(coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> Wrap {
-        let o = Wrap {
+        Wrap {
             coord,
             cursor,
             obc_xy,
             nu: ColNu::new(obc_xy.row),
             scroll_off: 0,
             line_number: false,
-        };
-        o.exclude_nu(o.nu.to_width())
+        }
     }
 
     pub fn set_scroll_off(&mut self, scroll_off: u16) -> &mut Self {
@@ -57,6 +56,9 @@ impl Wrap {
     }
 
     pub fn render(mut self, buf: &Buffer) -> Result<Cursor> {
+        if self.line_number {
+            self.exclude_nu(self.nu.to_width())
+        }
         self = self.shift(buf);
         let cursor = self.cursor;
         self.refresh(buf)?;
@@ -200,13 +202,12 @@ impl Wrap {
         )
     }
 
-    fn exclude_nu(mut self, nu_wth: u16) -> Self {
+    fn exclude_nu(&mut self, nu_wth: u16) {
         self.coord = {
             let (hgt, wth) = self.coord.to_size();
             self.coord.resize_to(hgt, wth - nu_wth)
         };
         self.cursor = self.cursor.move_by(-((nu_wth + 1) as i16), 0);
-        self
     }
 
     fn into_resized(self, nbc_xy: buffer::Cursor, so: u16, dp: DP) -> Self {
@@ -263,15 +264,14 @@ impl fmt::Display for NoWrap {
 
 impl NoWrap {
     pub fn new(coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> NoWrap {
-        let o = NoWrap {
+        NoWrap {
             coord,
             cursor,
             obc_xy,
             nu: ColNu::new(obc_xy.row),
             scroll_off: 0,
             line_number: false,
-        };
-        o.exclude_nu(o.nu.to_width())
+        }
     }
 
     pub fn set_scroll_off(&mut self, scroll_off: u16) -> &mut Self {
@@ -285,6 +285,9 @@ impl NoWrap {
     }
 
     pub fn render(mut self, buf: &Buffer) -> Result<Cursor> {
+        if self.line_number {
+            self.exclude_nu(self.nu.to_width())
+        }
         self = self.shift(buf);
         let cursor = self.cursor;
         self.refresh(buf)?;
@@ -323,12 +326,12 @@ impl NoWrap {
 
         let new_row: u16 = {
             let row = limit!((row as isize) + diff_row, r_min, r_max);
-            assert!(row < (coord.hgt as isize));
+            assert!(row < (coord.hgt as isize), "assert {} {}", row, coord.hgt);
             row as u16
         };
         let new_col: u16 = {
             let col = limite!((col as isize) + diff_col, 0, coord.wth as isize);
-            assert!(col < (coord.wth as isize));
+            assert!(col < (coord.wth as isize), "assert {} {}", col, coord.wth);
             col as u16
         };
         let cursor = Cursor {
@@ -395,13 +398,12 @@ impl NoWrap {
         self.coord.resize_to(hgt, wth + self.nu.to_width())
     }
 
-    fn exclude_nu(mut self, nu_wth: u16) -> Self {
+    fn exclude_nu(&mut self, nu_wth: u16) {
         self.coord = {
             let (hgt, wth) = self.coord.to_size();
             self.coord.resize_to(hgt, wth - nu_wth)
         };
         self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
-        self
     }
 }
 
@@ -430,7 +432,7 @@ fn empty_lines(mut row: u16, coord: Coord, line_number: bool) -> Result<()> {
             row += 1;
         }
     }
-    assert!(row == hgt);
+    assert!(row == hgt, "assert {} {}", row, hgt);
 
     Ok(())
 }
@@ -470,7 +472,7 @@ impl WrapView {
         let mut lines = vec![];
         let iter = (line_idx..).take(coord.hgt as usize).enumerate();
         for (row, line_idx) in iter {
-            assert!(row < 1_000); // TODO: avoid magic number
+            assert!(row < 1_000, "assert {}", row); // TODO: avoid magic number
             Line::new_line(line_idx, row as u16, coord.wth, buf)
                 //
                 .map(|line| lines.push(line));
@@ -525,7 +527,7 @@ impl Line {
             let iter = repeat(wth).take(len_chars / (wth as usize));
             iter.enumerate()
                 .map(|(r, wth)| {
-                    assert!(r < 1_000); // TODO avoid magic number
+                    assert!(r < 1_000, "assert {}", r); // TODO no magi number
                     (row + (r as u16), bc + (r * (wth as usize)), wth, wth)
                 })
                 .collect()
@@ -534,8 +536,8 @@ impl Line {
         if (len_chars % (wth as usize)) > 0 {
             let r = rows.len();
             let w = len_chars % (wth as usize);
-            assert!(w <= (wth as usize));
-            assert!(r < 1_000); // TODO avoid magic number
+            assert!(w <= (wth as usize), "assert {} {}", w, wth);
+            assert!(r < 1_000, "assert {}", r); // TODO avoid magic number
             let row = row + (r as u16);
             rows.push((row, bc + (r * (wth as usize)), w as u16, wth))
         }
@@ -590,7 +592,7 @@ impl Row {
             let iter = (bc..bc_end).into_iter().map(|bc| Some(bc));
             iter.collect()
         };
-        assert!(bcs.len() < 10_000); // TODO avoid magic number
+        assert!(bcs.len() < 10_000, "assert {}", bcs.len()); // TODO no magic
         bcs.extend(&{
             let n = wth.saturating_sub(bcs.len() as u16) as usize;
             let pad: Vec<Option<usize>> = repeat(None).take(n).collect();

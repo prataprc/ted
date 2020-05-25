@@ -25,7 +25,7 @@ impl ColNu {
         let width = {
             use crate::buffer::MAX_LINES;
 
-            assert!(line_idx < MAX_LINES);
+            assert!(line_idx < MAX_LINES, "assert {}", line_idx);
             // line number rendering starts from 1..
             line_idx += 1;
             cmp::max(line_idx.to_string().len(), 3) as u16
