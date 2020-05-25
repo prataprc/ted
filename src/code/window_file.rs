@@ -9,8 +9,8 @@ use std::{
 
 use crate::{
     buffer::Buffer,
+    code::window_edit::WindowEdit,
     code::{config::Config, App},
-    code::{window_edit::WindowEdit, window_line::WindowLine},
     event::{Event, Ted},
     window::{Coord, Cursor, Notify, Span},
     Error, Result,

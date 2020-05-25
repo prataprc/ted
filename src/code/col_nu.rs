@@ -28,21 +28,17 @@ impl ColNu {
             assert!(line_idx < MAX_LINES, "assert {}", line_idx);
             // line number rendering starts from 1..
             line_idx += 1;
-            cmp::max(line_idx.to_string().len(), 3) as u16
+            cmp::max(line_idx.to_string().len(), 4) as u16
         };
 
         ColNu {
             width,
             fg: Color::Rgb {
-                r: 135,
-                g: 135,
-                b: 95,
+                r: 255,
+                g: 255,
+                b: 255,
             },
-            bg: Color::Rgb {
-                r: 153,
-                g: 152,
-                b: 114,
-            },
+            bg: Color::Rgb { r: 0, g: 0, b: 0 },
             attr: Attribute::NormalIntensity,
         }
     }
@@ -59,6 +55,7 @@ impl ColNu {
             None => String::from_iter(repeat(' ').take(self.width as usize)),
         };
         let span: Span = s.into();
+        // TODO: pull this from color-scheme.
         span.with(self.fg).on(self.bg).attribute(self.attr)
     }
 }

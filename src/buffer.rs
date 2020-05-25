@@ -132,7 +132,7 @@ impl Default for Inner {
 
 /// Create and configure a text buffer.
 impl Buffer {
-    pub fn from_reader<R>(data: R) -> Result<Buffer>
+    pub fn from_reader<R>(data: R, loc: Location) -> Result<Buffer>
     where
         R: io::Read,
     {
@@ -141,7 +141,7 @@ impl Buffer {
         *num = *num + 1;
         let b = Buffer {
             num: *num,
-            location: Default::default(),
+            location: loc,
             read_only: false,
             insert_repeat: Default::default(),
             last_inserts: Default::default(),
@@ -156,7 +156,7 @@ impl Buffer {
 
     pub fn empty() -> Buffer {
         let buf = vec![];
-        Self::from_reader(buf.as_slice()).unwrap()
+        Self::from_reader(buf.as_slice(), Default::default()).unwrap()
     }
 
     pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
@@ -226,8 +226,9 @@ impl Buffer {
     #[inline]
     pub fn to_id(&self) -> String {
         match self.to_location() {
-            Location::Anonymous(s) => s,
+            Location::Memory(s) => s,
             Location::Disk(s) => s.to_str().unwrap().to_string(),
+            Location::Ted(s) => s,
         }
     }
 

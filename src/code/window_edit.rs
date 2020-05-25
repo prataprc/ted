@@ -1,3 +1,5 @@
+use log::trace;
+
 use std::{fmt, result};
 
 use crate::{
@@ -19,7 +21,11 @@ pub struct WindowEdit {
 
 impl fmt::Display for WindowEdit {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "WindowEdit<{}>", self.coord)
+        write!(
+            f,
+            "WindowEdit<{},{},{},{}>",
+            self.coord, self.cursor, self.obc_xy, self.buffer_id,
+        )
     }
 }
 
@@ -33,13 +39,16 @@ impl WindowEdit {
         } else {
             NoWrap::initial_cursor(config.line_number)
         };
-        WindowEdit {
+        let we = WindowEdit {
             coord,
             cursor,
             obc_xy: (0, 0).into(),
             buffer_id: buf.to_id(),
             ftype: Default::default(),
-        }
+        };
+
+        trace!("{}", we);
+        we
     }
 
     pub fn set_ftype(&mut self, ftype: FType) -> &mut Self {

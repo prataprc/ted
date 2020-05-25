@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    buffer::{self, Buffer, NL},
+    buffer::{self, Buffer},
     code::col_nu::ColNu,
     event::DP,
     window::{Coord, Cursor, Span},
@@ -28,7 +28,11 @@ pub struct Wrap {
 
 impl fmt::Display for Wrap {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "Wrap<{},{},{}>", self.coord, self.cursor, self.nu)
+        write!(
+            f,
+            "Wrap<{},{}@{}/{}>",
+            self.nu, self.cursor, self.coord, self.obc_xy
+        )
     }
 }
 
@@ -157,14 +161,7 @@ impl Wrap {
     fn refresh(self, buf: &Buffer) -> Result<()> {
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
-        trace!(
-            "wrap-refresh {} {} {}@{} line_idx:{}",
-            self.nu,
-            nbc_xy,
-            self.cursor,
-            self.coord,
-            line_idx,
-        );
+        trace!("{} nbc_xy:{} line_idx:{}", self, nbc_xy, line_idx);
 
         let mut stdout = io::stdout();
 
@@ -178,6 +175,7 @@ impl Wrap {
 
         'a: for line in wv.lines.iter() {
             for (r, rline) in line.rows.iter().enumerate() {
+                trace!("view wrap {}", r);
                 let mut nu_span = match r {
                     0 if line_number => self.nu.to_span(Some(line.nu)),
                     _ if line_number => self.nu.to_span(None),
@@ -205,12 +203,15 @@ impl Wrap {
                 }
             }
         }
-        empty_lines(
-            tail_line(row, max_row, &self.nu, buf)?,
-            max_row,
-            full_coord,
-            self.line_number,
-        )
+        tail_line(col, row, max_row - 1, &self.nu, buf)?;
+        //empty_lines(
+        //    tail_line(row, max_row - 1, &self.nu, buf)?,
+        //    max_row - 1,
+        //    full_coord,
+        //    self.line_number,
+        //)?;
+
+        Ok(())
     }
 
     fn exclude_nu(&mut self, nu_wth: u16) {
@@ -409,11 +410,13 @@ impl NoWrap {
         }
 
         empty_lines(
-            tail_line(row, row + hgt, &self.nu, buf)?,
-            row + hgt,
+            tail_line(col, row, row + hgt - 1, &self.nu, buf)?,
+            row + hgt - 1,
             full_coord,
             self.line_number,
-        )
+        )?;
+
+        Ok(())
     }
 
     fn outer_coord(&self) -> Coord {
@@ -437,9 +440,9 @@ fn empty_lines(mut row: u16, max_row: u16, coord: Coord, nu: bool) -> Result<()>
     let (col, _) = coord.to_origin_cursor();
     let (_, wth) = coord.to_size();
 
-    if row < max_row {
+    if row <= max_row {
         trace!("empty lines {}..{}", row, max_row);
-        for _ in row..max_row {
+        for _ in row..=max_row {
             let mut st: String = if_else!(
                 //
                 nu,
@@ -455,28 +458,45 @@ fn empty_lines(mut row: u16, max_row: u16, coord: Coord, nu: bool) -> Result<()>
             row += 1;
         }
     }
-    assert!(row == max_row, "assert {} {}", row, max_row);
+    assert!(row == (max_row + 1), "assert {} {}", row, max_row);
 
     Ok(())
 }
 
-fn tail_line(row: u16, max_row: u16, nu: &ColNu, buf: &Buffer) -> Result<u16> {
+fn tail_line(
+    //
+    col: u16,
+    row: u16,
+    max_row: u16,
+    nu: &ColNu,
+    buf: &Buffer,
+) -> Result<u16> {
     let n = buf.n_chars();
     let ok1 = n == 0;
-    let ok2 = max_row > 0 && ((row + 1) == max_row) && buf.is_trailing_newline();
+    let ok2 = max_row > 0 && (row == max_row) && buf.is_trailing_newline();
 
+    let n = if ok1 { 1 } else { buf.char_to_line(n - 1) + 1 };
     let mut stdout = io::stdout();
 
-    if ok1 || ok2 {
-        let span = {
-            let line_idx = if ok1 { 1 } else { buf.char_to_line(n - 1) + 1 };
-            nu.to_span(Some(line_idx))
-        };
+    let new_row = if ok1 || ok2 {
+        let mut span = nu.to_span(Some(n));
+        span.set_cursor(Cursor { col, row });
         err_at!(Fatal, queue!(stdout, span))?;
-        Ok(row + 1)
+        row + 1
     } else {
-        Ok(row)
-    }
+        row
+    };
+
+    trace!(
+        "trail {}/{} -> {}/{} {},{}",
+        row,
+        max_row,
+        n,
+        new_row,
+        ok1,
+        ok2
+    );
+    Ok(row)
 }
 
 enum VShift {

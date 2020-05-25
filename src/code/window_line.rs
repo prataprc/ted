@@ -4,6 +4,7 @@ use crate::{
     buffer::{self, Buffer},
     code::App,
     event::Event,
+    location::Location,
     window::{Coord, Cursor},
     Result,
 };
@@ -15,18 +16,6 @@ pub struct WindowLine {
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     buffer: Buffer,
-}
-
-impl Default for WindowLine {
-    fn default() -> WindowLine {
-        WindowLine {
-            name: Default::default(),
-            coord: Default::default(),
-            cursor: Default::default(),
-            obc_xy: Default::default(),
-            buffer: Buffer::empty(),
-        }
-    }
 }
 
 impl fmt::Display for WindowLine {
@@ -41,12 +30,16 @@ impl WindowLine {
         use crate::code::view::NoWrap;
 
         let line_number = false;
+        let buf = {
+            let loc = Location::new_ted(name);
+            Buffer::from_reader(vec![].as_slice(), loc).unwrap()
+        };
         WindowLine {
             name: name.to_string(),
             coord,
             cursor: NoWrap::initial_cursor(line_number),
             obc_xy: (0, 0).into(),
-            buffer: Buffer::empty(),
+            buffer: buf,
         }
     }
 }
@@ -64,7 +57,7 @@ impl WindowLine {
         }
     }
 
-    pub fn on_refresh(&mut self, app: &mut App) -> Result<()> {
+    pub fn on_refresh(&mut self, _app: &mut App) -> Result<()> {
         use crate::code::view::NoWrap;
 
         self.cursor = {

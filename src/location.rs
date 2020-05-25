@@ -8,22 +8,23 @@ use std::{env, ffi, fmt, fs, iter::FromIterator, path, result, sync::Mutex};
 use crate::{Error, Result};
 
 lazy_static! {
-    static ref ANONYMOUS_COUNT: Mutex<usize> = Mutex::new(0);
+    static ref MEM_BUFFER_N: Mutex<usize> = Mutex::new(0);
 }
 
 /// Location of buffer's content, typically a persistent medium.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Location {
-    Anonymous(String),
+    Memory(String),
     Disk(ffi::OsString),
+    Ted(String),
 }
 
 impl Location {
-    /// Create a anonymous location for buffer.
-    pub fn new_anonymous() -> Location {
-        let mut count = ANONYMOUS_COUNT.lock().unwrap();
+    /// Create a memory-only buffer.
+    pub fn new_memory() -> Location {
+        let mut count = MEM_BUFFER_N.lock().unwrap();
         *count = *count + 1;
-        Location::Anonymous(format!("newfile-{}", count))
+        Location::Memory(format!("memtext-{}", count))
     }
 
     /// Create a new Disk location for buffer. `loc` can be absolute path,
@@ -36,39 +37,48 @@ impl Location {
         }
     }
 
+    /// Create a new buffer to be used within the system.
+    pub fn new_ted(name: &str) -> Location {
+        Location::Ted(name.to_string())
+    }
+
     pub fn to_rw_file(&self) -> Option<fs::File> {
         match self {
-            Location::Anonymous(_) => None,
+            Location::Memory(_) => None,
             Location::Disk(f) => {
                 let mut oo = fs::OpenOptions::new();
                 oo.read(true).write(true).open(f).ok()
             }
+            Location::Ted(_) => None,
         }
     }
 
     pub fn to_r_file(&self) -> Option<fs::File> {
         match self {
-            Location::Anonymous(_) => None,
+            Location::Memory(_) => None,
             Location::Disk(f) => {
                 let mut oo = fs::OpenOptions::new();
                 oo.read(true).open(f).ok()
             }
+            Location::Ted(_) => None,
         }
     }
 
     /// Return full path of the location, for display purpose.
     pub fn to_long_string(&self) -> Result<ffi::OsString> {
         match self {
-            Location::Anonymous(_) => Ok("[no name]".to_string().into()),
+            Location::Memory(_) => Ok("[mem-text]".to_string().into()),
             Location::Disk(s) => Ok(s.to_os_string()),
+            Location::Ted(name) => Ok(format!("[{:?}]", name).into()),
         }
     }
 
     /// Return shrunk, but meaningful, version of path for display purpose.
     pub fn to_short_string(&self) -> Result<ffi::OsString> {
         match self {
-            Location::Anonymous(_) => Ok("[no name]".to_string().into()),
+            Location::Memory(_) => Ok("[mem-text]".to_string().into()),
             Location::Disk(s) => Self::shrink_home(&Self::shrink_cwd(s)?),
+            Location::Ted(name) => Ok(format!("[{:?}]", name).into()),
         }
     }
 
@@ -127,18 +137,19 @@ impl Location {
 
 impl Default for Location {
     fn default() -> Location {
-        Location::new_anonymous()
+        Location::new_memory()
     }
 }
 
 impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
-            Location::Anonymous(s) => write!(f, "{}", s),
+            Location::Memory(s) => write!(f, "{}", s),
             Location::Disk(s) => {
                 let s = s.clone().into_string().unwrap();
                 write!(f, "{}", s)
             }
+            Location::Ted(name) => write!(f, "{}", name),
         }
     }
 }

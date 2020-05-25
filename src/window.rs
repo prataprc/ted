@@ -223,8 +223,8 @@ impl Cursor {
 // Span object to render on screen.
 #[derive(Clone)]
 pub struct Span {
-    text: StyledContent<String>,
-    cursor: Option<Cursor>,
+    pub text: StyledContent<String>,
+    pub cursor: Option<Cursor>,
 }
 
 impl From<StyledContent<String>> for Span {

@@ -30,11 +30,11 @@ use crate::{
 };
 
 pub struct App {
+    coord: Coord,
     config: Config,
     subscribers: PubSub,
     buffers: Vec<Buffer>,
 
-    coord: Coord,
     wfile: WindowFile,
     tbcline: WindowLine,
     keymap: Keymap,
@@ -63,7 +63,7 @@ impl App {
     pub fn new(config: toml::Value, coord: Coord, opts: Opt) -> Result<App> {
         let inner = Inner::Regular {
             stsline: {
-                let (col, row) = coord.to_origin();
+                let (col, _) = coord.to_origin();
                 let (hgt, wth) = coord.to_size();
                 WindowLine::new("stsline", Coord::new(col, hgt, 1, wth))
             },
@@ -74,17 +74,17 @@ impl App {
             cnf.mixin(config.try_into().unwrap())
         };
 
-        trace!("starting app `code` config...\n{}", config);
+        trace!("starting app `code` coord:{} config...\n{}", coord, config);
 
         let mut app = App {
+            coord,
             config,
             subscribers: Default::default(),
             buffers: Default::default(),
 
-            coord,
             wfile: Default::default(),
             tbcline: {
-                let (col, row) = coord.to_origin();
+                let (col, _) = coord.to_origin();
                 let (hgt, wth) = coord.to_size();
                 let hgt = hgt.saturating_sub(1);
                 WindowLine::new("tbcline", Coord::new(col, hgt, 1, wth))
@@ -208,23 +208,24 @@ impl App {
         wfile.on_refresh(self)?;
         self.wfile = wfile;
 
-        let mut inner = mem::replace(&mut self.inner, Default::default());
-        match &mut inner {
-            Inner::Regular { stsline } => {
-                stsline.on_refresh(self)?;
-            } //Inner::Command { cmdline, cmd } => {
-            //    // self.cmd.on_refresh()?;
-            //    let wline = mem::replace(cmdline, Default::default());
-            //    wline.on_refresh(self)?;
-            //    *cmdline = wline;
-            //}
-            Inner::None => (),
-        }
-        self.inner = inner;
+        //let mut inner = mem::replace(&mut self.inner, Default::default());
+        //match &mut inner {
+        //    Inner::Regular { stsline } => {
+        //        stsline.on_refresh(self)?;
+        //    } //Inner::Command { cmdline, cmd } => {
+        //    //    // self.cmd.on_refresh()?;
+        //    //    let wline = mem::replace(cmdline, Default::default());
+        //    //    wline.on_refresh(self)?;
+        //    //    *cmdline = wline;
+        //    //}
+        //    Inner::None => (),
+        //}
+        //self.inner = inner;
 
-        let mut wline = mem::replace(&mut self.tbcline, Default::default());
-        wline.on_refresh(self)?;
-        self.tbcline = wline;
+        //let mut wline = mem::replace(&mut self.tbcline, Default::default());
+        //wline.on_refresh(self)?;
+        //self.tbcline = wline;
+
         Ok(())
     }
 }
@@ -241,12 +242,12 @@ impl App {
         let mut e_files = vec![];
         for loc in locs.into_iter() {
             match loc.to_rw_file() {
-                Some(f) => match Buffer::from_reader(f) {
+                Some(f) => match Buffer::from_reader(f, loc.clone()) {
                     Ok(buf) => self.add_buffer(buf),
                     Err(err) => e_files.push((loc, err)),
                 },
                 None => match loc.to_r_file() {
-                    Some(f) => match Buffer::from_reader(f) {
+                    Some(f) => match Buffer::from_reader(f, loc.clone()) {
                         Ok(mut buf) => {
                             buf.set_read_only(true);
                             self.add_buffer(buf);

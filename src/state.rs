@@ -10,9 +10,9 @@ use simplelog;
 use structopt::StructOpt;
 
 use std::{
-    ffi, fs,
+    ffi, fmt, fs,
     io::{self, Write},
-    path,
+    path, result,
     sync::mpsc,
     time::{Duration, SystemTime},
 };
@@ -69,7 +69,16 @@ impl Terminal {
         )?;
 
         let (cols, rows) = err_at!(Fatal, terminal::size())?;
-        Ok(Terminal { stdout, cols, rows })
+        let tm = Terminal { stdout, cols, rows };
+
+        trace!("{}", tm);
+        Ok(tm)
+    }
+}
+
+impl fmt::Display for Terminal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(f, "Terminal<{},{}>", self.cols, self.rows)
     }
 }
 
@@ -156,6 +165,7 @@ impl State {
         let mut stats = Latency::new();
 
         self.app.on_refresh()?;
+        err_at!(Fatal, stdout.flush())?;
 
         let res = 'a: loop {
             // new event
@@ -186,7 +196,7 @@ impl State {
                 // post processing
                 for evnt in evnt {
                     match evnt {
-                        Event::Char('q', m) => break 'a Ok(()),
+                        Event::Char('q', _) => break 'a Ok(()),
                         _ => (),
                     }
                 }
