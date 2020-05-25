@@ -231,9 +231,17 @@ pub enum Event {
 impl Event {
     pub fn to_modifiers(&self) -> KeyModifiers {
         match self {
-            Event::FKey(_, modifiers) => modifiers.clone(),
-            Event::Char(_, modifiers) => modifiers.clone(),
+            Event::FKey(_, m) => m.clone(),
+            Event::Char(_, m) => m.clone(),
             _ => KeyModifiers::empty(),
+        }
+    }
+
+    pub fn is_control(&self) -> bool {
+        match self {
+            Event::FKey(_, m) => m.contains(KeyModifiers::CONTROL),
+            Event::Char(_, m) => m.contains(KeyModifiers::CONTROL),
+            _ => false,
         }
     }
 
@@ -347,12 +355,12 @@ impl From<TermEvent> for Event {
                     KeyCode::Enter if empty => Enter,
                     KeyCode::Tab if empty => Tab,
                     KeyCode::Delete if empty => Delete,
-                    KeyCode::Char(ch) if empty => Char(ch, m),
+                    KeyCode::Char('[') if ctrl => Esc,
+                    KeyCode::Char(ch) => Char(ch, m),
                     //
                     KeyCode::BackTab if empty => BackTab,
                     KeyCode::F(f) if empty => FKey(f, m),
                     //
-                    KeyCode::Char('[') if ctrl => Esc,
                     KeyCode::Esc if empty => Esc,
                     KeyCode::Insert => Md(Mod::Insert(1, DP::Nope)),
                     //

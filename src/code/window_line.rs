@@ -38,10 +38,13 @@ impl fmt::Display for WindowLine {
 impl WindowLine {
     #[inline]
     pub fn new(name: &str, coord: Coord) -> WindowLine {
+        use crate::code::view::NoWrap;
+
+        let line_number = false;
         WindowLine {
             name: name.to_string(),
             coord,
-            cursor: cursor!(0, 0),
+            cursor: NoWrap::initial_cursor(line_number),
             obc_xy: (0, 0).into(),
             buffer: Buffer::empty(),
         }

@@ -33,6 +33,16 @@ impl fmt::Display for Wrap {
 }
 
 impl Wrap {
+    pub fn initial_cursor(line_number: bool) -> Cursor {
+        let nbc_xy: buffer::Cursor = Default::default();
+        let col = if line_number {
+            ColNu::new(nbc_xy.row).to_width()
+        } else {
+            0
+        };
+        Cursor { row: 0, col }
+    }
+
     // create a wrap view using previous cursor's nu_width.
     pub fn new(coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> Wrap {
         Wrap {
@@ -132,6 +142,7 @@ impl Wrap {
         // compute cursor.
         self = match (cursors.pop(), dp) {
             (Some(cursor), _) => {
+                trace!("{}->{}", self.cursor, cursor);
                 self.cursor = cursor;
                 self
             }
@@ -140,7 +151,6 @@ impl Wrap {
             _ => unreachable!(),
         };
 
-        trace!("wrap-shift {}", self);
         self
     }
 
@@ -196,7 +206,8 @@ impl Wrap {
             }
         }
         empty_lines(
-            tail_line(row, full_coord, &self.nu, buf)?,
+            tail_line(row, max_row, &self.nu, buf)?,
+            max_row,
             full_coord,
             self.line_number,
         )
@@ -207,7 +218,7 @@ impl Wrap {
             let (hgt, wth) = self.coord.to_size();
             self.coord.resize_to(hgt, wth - nu_wth)
         };
-        self.cursor = self.cursor.move_by(-((nu_wth + 1) as i16), 0);
+        self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
     }
 
     fn into_resized(self, nbc_xy: buffer::Cursor, so: u16, dp: DP) -> Self {
@@ -230,6 +241,7 @@ impl Wrap {
             _ => unreachable!(),
         };
 
+        trace!("{}->{} {}->{}", self.coord, coord, self.cursor, cursor);
         Wrap {
             coord: coord,
             cursor: cursor,
@@ -263,6 +275,16 @@ impl fmt::Display for NoWrap {
 }
 
 impl NoWrap {
+    pub fn initial_cursor(line_number: bool) -> Cursor {
+        let nbc_xy: buffer::Cursor = Default::default();
+        let col = if line_number {
+            ColNu::new(nbc_xy.row).to_width()
+        } else {
+            0
+        };
+        Cursor { row: 0, col }
+    }
+
     pub fn new(coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> NoWrap {
         NoWrap {
             coord,
@@ -387,7 +409,8 @@ impl NoWrap {
         }
 
         empty_lines(
-            tail_line(row, full_coord, &self.nu, buf)?,
+            tail_line(row, row + hgt, &self.nu, buf)?,
+            row + hgt,
             full_coord,
             self.line_number,
         )
@@ -407,19 +430,19 @@ impl NoWrap {
     }
 }
 
-fn empty_lines(mut row: u16, coord: Coord, line_number: bool) -> Result<()> {
+fn empty_lines(mut row: u16, max_row: u16, coord: Coord, nu: bool) -> Result<()> {
     use std::iter::repeat;
 
     let mut stdout = io::stdout();
     let (col, _) = coord.to_origin_cursor();
-    let (hgt, wth) = coord.to_size();
+    let (_, wth) = coord.to_size();
 
-    if row < hgt {
-        trace!("empty lines {} {}", row, hgt);
-        for _ in row..hgt {
+    if row < max_row {
+        trace!("empty lines {}..{}", row, max_row);
+        for _ in row..max_row {
             let mut st: String = if_else!(
                 //
-                line_number,
+                nu,
                 format!("{} ", '~'),
                 Default::default()
             );
@@ -432,15 +455,15 @@ fn empty_lines(mut row: u16, coord: Coord, line_number: bool) -> Result<()> {
             row += 1;
         }
     }
-    assert!(row == hgt, "assert {} {}", row, hgt);
+    assert!(row == max_row, "assert {} {}", row, max_row);
 
     Ok(())
 }
 
-fn tail_line(row: u16, coord: Coord, nu: &ColNu, buf: &Buffer) -> Result<u16> {
+fn tail_line(row: u16, max_row: u16, nu: &ColNu, buf: &Buffer) -> Result<u16> {
     let n = buf.n_chars();
     let ok1 = n == 0;
-    let ok2 = (row == coord.hgt - 1) && buf.char(n - 1) == NL;
+    let ok2 = max_row > 0 && ((row + 1) == max_row) && buf.is_trailing_newline();
 
     let mut stdout = io::stdout();
 

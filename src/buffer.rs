@@ -242,6 +242,14 @@ impl Buffer {
     pub fn to_location(&self) -> Location {
         self.location.clone()
     }
+
+    /// Return whether the last character in buffer is NEWLINE.
+    pub fn is_trailing_newline(&self) -> bool {
+        match self.n_chars() {
+            0 => false,
+            n => self.char(n - 1) == NL,
+        }
+    }
 }
 
 impl Buffer {

@@ -2,7 +2,7 @@ use std::{fmt, result};
 
 use crate::{
     buffer::{self, Buffer},
-    code::{ftype::FType, App},
+    code::{config::Config, ftype::FType, App},
     event::{Event, Ted},
     window::{Coord, Cursor},
     Result,
@@ -25,10 +25,17 @@ impl fmt::Display for WindowEdit {
 
 impl WindowEdit {
     #[inline]
-    pub fn new(coord: Coord, buf: &Buffer) -> WindowEdit {
+    pub fn new(coord: Coord, buf: &Buffer, config: &Config) -> WindowEdit {
+        use crate::code::view::{NoWrap, Wrap};
+
+        let cursor = if config.wrap {
+            Wrap::initial_cursor(config.line_number)
+        } else {
+            NoWrap::initial_cursor(config.line_number)
+        };
         WindowEdit {
             coord,
-            cursor: cursor!(0, 0),
+            cursor,
             obc_xy: (0, 0).into(),
             buffer_id: buf.to_id(),
             ftype: Default::default(),

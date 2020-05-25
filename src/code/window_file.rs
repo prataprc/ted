@@ -9,8 +9,8 @@ use std::{
 
 use crate::{
     buffer::Buffer,
-    code::App,
-    code::{new_window_line, window_edit::WindowEdit, window_line::WindowLine},
+    code::{config::Config, App},
+    code::{window_edit::WindowEdit, window_line::WindowLine},
     event::{Event, Ted},
     window::{Coord, Cursor, Notify, Span},
     Error, Result,
@@ -29,10 +29,7 @@ use crate::{
 pub struct WindowFile {
     coord: Coord, // x window coord.
     we: WindowEdit,
-    stsline: WindowLine,
-    // cached parameters.
-    we_hgt: i16,
-    we_wth: i16,
+    // stsline: Option<WindowLine>, TODO: needed for split windows.
 }
 
 impl fmt::Display for WindowFile {
@@ -43,18 +40,11 @@ impl fmt::Display for WindowFile {
 
 impl WindowFile {
     #[inline]
-    pub fn new(coord: Coord, buf: &Buffer) -> WindowFile {
+    pub fn new(coord: Coord, buf: &Buffer, config: &Config) -> WindowFile {
         WindowFile {
             coord,
-            we: WindowEdit::new(coord.clone(), buf),
-            stsline: {
-                let (col, row) = coord.to_origin();
-                let (_, wth) = coord.to_size();
-                let row = row.saturating_sub(1);
-                new_window_line("stsline", Coord::new(col, row, 1, wth))
-            },
-            we_hgt: 0,
-            we_wth: 0,
+            we: WindowEdit::new(coord.clone(), buf, config),
+            // stsline: None,
         }
     }
 }
@@ -79,7 +69,7 @@ impl WindowFile {
         self.coord.to_origin()
     }
 
-    fn status_line(&self, app: &App) -> Result<Span> {
+    fn status_file(&self, app: &App) -> Result<Span> {
         let alt: ffi::OsString = "--display-error--".into();
         let (hgt, wth) = self.coord.to_size();
         let b = app.as_buffer(&self.we.to_buffer_id());
@@ -159,7 +149,7 @@ impl WindowFile {
 
         match self.we.on_event(app, evnt)? {
             Td(Ted::StatusFile { .. }) => {
-                let span = self.status_line(app)?;
+                let span = self.status_file(app)?;
                 app.notify("code", Notify::Status(vec![span]));
                 Ok(Event::Noop)
             }

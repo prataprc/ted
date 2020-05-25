@@ -29,19 +29,6 @@ use crate::{
     Error, Result,
 };
 
-pub fn new_window_line(typ: &str, mut coord: Coord) -> WindowLine {
-    let (col, _) = coord.to_origin();
-    let (hgt, wth) = coord.to_size();
-    let row = match typ {
-        "cmdline" => hgt.saturating_sub(2),
-        "stsline" => hgt.saturating_sub(2),
-        "tbcline" => hgt.saturating_sub(3),
-        _ => unreachable!(),
-    };
-    coord = Coord::new(col, row, 1, wth);
-    WindowLine::new(typ, coord)
-}
-
 pub struct App {
     config: Config,
     subscribers: PubSub,
@@ -77,9 +64,8 @@ impl App {
         let inner = Inner::Regular {
             stsline: {
                 let (col, row) = coord.to_origin();
-                let (_, wth) = coord.to_size();
-                let row = row.saturating_sub(1);
-                new_window_line("stsline", Coord::new(col, row, 1, wth))
+                let (hgt, wth) = coord.to_size();
+                WindowLine::new("stsline", Coord::new(col, hgt, 1, wth))
             },
         };
 
@@ -99,19 +85,19 @@ impl App {
             wfile: Default::default(),
             tbcline: {
                 let (col, row) = coord.to_origin();
-                let (_, wth) = coord.to_size();
-                let row = row.saturating_sub(2);
-                new_window_line("tbcline", Coord::new(col, row, 1, wth))
+                let (hgt, wth) = coord.to_size();
+                let hgt = hgt.saturating_sub(1);
+                WindowLine::new("tbcline", Coord::new(col, hgt, 1, wth))
             },
             keymap: Default::default(),
             inner,
         };
         app.open_cmd_files(opts.files.clone())?;
         app.wfile = match app.buffers.last() {
-            Some(buf) => WindowFile::new(coord, buf),
+            Some(buf) => WindowFile::new(coord, buf, app.as_ref()),
             None => {
                 let buf = Buffer::empty();
-                let wfile = WindowFile::new(coord, &buf);
+                let wfile = WindowFile::new(coord, &buf, app.as_ref());
                 app.add_buffer(buf);
                 wfile
             }

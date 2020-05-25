@@ -161,23 +161,32 @@ impl State {
             // new event
             let evnt: Event = {
                 let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
-                trace!("{:?} {}", tevnt, self.app.to_cursor());
                 tevnt.clone().into()
             };
+            trace!("{} {}", evnt, self.app.to_cursor());
 
             let start = SystemTime::now();
 
             // hide cursor, handle event and refresh window
             err_at!(Fatal, queue!(stdout, term_cursor::Hide))?;
             for evnt in evnt {
+                // preprocessing
+                let ctrl = evnt.is_control();
+                trace!("{} {}", evnt, ctrl);
+                let evnt = match evnt {
+                    Event::Char('q', _) if ctrl => break 'a Ok(()),
+                    _ => evnt,
+                };
+                // dispatch
                 let evnt = {
                     let evnt = self.app.on_event(evnt)?;
                     self.app.on_refresh()?;
                     evnt
                 };
+                // post processing
                 for evnt in evnt {
                     match evnt {
-                        Event::Char('q', m) if m.is_empty() => break 'a Ok(()),
+                        Event::Char('q', m) => break 'a Ok(()),
                         _ => (),
                     }
                 }
