@@ -1,17 +1,15 @@
-use crossterm::style::{Attribute, Color};
-
 use std::{cmp, fmt, iter::FromIterator, result};
 
-use crate::window::Span;
+use crate::{
+    color_scheme::{ColorScheme, Highlight},
+    window::Span,
+};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 /// Line number rendering. Starts from 1 till last line the buffer, width is
 /// padded with adequate spaces on the left, and one space to the right.
 pub struct ColNu {
     width: u16,
-    fg: Color,
-    bg: Color,
-    attr: Attribute,
 }
 
 impl fmt::Display for ColNu {
@@ -31,27 +29,14 @@ impl ColNu {
             cmp::max(line_idx.to_string().len(), 4) as u16
         };
 
-        ColNu {
-            width,
-            fg: Color::Rgb {
-                r: 0x86,
-                g: 0x87,
-                b: 0x5f,
-            },
-            bg: Color::Rgb {
-                r: 0x44,
-                g: 0x44,
-                b: 0x44,
-            },
-            attr: Attribute::NormalIntensity,
-        }
+        ColNu { width }
     }
 
     pub fn to_width(&self) -> u16 {
         self.width
     }
 
-    pub fn to_span(&self, nu: Option<usize>) -> Span {
+    pub fn to_span(&self, nu: Option<usize>, scheme: &ColorScheme) -> Span {
         use std::iter::repeat;
 
         let s = match nu {
@@ -59,7 +44,6 @@ impl ColNu {
             None => String::from_iter(repeat(' ').take(self.width as usize)),
         };
         let span: Span = s.into();
-        // TODO: pull this from color-scheme.
-        span.with(self.fg).on(self.bg).attribute(self.attr)
+        span.using(scheme.to_style(Highlight::LineNr))
     }
 }

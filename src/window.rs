@@ -6,7 +6,7 @@ use crossterm::{
 
 use std::{fmt, iter::FromIterator, ops::Add, result};
 
-use crate::{Error, Result};
+use crate::{color_scheme::Style, Error, Result};
 
 #[macro_export]
 macro_rules! cursor {
@@ -223,20 +223,23 @@ impl Cursor {
 // Span object to render on screen.
 #[derive(Clone)]
 pub struct Span {
-    pub text: StyledContent<String>,
+    pub content: StyledContent<String>,
     pub cursor: Option<Cursor>,
 }
 
 impl From<StyledContent<String>> for Span {
-    fn from(text: StyledContent<String>) -> Span {
-        Span { text, cursor: None }
+    fn from(content: StyledContent<String>) -> Span {
+        Span {
+            content,
+            cursor: None,
+        }
     }
 }
 
 impl From<String> for Span {
     fn from(text: String) -> Span {
         Span {
-            text: style::style(text),
+            content: style::style(text),
             cursor: None,
         }
     }
@@ -244,17 +247,26 @@ impl From<String> for Span {
 
 impl Span {
     pub fn on(mut self, color: Color) -> Self {
-        self.text = self.text.on(color);
+        self.content = self.content.on(color);
         self
     }
 
     pub fn with(mut self, color: Color) -> Self {
-        self.text = self.text.with(color);
+        self.content = self.content.with(color);
         self
     }
 
     pub fn attribute(mut self, attr: Attribute) -> Self {
-        self.text = self.text.attribute(attr);
+        self.content = self.content.attribute(attr);
+        self
+    }
+
+    pub fn using(mut self, style: Style) -> Self {
+        let mut content = self.content.clone().on(style.bg).with(style.fg);
+        for attr in style.attrs.iter() {
+            content = content.attribute(attr.clone());
+        }
+        self.content = content;
         self
     }
 
@@ -274,7 +286,7 @@ impl Command for Span {
             Some(Cursor { col, row }) => MoveTo(*col, *row).to_string(),
             None => Default::default(),
         };
-        s.push_str(&self.text.to_string());
+        s.push_str(&self.content.to_string());
         s
     }
 }

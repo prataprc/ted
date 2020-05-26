@@ -57,7 +57,7 @@ impl WindowLine {
         }
     }
 
-    pub fn on_refresh(&mut self, _app: &mut App) -> Result<()> {
+    pub fn on_refresh(&mut self, app: &mut App) -> Result<()> {
         use crate::code::view::NoWrap;
 
         self.cursor = {
@@ -66,7 +66,7 @@ impl WindowLine {
                 v.set_scroll_off(0).set_line_number(false);
                 v
             };
-            v.render(&self.buffer)?
+            v.render(&self.buffer, app.as_color_scheme())?
         };
         Ok(())
     }

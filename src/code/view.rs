@@ -11,12 +11,13 @@ use std::{
 use crate::{
     buffer::{self, Buffer},
     code::col_nu::ColNu,
+    color_scheme::ColorScheme,
     event::DP,
     window::{Coord, Cursor, Span},
     Error, Result,
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Wrap {
     coord: Coord,
     cursor: Cursor,
@@ -69,13 +70,13 @@ impl Wrap {
         self
     }
 
-    pub fn render(mut self, buf: &Buffer) -> Result<Cursor> {
+    pub fn render(mut self, buf: &Buffer, cs: &ColorScheme) -> Result<Cursor> {
         if self.line_number {
             self.exclude_nu(self.nu.to_width())
         }
         self = self.shift(buf);
         let cursor = self.cursor;
-        self.refresh(buf)?;
+        self.refresh(buf, cs)?;
         Ok(cursor)
     }
 
@@ -158,7 +159,7 @@ impl Wrap {
         self
     }
 
-    fn refresh(self, buf: &Buffer) -> Result<()> {
+    fn refresh(self, buf: &Buffer, scheme: &ColorScheme) -> Result<()> {
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         trace!("{} nbc_xy:{} line_idx:{}", self, nbc_xy, line_idx);
@@ -177,8 +178,8 @@ impl Wrap {
             for (r, rline) in line.rows.iter().enumerate() {
                 trace!("view wrap {}", r);
                 let mut nu_span = match r {
-                    0 if line_number => self.nu.to_span(Some(line.nu)),
-                    _ if line_number => self.nu.to_span(None),
+                    0 if line_number => self.nu.to_span(Some(line.nu), scheme),
+                    _ if line_number => self.nu.to_span(None, scheme),
                     _ => span!(st: "".to_string()),
                 };
                 nu_span.set_cursor(Cursor { col, row });
@@ -203,7 +204,7 @@ impl Wrap {
                 }
             }
         }
-        tail_line(col, row, max_row - 1, &self.nu, buf)?;
+        tail_line(col, row, max_row - 1, &self.nu, buf, scheme)?;
         //empty_lines(
         //    tail_line(row, max_row - 1, &self.nu, buf)?,
         //    max_row - 1,
@@ -259,7 +260,7 @@ impl Wrap {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct NoWrap {
     coord: Coord,   // full coordinate
     cursor: Cursor, // within full coordinate
@@ -307,13 +308,13 @@ impl NoWrap {
         self
     }
 
-    pub fn render(mut self, buf: &Buffer) -> Result<Cursor> {
+    pub fn render(mut self, buf: &Buffer, cs: &ColorScheme) -> Result<Cursor> {
         if self.line_number {
             self.exclude_nu(self.nu.to_width())
         }
         self = self.shift(buf);
         let cursor = self.cursor;
-        self.refresh(buf)?;
+        self.refresh(buf, cs)?;
         Ok(cursor)
     }
 
@@ -373,7 +374,7 @@ impl NoWrap {
         }
     }
 
-    fn refresh(self, buf: &Buffer) -> Result<()> {
+    fn refresh(self, buf: &Buffer, scheme: &ColorScheme) -> Result<()> {
         use std::iter::repeat;
 
         let nbc_xy = buf.to_xy_cursor();
@@ -402,7 +403,7 @@ impl NoWrap {
         let from = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         let lines = buf.lines_at(from, DP::Right)?.map(do_padding);
         for (i, line) in lines.take(hgt as usize).enumerate() {
-            let mut nu_span = self.nu.to_span(Some(from + i + 1));
+            let mut nu_span = self.nu.to_span(Some(from + i + 1), scheme);
             nu_span.set_cursor(Cursor { col, row });
             let line_span = span!(st: String::from_iter(line));
             err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
@@ -410,7 +411,7 @@ impl NoWrap {
         }
 
         empty_lines(
-            tail_line(col, row, row + hgt - 1, &self.nu, buf)?,
+            tail_line(col, row, row + hgt - 1, &self.nu, buf, scheme)?,
             row + hgt - 1,
             full_coord,
             self.line_number,
@@ -470,6 +471,7 @@ fn tail_line(
     max_row: u16,
     nu: &ColNu,
     buf: &Buffer,
+    scheme: &ColorScheme,
 ) -> Result<u16> {
     let n = buf.n_chars();
     let ok1 = n == 0;
@@ -479,7 +481,7 @@ fn tail_line(
     let mut stdout = io::stdout();
 
     let new_row = if ok1 || ok2 {
-        let mut span = nu.to_span(Some(n));
+        let mut span = nu.to_span(Some(n), scheme);
         span.set_cursor(Cursor { col, row });
         err_at!(Fatal, queue!(stdout, span))?;
         row + 1

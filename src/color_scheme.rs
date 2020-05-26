@@ -1,4 +1,4 @@
-use crossterm::style::{Attribute, Attributes, Color};
+use crossterm::style::{Attribute, Color};
 use toml;
 
 use std::{convert::TryFrom, fmt, iter::FromIterator, result};
@@ -56,6 +56,12 @@ impl TryFrom<toml::Value> for ColorScheme {
     }
 }
 
+impl ColorScheme {
+    pub fn to_style(&self, hl: Highlight) -> Style {
+        self.hs[hl as u32 as usize].clone()
+    }
+}
+
 const DEFAULT_STYLE: &'static str = r##"
 name            = "default"
 canvas          = { on = "#373737", with = "#4e4e4e"}
@@ -94,30 +100,23 @@ underline       = { on = "#373737", with = "#4e4e4e"}
 ignore          = { on = "#373737", with = "#4e4e4e"}
 error           = { on = "#373737", with = "#4e4e4e"}
 todo            = { on = "#373737", with = "#4e4e4e"}
-line-nr         = { on = "#373737", with = "#4e4e4e"}
+line-nr         = { on = "#444444", with = "#86875f"}
 "##;
 
-#[derive(Clone, Copy)]
-struct Style {
-    fg: Color,
-    bg: Color,
-    attrs: Attributes,
+#[derive(Clone)]
+pub struct Style {
+    pub fg: Color,
+    pub bg: Color,
+    pub attrs: Vec<Attribute>,
 }
 
 impl Default for Style {
     fn default() -> Style {
-        let fg = Color::Rgb {
-            r: 0x4e,
-            g: 0x4e,
-            b: 0x4e,
-        };
-        let bg = Color::Rgb {
-            r: 0x37,
-            g: 0x37,
-            b: 0x37,
-        };
-        let attrs: Attributes = Attribute::NormalIntensity.into();
-        Style { fg, bg, attrs }
+        Style {
+            fg: Color::White,
+            bg: Color::Black,
+            attrs: Default::default(),
+        }
     }
 }
 
@@ -141,7 +140,7 @@ impl TryFrom<toml::Value> for Style {
             match key.as_str() {
                 "on" | "bg" => style.bg = Style::to_color(value)?,
                 "with" | "fg" => style.fg = Style::to_color(value)?,
-                "attr" | "attribute" => style.attrs = Style::to_attrs(value),
+                "attr" | "attribute" => style.attrs = Style::to_attrs(value)?,
                 _ => (),
             }
         }
@@ -200,7 +199,7 @@ impl Style {
         Ok(color)
     }
 
-    fn to_attrs(attr: &str) -> Attributes {
+    fn to_attrs(attr: &str) -> Result<Vec<Attribute>> {
         let ss: Vec<&str> = if attr.contains(",") {
             attr.split(",").collect()
         } else if attr.contains("|") {
@@ -209,23 +208,23 @@ impl Style {
             vec![attr]
         };
 
-        let mut attrs: Attributes = Default::default();
+        let mut attrs: Vec<Attribute> = Default::default();
         for item in ss.into_iter() {
             match item {
-                "bold" => attrs = attrs | Attribute::Bold,
-                "italic" => attrs = attrs | Attribute::Italic,
-                "underlined" => attrs = attrs | Attribute::Underlined,
-                "underline" => attrs = attrs | Attribute::Underlined,
-                "reverse" => attrs = attrs | Attribute::Reverse,
-                _ => (),
+                "bold" => attrs.push(Attribute::Bold),
+                "italic" => attrs.push(Attribute::Italic),
+                "underlined" => attrs.push(Attribute::Underlined),
+                "underline" => attrs.push(Attribute::Underlined),
+                "reverse" => attrs.push(Attribute::Reverse),
+                _ => err_at!(Invalid, msg: format!("invalid attr {:?}", item))?,
             }
         }
-        attrs
+        Ok(attrs)
     }
 }
 
 #[derive(Clone, Copy)]
-enum Highlight {
+pub enum Highlight {
     Canvas = 0,
     // code syntax.
     Comment,

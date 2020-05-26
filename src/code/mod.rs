@@ -21,6 +21,7 @@ use crate::{
     buffer::Buffer,
     code::{config::Config, keymap::Keymap},
     code::{window_file::WindowFile, window_line::WindowLine},
+    color_scheme::ColorScheme,
     event::Event,
     location::Location,
     pubsub::PubSub,
@@ -32,6 +33,7 @@ use crate::{
 pub struct App {
     coord: Coord,
     config: Config,
+    color_scheme: ColorScheme,
     subscribers: PubSub,
     buffers: Vec<Buffer>,
 
@@ -79,6 +81,7 @@ impl App {
         let mut app = App {
             coord,
             config,
+            color_scheme: Default::default(),
             subscribers: Default::default(),
             buffers: Default::default(),
 
@@ -155,6 +158,10 @@ impl App {
             }
         }
         unreachable!()
+    }
+
+    fn as_color_scheme(&self) -> &ColorScheme {
+        &self.color_scheme
     }
 }
 

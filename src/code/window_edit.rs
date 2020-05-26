@@ -110,7 +110,7 @@ impl WindowEdit {
                 v
             };
             let buf = app.as_buffer(&self.buffer_id);
-            v.render(buf)?
+            v.render(buf, app.as_color_scheme())?
         } else {
             let v = {
                 let mut v = NoWrap::new(self.coord, self.cursor, self.obc_xy);
@@ -119,7 +119,7 @@ impl WindowEdit {
                 v
             };
             let buf = app.as_buffer(&self.buffer_id);
-            v.render(buf)?
+            v.render(buf, app.as_color_scheme())?
         };
 
         Ok(())
