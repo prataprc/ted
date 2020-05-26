@@ -7,6 +7,7 @@ use std::{fmt, result};
 pub mod util;
 #[macro_use]
 pub mod config;
+pub mod color_scheme;
 pub mod location;
 mod tabc;
 

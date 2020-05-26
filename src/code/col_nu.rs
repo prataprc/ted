@@ -34,11 +34,15 @@ impl ColNu {
         ColNu {
             width,
             fg: Color::Rgb {
-                r: 255,
-                g: 255,
-                b: 255,
+                r: 0x86,
+                g: 0x87,
+                b: 0x5f,
             },
-            bg: Color::Rgb { r: 0, g: 0, b: 0 },
+            bg: Color::Rgb {
+                r: 0x44,
+                g: 0x44,
+                b: 0x44,
+            },
             attr: Attribute::NormalIntensity,
         }
     }

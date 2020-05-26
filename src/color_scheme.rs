@@ -1,34 +1,45 @@
-use crossterm::style::{Attribute, Color},
+use crossterm::style::{Attribute, Attributes, Color};
 use toml;
+
+use std::{convert::TryFrom, fmt, iter::FromIterator, result};
 
 use crate::{Error, Result};
 
-struct ColorScheme {
+/// Colorscheme for ted applications.
+pub struct ColorScheme {
     name: String,
     hs: Vec<Style>,
 }
 
-impl FromStr for ColorScheme {
-    type Err = Error;
+impl Default for ColorScheme {
+    fn default() -> ColorScheme {
+        let toml_style: toml::Value = DEFAULT_STYLE.parse().unwrap();
+        TryFrom::try_from(toml_style).unwrap()
+    }
+}
 
-    fn from_str(s: &str) -> Result<Self> {
+impl TryFrom<toml::Value> for ColorScheme {
+    type Error = Error;
+
+    fn try_from(value: toml::Value) -> Result<Self> {
         use crate::Error::Invalid;
 
         let table = {
-            let value: toml::Value = err_at!(FailConvert, s.parse())?;
-            value.as_table().ok_or(Err(Invalid(format!("bad color sheme"))))?;
+            let err = Invalid(format!("bad color sheme"));
+            value.as_table().ok_or(err)?
         };
 
         let mut name = Default::default();
-        let mut hs = {
-            let hs = Vec::with_capacity(Highlight::__Fin as usize);
-            hs.resize(hs.capacity(), Highlight::__Fin);
+        let mut hs: Vec<Style> = {
+            let mut hs = Vec::with_capacity(Highlight::__Fin as usize);
+            hs.resize(hs.capacity(), Default::default());
             hs
         };
+
         for (key, value) in table.iter() {
-            match key {
+            match key.as_str() {
                 "name" => {
-                    let err = Err(Invalid(format!("bad value for {}", key)));
+                    let err = Invalid(format!("bad value for {}", key));
                     name = value.as_str().ok_or(err)?.to_string();
                 }
                 hl => {
@@ -36,30 +47,78 @@ impl FromStr for ColorScheme {
                         let h: Highlight = hl.into();
                         (h as u32) as usize
                     };
-                    hs[off] = value.try_into()?;
+                    hs[off] = TryFrom::try_from(value.clone())?;
                 }
             }
         }
 
-        match &hs[0] {
-            Highlight::Normal => Ok(()),
-            _ => err_at!(Invalid, st: format!("normal style is mandatory")),
-        }?;
-        for h in hs.iter_mut() {
-            *h = match h {
-                Highlight::__Fin => Highlight::Normal,
-                h => h.clone()
-            };
-        }
-        Ok(ColorScheme{ name, hs })
+        Ok(ColorScheme { name, hs })
     }
 }
 
-#[derive(Clone, Copy, Default)]
+const DEFAULT_STYLE: &'static str = r##"
+name            = "default"
+canvas          = { on = "#373737", with = "#4e4e4e"}
+comment         = { on = "#373737", with = "#4e4e4e"}
+constant        = { on = "#373737", with = "#4e4e4e"}
+string          = { on = "#373737", with = "#4e4e4e"}
+char            = { on = "#373737", with = "#4e4e4e"}
+number          = { on = "#373737", with = "#4e4e4e"}
+boolean         = { on = "#373737", with = "#4e4e4e"}
+float           = { on = "#373737", with = "#4e4e4e"}
+identifier      = { on = "#373737", with = "#4e4e4e"}
+function        = { on = "#373737", with = "#4e4e4e"}
+statement       = { on = "#373737", with = "#4e4e4e"}
+conditional     = { on = "#373737", with = "#4e4e4e"}
+repeat          = { on = "#373737", with = "#4e4e4e"}
+label           = { on = "#373737", with = "#4e4e4e"}
+operator        = { on = "#373737", with = "#4e4e4e"}
+keyword         = { on = "#373737", with = "#4e4e4e"}
+exception       = { on = "#373737", with = "#4e4e4e"}
+preproc         = { on = "#373737", with = "#4e4e4e"}
+include         = { on = "#373737", with = "#4e4e4e"}
+define          = { on = "#373737", with = "#4e4e4e"}
+macro           = { on = "#373737", with = "#4e4e4e"}
+precondit       = { on = "#373737", with = "#4e4e4e"}
+type            = { on = "#373737", with = "#4e4e4e"}
+storage-class   = { on = "#373737", with = "#4e4e4e"}
+structure       = { on = "#373737", with = "#4e4e4e"}
+typedef         = { on = "#373737", with = "#4e4e4e"}
+special         = { on = "#373737", with = "#4e4e4e"}
+special-char    = { on = "#373737", with = "#4e4e4e"}
+tag             = { on = "#373737", with = "#4e4e4e"}
+delimiter       = { on = "#373737", with = "#4e4e4e"}
+special-comment = { on = "#373737", with = "#4e4e4e"}
+debug           = { on = "#373737", with = "#4e4e4e"}
+underline       = { on = "#373737", with = "#4e4e4e"}
+ignore          = { on = "#373737", with = "#4e4e4e"}
+error           = { on = "#373737", with = "#4e4e4e"}
+todo            = { on = "#373737", with = "#4e4e4e"}
+line-nr         = { on = "#373737", with = "#4e4e4e"}
+"##;
+
+#[derive(Clone, Copy)]
 struct Style {
-    fg: Option<Color>,
-    bg: Option<Color>,
-    attr: Option<Attribute>,
+    fg: Color,
+    bg: Color,
+    attrs: Attributes,
+}
+
+impl Default for Style {
+    fn default() -> Style {
+        let fg = Color::Rgb {
+            r: 0x4e,
+            g: 0x4e,
+            b: 0x4e,
+        };
+        let bg = Color::Rgb {
+            r: 0x37,
+            g: 0x37,
+            b: 0x37,
+        };
+        let attrs: Attributes = Attribute::NormalIntensity.into();
+        Style { fg, bg, attrs }
+    }
 }
 
 impl TryFrom<toml::Value> for Style {
@@ -69,40 +128,40 @@ impl TryFrom<toml::Value> for Style {
         use crate::Error::Invalid;
 
         let table = {
-            let err = Err(Invalid(format!("bad style")));
+            let err = Invalid(format!("bad style"));
             value.as_table().ok_or(err)?
         };
-        let style: Style = Default::default();
+
+        let mut style: Style = Default::default();
         for (key, value) in table.iter() {
             let value = {
-                let err = Err(IOError(format!("bad style {:?}", key)));
-                value.as_str().ok_or(err)?
+                let msg = format!("bad style key:{:?} value:{:?}", key, value);
+                value.as_str().ok_or(Invalid(msg))?
             };
-            match key {
-                "on" | "bg" => style.bg = Some(Style::to_color(value)?),
-                "with" | "fg" => style.fg = Some(Style::to_color(value)?),
-                "attr" | "attribute" => {
-                    //
-                    style.attr = Some(Style::to_attribute(value)?)
-                }
+            match key.as_str() {
+                "on" | "bg" => style.bg = Style::to_color(value)?,
+                "with" | "fg" => style.fg = Style::to_color(value)?,
+                "attr" | "attribute" => style.attrs = Style::to_attrs(value),
                 _ => (),
             }
         }
+
+        Ok(style)
     }
 }
 
 impl Style {
-    fn to_color(color: &str) -> Color {
+    fn to_color(color: &str) -> Result<Color> {
         use std::iter::repeat;
 
         let n = color.len();
-        match color {
+        let color = match color {
             "reset" => Color::Reset,
             "black" => Color::Black,
             "darkgrey" | "dark-grey" | "dark_grey" => Color::DarkGrey,
             "red" => Color::Red,
             "darkred" | "dark-red" | "dark_red" => Color::DarkRed,
-            "green",      Green,
+            "green" => Color::Green,
             "darkgreen" | "dark-green" | "dark_green" => Color::DarkGreen,
             "yellow" => Color::Yellow,
             "darkyellow" | "dark-yellow" | "dark_yellow" => Color::DarkYellow,
@@ -111,57 +170,63 @@ impl Style {
             "magenta" => Color::Magenta,
             "darkmagenta" | "dark-magenta" | "dark_magenta" => Color::DarkMagenta,
             "cyan" => Color::Cyan,
-            "darkcyan" | "dark-cyan" | "dark-cyan" => Color::DarkCyan,
+            "darkcyan" | "dark-cyan" | "dark_cyan" => Color::DarkCyan,
             "white" => Color::White,
             "grey" => Color::Grey,
-            color if n == 0 => Color::Rgb { r: 0, g: 0, b: 0 },
+            _ if n == 0 => Color::Rgb { r: 0, g: 0, b: 0 },
             color => match color.chars().next() {
                 Some('#') if n == 1 => Color::Rgb { r: 0, g: 0, b: 0 },
                 Some('#') => {
+                    let from_str_radix = u8::from_str_radix;
+
                     let p = {
-                        let iter = repeat('0').take(6.saturating_sub(n));
+                        let iter = repeat('0').take(6_usize.saturating_sub(n));
                         String::from_iter(iter)
                     };
-                    let s = (p + color[1..]);
-                    let r = u16::from_radix(&s[0..2], 16);
-                    let g = u16::from_radix(&s[2..4], 16);
-                    let b = u16::from_radix(&s[4..6], 16);
+                    let s = p + &color[1..];
+                    let r = err_at!(FailConvert, from_str_radix(&s[0..2], 16))?;
+                    let g = err_at!(FailConvert, from_str_radix(&s[2..4], 16))?;
+                    let b = err_at!(FailConvert, from_str_radix(&s[4..6], 16))?;
                     Color::Rgb { r, g, b }
                 }
                 Some(_) => {
                     let n: u8 = err_at!(FailConvert, color.parse())?;
                     Color::AnsiValue(n)
                 }
-                None => Color::Rgb { r: 0, g: 0, b: 0 },
-            }
-        }
+                None => err_at!(FailConvert, msg: format!("invalid color"))?,
+            },
+        };
+
+        Ok(color)
     }
 
-    fn to_attribute(attr: &str) -> Attribute {
-        let attrs: Vec<&str> = if attr.contains(",") {
+    fn to_attrs(attr: &str) -> Attributes {
+        let ss: Vec<&str> = if attr.contains(",") {
             attr.split(",").collect()
-        } else attr.contains("|") {
+        } else if attr.contains("|") {
             attr.split("|").collect()
         } else {
             vec![attr]
         };
 
-        let mut attr = Attribute::Reset;
-        for attr in attrs.into_iter() {
-            attr |= match attr {
-                "bold" => Attribute::Bold,
-                "italic" => Attribute::Italic,
-                "underlined" | "underline" => Attribute::Underlined,
-                "reverse" => Attribute::Reverse,
+        let mut attrs: Attributes = Default::default();
+        for item in ss.into_iter() {
+            match item {
+                "bold" => attrs = attrs | Attribute::Bold,
+                "italic" => attrs = attrs | Attribute::Italic,
+                "underlined" => attrs = attrs | Attribute::Underlined,
+                "underline" => attrs = attrs | Attribute::Underlined,
+                "reverse" => attrs = attrs | Attribute::Reverse,
+                _ => (),
             }
         }
-        attr
+        attrs
     }
 }
 
 #[derive(Clone, Copy)]
 enum Highlight {
-    Normal = 0,
+    Canvas = 0,
     // code syntax.
     Comment,
     Constant,
@@ -260,13 +325,15 @@ enum Highlight {
 
 impl Default for Highlight {
     fn default() -> Highlight {
-        Highlight::Normal
+        Highlight::Canvas
     }
 }
 
-impl From<String> for Highlight {
-    fn from(s: String) -> Highlight {
+impl<'a> From<&'a str> for Highlight {
+    fn from(s: &'a str) -> Highlight {
         match s {
+            "canvas" => Highlight::Canvas,
+            //
             "comment" => Highlight::Comment,
             "constant" => Highlight::Constant,
             "string" => Highlight::Str,
@@ -304,7 +371,7 @@ impl From<String> for Highlight {
             "todo" => Highlight::Todo,
             // system highlight
             "line-nr" => Highlight::LineNr,
-            "normal" => Highlight::Normal,
+            _ => Highlight::Canvas,
         }
     }
 }
@@ -312,6 +379,8 @@ impl From<String> for Highlight {
 impl fmt::Display for Highlight {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
+            Highlight::Canvas => write!(f, "canvas"),
+            //
             Highlight::Comment => write!(f, "comment"),
             Highlight::Constant => write!(f, "constant"),
             Highlight::Str => write!(f, "string"),
@@ -349,7 +418,7 @@ impl fmt::Display for Highlight {
             Highlight::Todo => write!(f, "todo"),
             // system highlight
             Highlight::LineNr => write!(f, "line-nr"),
-            Highlight::Normal => write!(f, "normal"),
+            Highlight::__Fin => unreachable!(),
         }
     }
 }

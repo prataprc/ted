@@ -1,7 +1,7 @@
 use crossterm::{
     cursor as term_cursor, event as ct_event,
     event::{DisableMouseCapture, EnableMouseCapture, Event as TermEvent},
-    execute, queue,
+    execute, queue, style,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use dirs;
@@ -71,7 +71,7 @@ impl Terminal {
         let (cols, rows) = err_at!(Fatal, terminal::size())?;
         let tm = Terminal { stdout, cols, rows };
 
-        trace!("{}", tm);
+        trace!("{} color_count:{}", tm, style::available_color_count());
         Ok(tm)
     }
 }
