@@ -44,7 +44,7 @@ impl ColNu {
     pub fn to_span(&self, nu: Option<usize>, scheme: &ColorScheme) -> Span {
         let s = match nu {
             Some(nu) if self.line_number => {
-                let width = self.width as usize;
+                let width = (self.width as usize) - 1;
                 format!("{:>width$} ", nu, width = width)
             }
             Some(_) => "".to_string(),

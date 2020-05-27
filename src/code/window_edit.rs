@@ -23,8 +23,8 @@ impl fmt::Display for WindowEdit {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         write!(
             f,
-            "WindowEdit<{},{},{},{}>",
-            self.coord, self.cursor, self.obc_xy, self.buffer_id,
+            "WindowEdit<{:?} {}@{} {}>",
+            self.buffer_id, self.cursor, self.coord, self.obc_xy,
         )
     }
 }

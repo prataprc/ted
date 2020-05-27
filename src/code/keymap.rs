@@ -40,13 +40,13 @@ impl Keymap {
         let noop = Event::Noop;
 
         let prefix = mem::replace(&mut self.prefix, Default::default());
-        let (empty, ctrl) = {
+        let (m_empty, ctrl) = {
             let m = evnt.to_modifiers();
             (m.is_empty(), m == KeyModifiers::CONTROL)
         };
 
         let (prefix, evnt) = match prefix {
-            Event::Noop if empty => match evnt {
+            Event::Noop if m_empty => match evnt {
                 Backspace => (noop, Mt(Mto::Left(1, DP::Nobound))),
                 Enter => (noop, Mt(Mto::Down(1, DP::Caret))),
                 Char('h', _) => (noop, Mt(Mto::Left(1, DP::LineBound))),
@@ -93,33 +93,33 @@ impl Keymap {
                 Char('t', _) => (T(1, DP::Right), Event::Noop),
                 Char('T', _) => (T(1, DP::Left), Event::Noop),
                 Char(ch @ '0'..='9', _) => (N(parse_n!(1, ch)), Event::Noop),
-                _ => (noop, Event::Noop),
+                evnt => (noop, evnt),
             },
-            B(n, d) if empty => match evnt {
+            B(n, d) if m_empty => match evnt {
                 Char('(', _) => (noop, Mt(Mto::Bracket(n, '(', ')', d))),
                 Char(')', _) => (noop, Mt(Mto::Bracket(n, ')', '(', d))),
                 Char('{', _) => (noop, Mt(Mto::Bracket(n, '{', '}', d))),
                 Char('}', _) => (noop, Mt(Mto::Bracket(n, '}', '{', d))),
-                _ => (noop, Event::Noop),
+                evnt => (noop, evnt),
             },
-            G(n) if empty => match evnt {
+            G(n) if m_empty => match evnt {
                 Char('g', _) if ctrl => (noop, Td(Ted::StatusCursor)),
                 Char('g', _) => (noop, Mt(Mto::Row(n, DP::Caret))),
                 Char('e', _) => (noop, Mt(Mto::Word(n, DP::Left, DP::End))),
                 Char('E', _) => (noop, Mt(Mto::WWord(n, DP::Left, DP::End))),
                 Char('o', _) => (noop, Mt(Mto::Cursor(n))),
                 Char('I', _) => (noop, Md(Mod::Insert(n, DP::Caret))),
-                _ => (noop, Event::Noop),
+                evnt => (noop, evnt),
             },
-            F(n, d) if empty => match evnt {
+            F(n, d) if m_empty => match evnt {
                 Char(ch, _) => (noop, Mt(Mto::CharF(n, Some(ch), d))),
-                _ => (noop, Event::Noop),
+                evnt => (noop, evnt),
             },
-            T(n, d) if empty => match evnt {
+            T(n, d) if m_empty => match evnt {
                 Char(ch, _) => (noop, Mt(Mto::CharT(n, Some(ch), d))),
-                _ => (noop, Event::Noop),
+                evnt => (noop, evnt),
             },
-            N(n) if empty => match evnt {
+            N(n) if m_empty => match evnt {
                 Backspace => (noop, Mt(Mto::Left(n, DP::Nobound))),
                 Enter => (noop, Mt(Mto::Down(n, DP::Caret))),
                 Char('h', _) => (noop, Mt(Mto::Left(n, DP::LineBound))),
@@ -166,7 +166,7 @@ impl Keymap {
                 Char('t', _) => (T(n, DP::Right), Event::Noop),
                 Char('T', _) => (T(n, DP::Left), Event::Noop),
                 Char(ch @ '0'..='9', _) => (N(parse_n!(n, ch)), Event::Noop),
-                _ => (noop, Event::Noop),
+                evnt => (noop, evnt),
             },
             // control commands
             Event::Noop | N(_) => match evnt {

@@ -47,6 +47,7 @@ impl Wrap {
 
     // create a wrap view using previous cursor's nu_width.
     pub fn new(name: &str, coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> Wrap {
+        trace!("wrap new cursor:{}", cursor);
         Wrap {
             name: name.to_string(),
             coord,
@@ -70,13 +71,10 @@ impl Wrap {
     }
 
     pub fn render(mut self, buf: &Buffer, cs: &ColorScheme) -> Result<Cursor> {
-        if self.line_number {
-            self.exclude_nu(self.nu.to_width())
-        }
-        self = self.shift(buf);
-        let cursor = self.cursor;
-        self.refresh(buf, cs)?;
-        Ok(cursor)
+        let nu_wth = self.nu.to_width();
+        self.discount_nu(nu_wth);
+        self = self.shift_cursor(buf);
+        Ok(self.refresh(buf, cs)?.account_nu(nu_wth))
     }
 
     // number of cells to move forward.
@@ -115,7 +113,7 @@ impl Wrap {
         n
     }
 
-    fn shift(mut self, buf: &Buffer) -> Self {
+    fn shift_cursor(mut self, buf: &Buffer) -> Self {
         use crate::event::DP::{Left, Right};
         use std::cmp::Ordering::{Equal, Greater, Less};
 
@@ -158,7 +156,7 @@ impl Wrap {
         self
     }
 
-    fn refresh(self, buf: &Buffer, scheme: &ColorScheme) -> Result<()> {
+    fn refresh(self, buf: &Buffer, scheme: &ColorScheme) -> Result<Cursor> {
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         trace!("REFRESH {} nbc_xy:{} line_idx:{}", self, nbc_xy, line_idx);
@@ -207,15 +205,17 @@ impl Wrap {
             self.line_number,
         )?;
 
-        Ok(())
+        Ok(self.cursor)
     }
 
-    fn exclude_nu(&mut self, nu_wth: u16) {
-        self.coord = {
-            let (hgt, wth) = self.coord.to_size();
-            self.coord.resize_to(hgt, wth - nu_wth)
-        };
-        self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
+    fn discount_nu(&mut self, nu_wth: u16) {
+        if self.line_number {
+            self.coord = {
+                let (hgt, wth) = self.coord.to_size();
+                self.coord.resize_to(hgt, wth - nu_wth)
+            };
+            self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
+        }
     }
 
     fn into_resized(self, nbc_xy: buffer::Cursor, so: u16, dp: DP) -> Self {
@@ -308,16 +308,13 @@ impl NoWrap {
     }
 
     pub fn render(mut self, buf: &Buffer, cs: &ColorScheme) -> Result<Cursor> {
-        if self.line_number {
-            self.exclude_nu(self.nu.to_width())
-        }
-        self = self.shift(buf);
-        let cursor = self.cursor;
-        self.refresh(buf, cs)?;
-        Ok(cursor)
+        let nu_wth = self.nu.to_width();
+        self.discount_nu(nu_wth);
+        self = self.shift_cursor(buf);
+        Ok(self.refresh(buf, cs)?.account_nu(nu_wth))
     }
 
-    fn shift(self, buf: &Buffer) -> Self {
+    fn shift_cursor(self, buf: &Buffer) -> Self {
         let scroll_off = self.scroll_off; // accounting for scroll-offset.
 
         let (r_min, r_max) = if self.coord.hgt < (scroll_off * 2) {
@@ -374,7 +371,7 @@ impl NoWrap {
         }
     }
 
-    fn refresh(self, buf: &Buffer, scheme: &ColorScheme) -> Result<()> {
+    fn refresh(self, buf: &Buffer, scheme: &ColorScheme) -> Result<Cursor> {
         use std::iter::repeat;
 
         let nbc_xy = buf.to_xy_cursor();
@@ -414,7 +411,7 @@ impl NoWrap {
             self.line_number,
         )?;
 
-        Ok(())
+        Ok(self.cursor)
     }
 
     fn outer_coord(&self) -> Coord {
@@ -422,12 +419,14 @@ impl NoWrap {
         self.coord.resize_to(hgt, wth + self.nu.to_width())
     }
 
-    fn exclude_nu(&mut self, nu_wth: u16) {
-        self.coord = {
-            let (hgt, wth) = self.coord.to_size();
-            self.coord.resize_to(hgt, wth - nu_wth)
-        };
-        self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
+    fn discount_nu(&mut self, nu_wth: u16) {
+        if self.line_number {
+            self.coord = {
+                let (hgt, wth) = self.coord.to_size();
+                self.coord.resize_to(hgt, wth - nu_wth)
+            };
+            self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
+        }
     }
 }
 

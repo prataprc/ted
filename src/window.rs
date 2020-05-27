@@ -218,6 +218,16 @@ impl Cursor {
         self.row = ((self.row as i16) + row) as u16;
         self
     }
+
+    pub fn discount_nu(mut self, nu_wth: u16) -> Self {
+        self.col -= nu_wth;
+        self
+    }
+
+    pub fn account_nu(mut self, nu_wth: u16) -> Self {
+        self.col += nu_wth;
+        self
+    }
 }
 
 // Span object to render on screen.

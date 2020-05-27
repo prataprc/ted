@@ -165,6 +165,9 @@ impl State {
         let mut stats = Latency::new();
 
         self.app.on_refresh()?;
+        let Cursor { col, row } = self.app.to_cursor();
+        err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, row)))?;
+        err_at!(Fatal, queue!(stdout, term_cursor::Show))?;
         err_at!(Fatal, stdout.flush())?;
 
         let res = 'a: loop {
