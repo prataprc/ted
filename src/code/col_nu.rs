@@ -1,4 +1,4 @@
-use std::{cmp, fmt, iter::FromIterator, result};
+use std::{cmp, fmt, result};
 
 use crate::{
     color_scheme::{ColorScheme, Highlight},
@@ -10,6 +10,7 @@ use crate::{
 /// padded with adequate spaces on the left, and one space to the right.
 pub struct ColNu {
     width: u16,
+    line_number: bool,
 }
 
 impl fmt::Display for ColNu {
@@ -19,7 +20,7 @@ impl fmt::Display for ColNu {
 }
 
 impl ColNu {
-    pub fn new(mut line_idx: usize) -> Self {
+    pub fn new(mut line_idx: usize, line_number: bool) -> Self {
         let width = {
             use crate::buffer::MAX_LINES;
 
@@ -29,19 +30,25 @@ impl ColNu {
             cmp::max(line_idx.to_string().len(), 4) as u16
         };
 
-        ColNu { width }
+        ColNu { width, line_number }
     }
 
     pub fn to_width(&self) -> u16 {
-        self.width
+        if self.line_number {
+            self.width
+        } else {
+            0
+        }
     }
 
     pub fn to_span(&self, nu: Option<usize>, scheme: &ColorScheme) -> Span {
-        use std::iter::repeat;
-
         let s = match nu {
-            Some(nu) => format!("{:>width$} ", nu, width = (self.width as usize)),
-            None => String::from_iter(repeat(' ').take(self.width as usize)),
+            Some(nu) if self.line_number => {
+                let width = self.width as usize;
+                format!("{:>width$} ", nu, width = width)
+            }
+            Some(_) => "".to_string(),
+            None => "~".to_string(),
         };
         let span: Span = s.into();
         span.using(scheme.to_style(Highlight::LineNr))

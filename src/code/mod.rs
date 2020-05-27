@@ -95,14 +95,23 @@ impl App {
             keymap: Default::default(),
             inner,
         };
+
         app.open_cmd_files(opts.files.clone())?;
-        app.wfile = match app.buffers.last() {
-            Some(buf) => WindowFile::new(coord, buf, app.as_ref()),
-            None => {
-                let buf = Buffer::empty();
-                let wfile = WindowFile::new(coord, &buf, app.as_ref());
-                app.add_buffer(buf);
-                wfile
+
+        app.wfile = {
+            let wf_coord = {
+                let mut wf_coord = coord;
+                wf_coord.hgt -= 1;
+                wf_coord
+            };
+            match app.buffers.last() {
+                Some(buf) => WindowFile::new(wf_coord, buf, app.as_ref()),
+                None => {
+                    let buf = Buffer::empty();
+                    let wfile = WindowFile::new(wf_coord, &buf, app.as_ref());
+                    app.add_buffer(buf);
+                    wfile
+                }
             }
         };
 
@@ -215,19 +224,19 @@ impl App {
         wfile.on_refresh(self)?;
         self.wfile = wfile;
 
-        //let mut inner = mem::replace(&mut self.inner, Default::default());
-        //match &mut inner {
-        //    Inner::Regular { stsline } => {
-        //        stsline.on_refresh(self)?;
-        //    } //Inner::Command { cmdline, cmd } => {
-        //    //    // self.cmd.on_refresh()?;
-        //    //    let wline = mem::replace(cmdline, Default::default());
-        //    //    wline.on_refresh(self)?;
-        //    //    *cmdline = wline;
-        //    //}
-        //    Inner::None => (),
-        //}
-        //self.inner = inner;
+        let mut inner = mem::replace(&mut self.inner, Default::default());
+        match &mut inner {
+            Inner::Regular { stsline } => {
+                stsline.on_refresh(self)?;
+            } //Inner::Command { cmdline, cmd } => {
+            //    // self.cmd.on_refresh()?;
+            //    let wline = mem::replace(cmdline, Default::default());
+            //    wline.on_refresh(self)?;
+            //    *cmdline = wline;
+            //}
+            Inner::None => (),
+        }
+        self.inner = inner;
 
         //let mut wline = mem::replace(&mut self.tbcline, Default::default());
         //wline.on_refresh(self)?;

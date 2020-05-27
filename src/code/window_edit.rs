@@ -104,7 +104,8 @@ impl WindowEdit {
 
         self.cursor = if app.as_ref().wrap {
             let v = {
-                let mut v = Wrap::new(self.coord, self.cursor, self.obc_xy);
+                let (coord, cursor) = (self.coord, self.cursor);
+                let mut v = Wrap::new("edit", coord, cursor, self.obc_xy);
                 v.set_scroll_off(app.as_ref().scroll_off);
                 v.set_line_number(app.as_ref().line_number);
                 v
@@ -113,7 +114,8 @@ impl WindowEdit {
             v.render(buf, app.as_color_scheme())?
         } else {
             let v = {
-                let mut v = NoWrap::new(self.coord, self.cursor, self.obc_xy);
+                let (coord, cursor) = (self.coord, self.cursor);
+                let mut v = NoWrap::new("edit", coord, cursor, self.obc_xy);
                 v.set_scroll_off(app.as_ref().scroll_off);
                 v.set_line_number(app.as_ref().line_number);
                 v

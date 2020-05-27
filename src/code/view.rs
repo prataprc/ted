@@ -19,6 +19,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Wrap {
+    name: String,
     coord: Coord,
     cursor: Cursor,
     obc_xy: buffer::Cursor,
@@ -31,8 +32,8 @@ impl fmt::Display for Wrap {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         write!(
             f,
-            "Wrap<{},{}@{}/{}>",
-            self.nu, self.cursor, self.coord, self.obc_xy
+            "Wrap<{:?} {} {} {}@{}>",
+            self.name, self.nu, self.obc_xy, self.cursor, self.coord,
         )
     }
 }
@@ -40,21 +41,18 @@ impl fmt::Display for Wrap {
 impl Wrap {
     pub fn initial_cursor(line_number: bool) -> Cursor {
         let nbc_xy: buffer::Cursor = Default::default();
-        let col = if line_number {
-            ColNu::new(nbc_xy.row).to_width()
-        } else {
-            0
-        };
+        let col = ColNu::new(nbc_xy.row, line_number).to_width();
         Cursor { row: 0, col }
     }
 
     // create a wrap view using previous cursor's nu_width.
-    pub fn new(coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> Wrap {
+    pub fn new(name: &str, coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> Wrap {
         Wrap {
+            name: name.to_string(),
             coord,
             cursor,
             obc_xy,
-            nu: ColNu::new(obc_xy.row),
+            nu: ColNu::new(obc_xy.row, false),
             scroll_off: 0,
             line_number: false,
         }
@@ -67,6 +65,7 @@ impl Wrap {
 
     pub fn set_line_number(&mut self, line_number: bool) -> &mut Self {
         self.line_number = line_number;
+        self.nu = ColNu::new(self.obc_xy.row, line_number);
         self
     }
 
@@ -147,7 +146,7 @@ impl Wrap {
         // compute cursor.
         self = match (cursors.pop(), dp) {
             (Some(cursor), _) => {
-                trace!("{}->{}", self.cursor, cursor);
+                trace!("SHIFT {}->{}", self, cursor);
                 self.cursor = cursor;
                 self
             }
@@ -162,25 +161,22 @@ impl Wrap {
     fn refresh(self, buf: &Buffer, scheme: &ColorScheme) -> Result<()> {
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
-        trace!("{} nbc_xy:{} line_idx:{}", self, nbc_xy, line_idx);
+        trace!("REFRESH {} nbc_xy:{} line_idx:{}", self, nbc_xy, line_idx);
 
         let mut stdout = io::stdout();
 
         let full_coord = self.outer_coord();
         let (col, mut row) = full_coord.to_origin_cursor();
         let max_row = row + full_coord.hgt;
-        let line_number = self.line_number;
 
         let mut wv = WrapView::new(line_idx, self.coord, buf)?;
         wv.align(buf.to_cursor(), self.cursor);
 
         'a: for line in wv.lines.iter() {
             for (r, rline) in line.rows.iter().enumerate() {
-                trace!("view wrap {}", r);
                 let mut nu_span = match r {
-                    0 if line_number => self.nu.to_span(Some(line.nu), scheme),
-                    _ if line_number => self.nu.to_span(None, scheme),
-                    _ => span!(st: "".to_string()),
+                    0 => self.nu.to_span(Some(line.nu), scheme),
+                    _ => self.nu.to_span(None, scheme),
                 };
                 nu_span.set_cursor(Cursor { col, row });
 
@@ -204,13 +200,12 @@ impl Wrap {
                 }
             }
         }
-        tail_line(col, row, max_row - 1, &self.nu, buf, scheme)?;
-        //empty_lines(
-        //    tail_line(row, max_row - 1, &self.nu, buf)?,
-        //    max_row - 1,
-        //    full_coord,
-        //    self.line_number,
-        //)?;
+        empty_lines(
+            tail_line(col, row, max_row - 1, &self.nu, buf, scheme)?,
+            max_row - 1,
+            full_coord,
+            self.line_number,
+        )?;
 
         Ok(())
     }
@@ -224,8 +219,8 @@ impl Wrap {
     }
 
     fn into_resized(self, nbc_xy: buffer::Cursor, so: u16, dp: DP) -> Self {
-        let nu = ColNu::new(nbc_xy.row);
-        let old_wth = ColNu::new(self.obc_xy.row).to_width();
+        let nu = ColNu::new(nbc_xy.row, self.line_number);
+        let old_wth = ColNu::new(self.obc_xy.row, self.line_number).to_width();
         let new_wth = nu.to_width();
         let coord = {
             let (hgt, wth) = self.coord.to_size();
@@ -243,8 +238,9 @@ impl Wrap {
             _ => unreachable!(),
         };
 
-        trace!("{}->{} {}->{}", self.coord, coord, self.cursor, cursor);
+        trace!("RESIZE {}->{}@{}", self, cursor, coord);
         Wrap {
+            name: self.name,
             coord: coord,
             cursor: cursor,
             obc_xy: self.obc_xy,
@@ -262,6 +258,7 @@ impl Wrap {
 
 #[derive(Clone)]
 pub struct NoWrap {
+    name: String,
     coord: Coord,   // full coordinate
     cursor: Cursor, // within full coordinate
     obc_xy: buffer::Cursor,
@@ -272,27 +269,28 @@ pub struct NoWrap {
 
 impl fmt::Display for NoWrap {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "NoWrap<{},{},{}>", self.coord, self.cursor, self.nu)
+        write!(
+            f,
+            "NoWrap<{:?} {} {} {}@{}>",
+            self.name, self.nu, self.obc_xy, self.cursor, self.coord,
+        )
     }
 }
 
 impl NoWrap {
     pub fn initial_cursor(line_number: bool) -> Cursor {
         let nbc_xy: buffer::Cursor = Default::default();
-        let col = if line_number {
-            ColNu::new(nbc_xy.row).to_width()
-        } else {
-            0
-        };
+        let col = ColNu::new(nbc_xy.row, line_number).to_width();
         Cursor { row: 0, col }
     }
 
-    pub fn new(coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> NoWrap {
+    pub fn new(name: &str, coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> NoWrap {
         NoWrap {
+            name: name.to_string(),
             coord,
             cursor,
             obc_xy,
-            nu: ColNu::new(obc_xy.row),
+            nu: ColNu::new(obc_xy.row, false),
             scroll_off: 0,
             line_number: false,
         }
@@ -305,6 +303,7 @@ impl NoWrap {
 
     pub fn set_line_number(&mut self, line_number: bool) -> &mut Self {
         self.line_number = line_number;
+        self.nu = ColNu::new(self.obc_xy.row, line_number);
         self
     }
 
@@ -337,14 +336,14 @@ impl NoWrap {
         let (coord, nu) = {
             let row = (row as isize) + diff_row;
             if row < r_min || row > r_max {
-                let nu = ColNu::new(nbc_xy.row);
+                let nu = ColNu::new(nbc_xy.row, self.line_number);
                 let coord = self.coord.resize_to(
                     self.coord.hgt,
                     self.coord.wth + self.nu.to_width() - nu.to_width(),
                 );
                 (coord, nu)
             } else {
-                (self.coord, self.nu)
+                (self.coord, self.nu.clone())
             }
         };
 
@@ -363,8 +362,9 @@ impl NoWrap {
             row: new_row,
         };
 
-        trace!("{}->{} {}->{}", self.coord, coord, self.cursor, cursor);
+        trace!("SHIFT {}->{}@{}", self, cursor, coord);
         NoWrap {
+            name: self.name,
             coord,
             cursor,
             obc_xy: self.obc_xy,
@@ -378,13 +378,7 @@ impl NoWrap {
         use std::iter::repeat;
 
         let nbc_xy = buf.to_xy_cursor();
-        trace!(
-            "nowrap-refresh {} {} {}@{}",
-            self.nu,
-            nbc_xy,
-            self.cursor,
-            self.coord
-        );
+        trace!("REFRESH {} nbc_xy:{}", self, nbc_xy,);
 
         let mut stdout = io::stdout();
 
@@ -403,8 +397,11 @@ impl NoWrap {
         let from = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         let lines = buf.lines_at(from, DP::Right)?.map(do_padding);
         for (i, line) in lines.take(hgt as usize).enumerate() {
-            let mut nu_span = self.nu.to_span(Some(from + i + 1), scheme);
-            nu_span.set_cursor(Cursor { col, row });
+            let nu_span = {
+                let mut span = self.nu.to_span(Some(from + i + 1), scheme);
+                span.set_cursor(Cursor { col, row });
+                span
+            };
             let line_span = span!(st: String::from_iter(line));
             err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
             row += 1;
@@ -442,7 +439,7 @@ fn empty_lines(mut row: u16, max_row: u16, coord: Coord, nu: bool) -> Result<()>
     let (_, wth) = coord.to_size();
 
     if row <= max_row {
-        trace!("empty lines {}..{}", row, max_row);
+        trace!("EMPTY LINES {}..={}", row, max_row);
         for _ in row..=max_row {
             let mut st: String = if_else!(
                 //
@@ -454,7 +451,6 @@ fn empty_lines(mut row: u16, max_row: u16, coord: Coord, nu: bool) -> Result<()>
                 let iter = repeat(' ').take((wth - 2) as usize);
                 String::from_iter(iter)
             });
-            // trace!("empline col:{} row:{} line:{:?}", col, row, st.len());
             err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
             row += 1;
         }
@@ -490,15 +486,15 @@ fn tail_line(
     };
 
     trace!(
-        "trail {}/{} -> {}/{} {},{}",
+        "trail row:{}->{}-of-{} nu:{} trail:{},{}",
         row,
+        new_row,
         max_row,
         n,
-        new_row,
         ok1,
         ok2
     );
-    Ok(row)
+    Ok(new_row)
 }
 
 enum VShift {
