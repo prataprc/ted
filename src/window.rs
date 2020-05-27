@@ -3,6 +3,7 @@ use crossterm::{
     style::{self, Attribute, Color, StyledContent},
     Command,
 };
+use unicode_width::UnicodeWidthChar;
 
 use std::{fmt, iter::FromIterator, ops::Add, result};
 
@@ -285,8 +286,18 @@ impl Span {
         self
     }
 
+    #[inline]
     pub fn to_content(&self) -> String {
         self.content.content().to_string()
+    }
+
+    #[inline]
+    pub fn to_width(&self) -> usize {
+        self.content
+            .content()
+            .chars()
+            .filter_map(|ch| ch.width())
+            .sum()
     }
 }
 
@@ -335,18 +346,26 @@ impl Default for Spanline {
 }
 
 impl Spanline {
+    #[inline]
     pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
         self.cursor = Some(cursor);
         self
     }
 
+    #[inline]
     pub fn add_span(&mut self, span: Span) -> &mut Self {
         self.spans.push(span);
         self
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.spans.len() == 0
+    }
+
+    #[inline]
+    pub fn to_width(&self) -> usize {
+        self.spans.iter().map(|span| span.to_width()).sum()
     }
 }
 

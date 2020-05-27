@@ -12,6 +12,7 @@ mod view;
 mod window_edit;
 mod window_file;
 mod window_line;
+mod window_prompt;
 
 use crossterm::{cursor as term_cursor, queue};
 use log::trace;
@@ -51,6 +52,10 @@ pub struct App {
 
 enum Inner {
     Regular { stsline: WindowLine },
+    //Prompt {
+    //    stsline: WindowLine,
+    //    prompt: WindowPrompt,
+    //},
     //Command { cmdline: WindowLine, cmd: Command },
     None,
 }
@@ -255,22 +260,25 @@ impl App {
 
 impl App {
     fn draw_screen(coord: Coord, scheme: &ColorScheme) -> Result<()> {
+        use crossterm::style::{SetBackgroundColor, SetForegroundColor};
         use std::iter::{repeat, FromIterator};
 
         let mut stdout = io::stdout();
+        {
+            let style = scheme.to_style(Highlight::Canvas);
+            err_at!(Fatal, queue!(stdout, SetForegroundColor(style.fg)))?;
+            err_at!(Fatal, queue!(stdout, SetBackgroundColor(style.fg)))?;
+        }
 
         let (col, row) = coord.to_origin_cursor();
         let (hgt, wth) = coord.to_size();
         for r in row..(row + hgt) {
-            for c in col..(col + wth) {
-                let span: Span = {
-                    let s = String::from_iter(repeat(' ').take(wth as usize));
-                    let span: Span = s.into();
-                    span.using(scheme.to_style(Highlight::Canvas))
-                };
-                err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(c, r)))?;
-                err_at!(Fatal, queue!(stdout, span))?;
-            }
+            let span: Span = {
+                let s = String::from_iter(repeat(' ').take(wth as usize));
+                s.into()
+            };
+            err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, r)))?;
+            err_at!(Fatal, queue!(stdout, span))?;
         }
 
         Ok(())

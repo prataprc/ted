@@ -47,7 +47,6 @@ impl Wrap {
 
     // create a wrap view using previous cursor's nu_width.
     pub fn new(name: &str, coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> Wrap {
-        trace!("wrap new cursor:{}", cursor);
         Wrap {
             name: name.to_string(),
             coord,
@@ -187,15 +186,18 @@ impl Wrap {
                         let start = buf.line_to_char(l) + *fbc;
                         let iter = buf.chars_at(start, DP::Right)?;
                         let chs: Vec<char> = iter.take(*ebc - *fbc + 1).collect();
-                        trace!("loop {} {} ({} {})->({}, {})", l, r, fbc, ebc, col, row);
+                        //trace!(
+                        //   "loop {} {} ({} {})->({}, {})",
+                        //   l, r, fbc, ebc, col, row
+                        //);
                         span!(st: String::from_iter(chs))
                     }
                     _ => {
-                        trace!("loop {} {} -> ({}, {})", l, r, col, row);
+                        // trace!("loop {} {} -> ({}, {})", l, r, col, row);
                         span!(st: "".to_string())
                     }
                 };
-                trace!("    text {:?}", line_span.to_content());
+                // trace!("    text {:?}", line_span.to_content());
                 err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
 
                 row += 1;
@@ -490,7 +492,7 @@ fn tail_line(
     };
 
     trace!(
-        "trail row:{}->{}-of-{} nu:{} trail:{},{}",
+        "TRAIL {}->{}-of-{} nu:{} trail:{},{}",
         row,
         new_row,
         max_row,
