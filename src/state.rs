@@ -184,10 +184,8 @@ impl State {
             err_at!(Fatal, queue!(stdout, term_cursor::Hide))?;
             for evnt in evnt {
                 // preprocessing
-                let ctrl = evnt.is_control();
-                trace!("{} {}", evnt, ctrl);
                 let evnt = match evnt {
-                    Event::Char('q', _) if ctrl => break 'a Ok(()),
+                    Event::Char('q', _) if evnt.is_control() => break 'a Ok(()),
                     _ => evnt,
                 };
                 // dispatch

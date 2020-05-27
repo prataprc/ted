@@ -13,20 +13,26 @@ mod window_edit;
 mod window_file;
 mod window_line;
 
+use crossterm::{cursor as term_cursor, queue};
 use log::trace;
 
-use std::{ffi, mem, sync::mpsc};
+use std::{
+    ffi,
+    io::{self, Write},
+    mem,
+    sync::mpsc,
+};
 
 use crate::{
     buffer::Buffer,
     code::{config::Config, keymap::Keymap},
     code::{window_file::WindowFile, window_line::WindowLine},
-    color_scheme::ColorScheme,
+    color_scheme::{ColorScheme, Highlight},
     event::Event,
     location::Location,
     pubsub::PubSub,
     state::Opt,
-    window::{wait_ch, Coord, Cursor, Notify},
+    window::{wait_ch, Coord, Cursor, Notify, Span},
     Error, Result,
 };
 
@@ -97,6 +103,7 @@ impl App {
         };
 
         app.open_cmd_files(opts.files.clone())?;
+        App::draw_screen(app.coord, &app.color_scheme)?;
 
         app.wfile = {
             let wf_coord = {
@@ -247,6 +254,28 @@ impl App {
 }
 
 impl App {
+    fn draw_screen(coord: Coord, scheme: &ColorScheme) -> Result<()> {
+        use std::iter::{repeat, FromIterator};
+
+        let mut stdout = io::stdout();
+
+        let (col, row) = coord.to_origin_cursor();
+        let (hgt, wth) = coord.to_size();
+        for r in row..(row + hgt) {
+            for c in col..(col + wth) {
+                let span: Span = {
+                    let s = String::from_iter(repeat(' ').take(wth as usize));
+                    let span: Span = s.into();
+                    span.using(scheme.to_style(Highlight::Canvas))
+                };
+                err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(c, r)))?;
+                err_at!(Fatal, queue!(stdout, span))?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn open_cmd_files(&mut self, files: Vec<String>) -> Result<()> {
         let locs: Vec<Location> = files
             .into_iter()
@@ -259,12 +288,16 @@ impl App {
         for loc in locs.into_iter() {
             match loc.to_rw_file() {
                 Some(f) => match Buffer::from_reader(f, loc.clone()) {
-                    Ok(buf) => self.add_buffer(buf),
+                    Ok(buf) => {
+                        trace!("opening {} in write-mode", loc);
+                        self.add_buffer(buf)
+                    }
                     Err(err) => e_files.push((loc, err)),
                 },
                 None => match loc.to_r_file() {
                     Some(f) => match Buffer::from_reader(f, loc.clone()) {
                         Ok(mut buf) => {
+                            trace!("opening {} in read-mode", loc);
                             buf.set_read_only(true);
                             self.add_buffer(buf);
                         }

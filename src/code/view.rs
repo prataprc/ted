@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     buffer::{self, Buffer},
-    code::col_nu::ColNu,
+    code::col_nu::{ColKind, ColNu},
     color_scheme::ColorScheme,
     event::DP,
     window::{Coord, Cursor, Span},
@@ -170,11 +170,11 @@ impl Wrap {
         let mut wv = WrapView::new(line_idx, self.coord, buf)?;
         wv.align(buf.to_cursor(), self.cursor);
 
-        'a: for line in wv.lines.iter() {
+        'a: for (l, line) in wv.lines.iter().enumerate() {
             for (r, rline) in line.rows.iter().enumerate() {
                 let mut nu_span = match r {
-                    0 => self.nu.to_span(Some(line.nu), scheme),
-                    _ => self.nu.to_span(None, scheme),
+                    0 => self.nu.to_span(ColKind::Nu(line.nu), scheme),
+                    _ => self.nu.to_span(ColKind::Wrap, scheme),
                 };
                 nu_span.set_cursor(Cursor { col, row });
 
@@ -184,12 +184,18 @@ impl Wrap {
                 };
                 let line_span = match (bcs.first(), bcs.last()) {
                     (Some(fbc), Some(ebc)) => {
-                        let iter = buf.chars_at(*fbc, DP::Right)?;
+                        let start = buf.line_to_char(l) + *fbc;
+                        let iter = buf.chars_at(start, DP::Right)?;
                         let chs: Vec<char> = iter.take(*ebc - *fbc + 1).collect();
+                        trace!("loop {} {} ({} {})->({}, {})", l, r, fbc, ebc, col, row);
                         span!(st: String::from_iter(chs))
                     }
-                    _ => span!(st: "".to_string()),
+                    _ => {
+                        trace!("loop {} {} -> ({}, {})", l, r, col, row);
+                        span!(st: "".to_string())
+                    }
                 };
+                trace!("    text {:?}", line_span.to_content());
                 err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
 
                 row += 1;
@@ -202,7 +208,8 @@ impl Wrap {
             tail_line(col, row, max_row - 1, &self.nu, buf, scheme)?,
             max_row - 1,
             full_coord,
-            self.line_number,
+            &self.nu,
+            scheme,
         )?;
 
         Ok(self.cursor)
@@ -395,7 +402,7 @@ impl NoWrap {
         let lines = buf.lines_at(from, DP::Right)?.map(do_padding);
         for (i, line) in lines.take(hgt as usize).enumerate() {
             let nu_span = {
-                let mut span = self.nu.to_span(Some(from + i + 1), scheme);
+                let mut span = self.nu.to_span(ColKind::Nu(from + i + 1), scheme);
                 span.set_cursor(Cursor { col, row });
                 span
             };
@@ -408,7 +415,8 @@ impl NoWrap {
             tail_line(col, row, row + hgt - 1, &self.nu, buf, scheme)?,
             row + hgt - 1,
             full_coord,
-            self.line_number,
+            &self.nu,
+            scheme,
         )?;
 
         Ok(self.cursor)
@@ -430,9 +438,14 @@ impl NoWrap {
     }
 }
 
-fn empty_lines(mut row: u16, max_row: u16, coord: Coord, nu: bool) -> Result<()> {
-    use std::iter::repeat;
-
+fn empty_lines(
+    //
+    mut row: u16,
+    max_row: u16,
+    coord: Coord,
+    nu: &ColNu,
+    scheme: &ColorScheme,
+) -> Result<()> {
     let mut stdout = io::stdout();
     let (col, _) = coord.to_origin_cursor();
     let (_, wth) = coord.to_size();
@@ -440,17 +453,9 @@ fn empty_lines(mut row: u16, max_row: u16, coord: Coord, nu: bool) -> Result<()>
     if row <= max_row {
         trace!("EMPTY LINES {}..={}", row, max_row);
         for _ in row..=max_row {
-            let mut st: String = if_else!(
-                //
-                nu,
-                format!("{} ", '~'),
-                Default::default()
-            );
-            st.push_str(&{
-                let iter = repeat(' ').take((wth - 2) as usize);
-                String::from_iter(iter)
-            });
-            err_at!(Fatal, queue!(stdout, span!((col, row), st: st)))?;
+            let mut nu_span = nu.to_span(ColKind::Empty, scheme);
+            nu_span.set_cursor(Cursor { col, row });
+            err_at!(Fatal, queue!(stdout, nu_span))?;
             row += 1;
         }
     }
@@ -476,7 +481,7 @@ fn tail_line(
     let mut stdout = io::stdout();
 
     let new_row = if ok1 || ok2 {
-        let mut span = nu.to_span(Some(n), scheme);
+        let mut span = nu.to_span(ColKind::Nu(n), scheme);
         span.set_cursor(Cursor { col, row });
         err_at!(Fatal, queue!(stdout, span))?;
         row + 1

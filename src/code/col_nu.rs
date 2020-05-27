@@ -5,6 +5,12 @@ use crate::{
     window::Span,
 };
 
+pub enum ColKind {
+    Nu(usize),
+    Wrap,
+    Empty,
+}
+
 #[derive(Clone)]
 /// Line number rendering. Starts from 1 till last line the buffer, width is
 /// padded with adequate spaces on the left, and one space to the right.
@@ -41,16 +47,28 @@ impl ColNu {
         }
     }
 
-    pub fn to_span(&self, nu: Option<usize>, scheme: &ColorScheme) -> Span {
-        let s = match nu {
-            Some(nu) if self.line_number => {
+    pub fn to_span(&self, nu: ColKind, scheme: &ColorScheme) -> Span {
+        use ColKind::{Empty, Nu, Wrap};
+
+        match nu {
+            Nu(nu) if self.line_number => {
                 let width = (self.width as usize) - 1;
-                format!("{:>width$} ", nu, width = width)
+                let span: Span = format!("{:>w$} ", nu, w = width).into();
+                span.using(scheme.to_style(Highlight::LineNr))
             }
-            Some(_) => "".to_string(),
-            None => "~".to_string(),
-        };
-        let span: Span = s.into();
-        span.using(scheme.to_style(Highlight::LineNr))
+            Wrap if self.line_number => {
+                let width = (self.width as usize) - 1;
+                let span: Span = format!("{:>w$} ", "", w = width).into();
+                span.using(scheme.to_style(Highlight::LineNr))
+            }
+            Empty => {
+                let span: Span = "~".to_string().into();
+                span.using(scheme.to_style(Highlight::Canvas))
+            }
+            _ => {
+                let span: Span = "".to_string().into();
+                span.using(scheme.to_style(Highlight::Canvas))
+            }
+        }
     }
 }

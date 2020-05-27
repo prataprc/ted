@@ -64,7 +64,7 @@ impl ColorScheme {
 
 const DEFAULT_STYLE: &'static str = r##"
 name            = "default"
-canvas          = { on = "#373737", with = "#4e4e4e"}
+canvas          = { on = "#3a3a3a", with = "#4e4e4e"}
 comment         = { on = "#373737", with = "#4e4e4e"}
 constant        = { on = "#373737", with = "#4e4e4e"}
 string          = { on = "#373737", with = "#4e4e4e"}

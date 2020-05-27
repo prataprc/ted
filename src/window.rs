@@ -256,6 +256,11 @@ impl From<String> for Span {
 }
 
 impl Span {
+    pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
     pub fn on(mut self, color: Color) -> Self {
         self.content = self.content.on(color);
         self
@@ -280,9 +285,8 @@ impl Span {
         self
     }
 
-    pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
-        self.cursor = Some(cursor);
-        self
+    pub fn to_content(&self) -> String {
+        self.content.content().to_string()
     }
 }
 
