@@ -1,4 +1,6 @@
 use crossterm::queue;
+#[allow(unused_imports)]
+use log::trace;
 use regex::Regex;
 use unicode_width::UnicodeWidthChar;
 
@@ -63,7 +65,7 @@ impl WindowPrompt {
         let col = {
             let (col, _) = self.coord.to_origin_cursor();
             let good_col = (col as usize) + n + m;
-            cmp::max(good_col, wth.saturating_sub(1) as usize) as u16
+            cmp::min(good_col, wth.saturating_sub(1) as usize) as u16
         };
         Cursor::new(col, hgt - 1)
     }
@@ -91,13 +93,13 @@ impl WindowPrompt {
     pub fn on_refresh(&mut self, _: &mut App) -> Result<()> {
         let mut stdout = io::stdout();
 
-        let row_iter = {
+        let (col, row_iter) = {
             let (col, _) = self.coord.to_origin_cursor();
-            let (hgt, wth) = self.coord.to_size();
-            let row_start = hgt - 1 - (self.span_lines.len() as u16);
-            (col..wth).zip(row_start..hgt)
+            let (hgt, _) = self.coord.to_size();
+            let start = hgt.saturating_sub(self.span_lines.len() as u16);
+            (col, start..hgt)
         };
-        for ((col, row), line) in row_iter.zip(self.span_lines.iter_mut()) {
+        for (row, line) in row_iter.zip(self.span_lines.iter_mut()) {
             line.set_cursor(Cursor { col, row });
             err_at!(Fatal, queue!(stdout, line))?;
         }

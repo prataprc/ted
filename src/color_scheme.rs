@@ -64,7 +64,7 @@ impl ColorScheme {
 
 const DEFAULT_STYLE: &'static str = r##"
 name            = "default"
-canvas          = { on = "#3a3a3a", with = "#4e4e4e"}
+canvas          = { on = "#373737", with = "#cfcfdc"}
 comment         = { on = "#373737", with = "#4e4e4e"}
 constant        = { on = "#373737", with = "#4e4e4e"}
 string          = { on = "#373737", with = "#4e4e4e"}
@@ -98,10 +98,14 @@ special-comment = { on = "#373737", with = "#4e4e4e"}
 debug           = { on = "#373737", with = "#4e4e4e"}
 underline       = { on = "#373737", with = "#4e4e4e"}
 ignore          = { on = "#373737", with = "#4e4e4e"}
-error           = { on = "#373737", with = "#da2323"}
+error           = { on = "#373737", with = "#e64f4f"}
 todo            = { on = "#373737", with = "#4e4e4e"}
 line-nr         = { on = "#444444", with = "#86875f"}
-prompt          = { on = "#444444", with = "#cf7d00"}
+prompt          = { on = "#373737", with = "#cf7d00"}
+status-line     = { on = "#1c2c1c", with = "#cf7d00"}
+tab-line        = { on = "#272727", with = "#cf7d00"}
+tab-option      = { on = "#272727", with = "#cf7d00"}
+tab-select      = { on = "#272727", with = "#cf7d00"}
 "##;
 
 #[derive(Clone)]
@@ -267,6 +271,10 @@ pub enum Highlight {
     // system highlight
     LineNr,
     Prompt,
+    StatusLine,
+    TabLine,
+    TabOption,
+    TabSelect,
     //ColorColumn
     //Conceal
     //Cursor
@@ -306,13 +314,9 @@ pub enum Highlight {
     //SpellCap
     //SpellLocal
     //SpellRare
-    //StatusLine
     //StatusLineNC
     //StatusLineTerm
     //StatusLineTermNC
-    //TabLine
-    //TabLineFill
-    //TabLineSel
     //Terminal
     //Title
     //Tooltip
@@ -373,6 +377,10 @@ impl<'a> From<&'a str> for Highlight {
             // system highlight
             "line-nr" => Highlight::LineNr,
             "prompt" => Highlight::Prompt,
+            "status-line" => Highlight::StatusLine,
+            "tab-line" => Highlight::TabLine,
+            "tab-option" => Highlight::TabOption,
+            "tab-select" => Highlight::TabSelect,
             _ => Highlight::Canvas,
         }
     }
@@ -421,6 +429,10 @@ impl fmt::Display for Highlight {
             // system highlight
             Highlight::LineNr => write!(f, "line-nr"),
             Highlight::Prompt => write!(f, "prompt"),
+            Highlight::StatusLine => write!(f, "status-line"),
+            Highlight::TabLine => write!(f, "tab-line"),
+            Highlight::TabOption => write!(f, "tab-option"),
+            Highlight::TabSelect => write!(f, "tab-select"),
             Highlight::__Fin => unreachable!(),
         }
     }

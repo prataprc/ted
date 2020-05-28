@@ -65,10 +65,7 @@ impl ColNu {
                 let span: Span = "~".to_string().into();
                 span.using(scheme.to_style(Highlight::Canvas))
             }
-            _ => {
-                let span: Span = "".to_string().into();
-                span.using(scheme.to_style(Highlight::Canvas))
-            }
+            _ => "".to_string().into(),
         }
     }
 }

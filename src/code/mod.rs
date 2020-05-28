@@ -96,7 +96,7 @@ impl App {
                 let (col, _) = coord.to_origin();
                 let (hgt, wth) = coord.to_size();
                 let hgt = hgt.saturating_sub(1);
-                WindowLine::new("tbcline", Coord::new(col, hgt, 1, wth))
+                WindowLine::new_tab(Coord::new(col, hgt, 1, wth))
             },
             keymap: Default::default(),
             inner: Default::default(),
@@ -105,7 +105,7 @@ impl App {
         let stsline = {
             let (col, _) = coord.to_origin();
             let (hgt, wth) = coord.to_size();
-            WindowLine::new("stsline", Coord::new(col, hgt, 1, wth))
+            WindowLine::new_status(Coord::new(col, hgt, 1, wth))
         };
 
         let wps = app.open_cmd_files(opts.files.clone())?;
@@ -197,6 +197,90 @@ impl App {
 }
 
 impl App {
+    fn draw_screen(coord: Coord, scheme: &ColorScheme) -> Result<()> {
+        use crossterm::style::{SetBackgroundColor, SetForegroundColor};
+        use std::iter::{repeat, FromIterator};
+
+        let mut stdout = io::stdout();
+        {
+            let style = scheme.to_style(Highlight::Canvas);
+            err_at!(Fatal, queue!(stdout, SetForegroundColor(style.fg)))?;
+            err_at!(Fatal, queue!(stdout, SetBackgroundColor(style.bg)))?;
+        }
+
+        let (col, row) = coord.to_origin_cursor();
+        let (hgt, wth) = coord.to_size();
+        for r in row..(row + hgt) {
+            let span: Span = {
+                let s = String::from_iter(repeat(' ').take(wth as usize));
+                s.into()
+            };
+            err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, r)))?;
+            err_at!(Fatal, queue!(stdout, span))?;
+        }
+
+        Ok(())
+    }
+
+    fn open_cmd_files(&mut self, files: Vec<String>) -> Result<Vec<WindowPrompt>> {
+        let locs: Vec<Location> = files
+            .into_iter()
+            .map(|f| {
+                let f: ffi::OsString = f.into();
+                Location::new_disk(&f)
+            })
+            .collect();
+        let mut efiles = vec![];
+        for loc in locs.into_iter() {
+            match loc.to_rw_file() {
+                Some(f) => match Buffer::from_reader(f, loc.clone()) {
+                    Ok(buf) => {
+                        trace!("opening {} in write-mode", loc);
+                        self.add_buffer(buf)
+                    }
+                    Err(err) => efiles.push((loc, err)),
+                },
+                None => match loc.to_r_file() {
+                    Some(f) => match Buffer::from_reader(f, loc.clone()) {
+                        Ok(mut buf) => {
+                            trace!("opening {} in read-mode", loc);
+                            buf.set_read_only(true);
+                            self.add_buffer(buf);
+                        }
+                        Err(err) => efiles.push((loc, err)),
+                    },
+                    None => {
+                        let err = "file missing/no-permission".to_string();
+                        efiles.push((loc, Error::IOError(err)))
+                    }
+                },
+            }
+        }
+
+        let mut wps = vec![];
+        let prompt_coord = {
+            let (col, row) = self.coord.to_origin();
+            let (hgt, wth) = self.coord.to_size();
+            Coord::new(col, row, hgt - 1, wth)
+        };
+        for (loc, err) in efiles.into_iter() {
+            let span1 = {
+                let st = format!("{:?} : {}", loc.to_long_string()?, err);
+                span!(st: st).using(self.color_scheme.to_style(Highlight::Error))
+            };
+            let span2 = {
+                let span = span!(st: format!("-press any key to continue-"));
+                span.using(self.color_scheme.to_style(Highlight::Prompt))
+            };
+            let span_lines: Vec<Spanline> = vec![span1.into(), span2.into()];
+            wps.push(WindowPrompt::new(prompt_coord, span_lines));
+        }
+
+        Ok(wps)
+    }
+}
+
+impl App {
     #[inline]
     pub fn post(&mut self, _msg: Notify) -> Result<()> {
         //match msg {
@@ -267,7 +351,10 @@ impl App {
         let mut inner = mem::replace(&mut self.inner, Default::default());
         match &mut inner {
             Inner::Regular { stsline } => stsline.on_refresh(self)?,
-            Inner::AnyKey { prompts, .. } => prompts[0].on_refresh(self)?,
+            Inner::AnyKey { prompts, stsline } => {
+                prompts[0].on_refresh(self)?;
+                stsline.as_mut().unwrap().on_refresh(self)?;
+            }
             //Inner::Command { cmdline, cmd } => {
             //    // self.cmd.on_refresh()?;
             //    let wline = mem::replace(cmdline, Default::default());
@@ -283,84 +370,5 @@ impl App {
         //self.tbcline = wline;
 
         Ok(())
-    }
-}
-
-impl App {
-    fn draw_screen(coord: Coord, scheme: &ColorScheme) -> Result<()> {
-        use crossterm::style::{SetBackgroundColor, SetForegroundColor};
-        use std::iter::{repeat, FromIterator};
-
-        let mut stdout = io::stdout();
-        {
-            let style = scheme.to_style(Highlight::Canvas);
-            err_at!(Fatal, queue!(stdout, SetForegroundColor(style.fg)))?;
-            err_at!(Fatal, queue!(stdout, SetBackgroundColor(style.fg)))?;
-        }
-
-        let (col, row) = coord.to_origin_cursor();
-        let (hgt, wth) = coord.to_size();
-        for r in row..(row + hgt) {
-            let span: Span = {
-                let s = String::from_iter(repeat(' ').take(wth as usize));
-                s.into()
-            };
-            err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, r)))?;
-            err_at!(Fatal, queue!(stdout, span))?;
-        }
-
-        Ok(())
-    }
-
-    fn open_cmd_files(&mut self, files: Vec<String>) -> Result<Vec<WindowPrompt>> {
-        let locs: Vec<Location> = files
-            .into_iter()
-            .map(|f| {
-                let f: ffi::OsString = f.into();
-                Location::new_disk(&f)
-            })
-            .collect();
-        let mut efiles = vec![];
-        for loc in locs.into_iter() {
-            match loc.to_rw_file() {
-                Some(f) => match Buffer::from_reader(f, loc.clone()) {
-                    Ok(buf) => {
-                        trace!("opening {} in write-mode", loc);
-                        self.add_buffer(buf)
-                    }
-                    Err(err) => efiles.push((loc, err)),
-                },
-                None => match loc.to_r_file() {
-                    Some(f) => match Buffer::from_reader(f, loc.clone()) {
-                        Ok(mut buf) => {
-                            trace!("opening {} in read-mode", loc);
-                            buf.set_read_only(true);
-                            self.add_buffer(buf);
-                        }
-                        Err(err) => efiles.push((loc, err)),
-                    },
-                    None => {
-                        let err = "file missing/no-permission".to_string();
-                        efiles.push((loc, Error::IOError(err)))
-                    }
-                },
-            }
-        }
-
-        let mut wps = vec![];
-        for (loc, err) in efiles.into_iter() {
-            let span1 = {
-                let st = format!("{:?} : {}", loc.to_long_string()?, err);
-                span!(st: st).using(self.color_scheme.to_style(Highlight::Error))
-            };
-            let span2 = {
-                let span = span!(st: format!(" press any key to continue"));
-                span.using(self.color_scheme.to_style(Highlight::Prompt))
-            };
-            let span_lines: Vec<Spanline> = vec![span1.into(), span2.into()];
-            wps.push(WindowPrompt::new(self.coord, span_lines));
-        }
-
-        Ok(wps)
     }
 }

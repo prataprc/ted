@@ -11,7 +11,7 @@ use std::{
 use crate::{
     buffer::{self, Buffer},
     code::col_nu::{ColKind, ColNu},
-    color_scheme::ColorScheme,
+    color_scheme::{ColorScheme, Highlight},
     event::DP,
     window::{Coord, Cursor, Span},
     Error, Result,
@@ -444,19 +444,27 @@ fn empty_lines(
     //
     mut row: u16,
     max_row: u16,
-    coord: Coord,
+    full_coord: Coord,
     nu: &ColNu,
     scheme: &ColorScheme,
 ) -> Result<()> {
+    use std::iter::repeat;
+
     let mut stdout = io::stdout();
-    let (col, _) = coord.to_origin_cursor();
+    let (col, _) = full_coord.to_origin_cursor();
+    let (_, wth) = full_coord.to_size();
 
     if row <= max_row {
         trace!("EMPTY LINES {}..={}", row, max_row);
         for _ in row..=max_row {
             let mut nu_span = nu.to_span(ColKind::Empty, scheme);
             nu_span.set_cursor(Cursor { col, row });
-            err_at!(Fatal, queue!(stdout, nu_span))?;
+            let line_span = {
+                let iter = repeat(' ').take((wth - nu.to_width()) as usize);
+                let span: Span = String::from_iter(iter).into();
+                span.using(scheme.to_style(Highlight::Canvas))
+            };
+            err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
             row += 1;
         }
     }
