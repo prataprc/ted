@@ -5,7 +5,7 @@ use std::{fmt, result};
 use crate::{
     buffer::{self, Buffer},
     code::{config::Config, ftype::FType, App},
-    event::{Event, Ted},
+    event::Event,
     window::{Coord, Cursor},
     Result,
 };
@@ -73,29 +73,22 @@ impl WindowEdit {
         self.coord.to_top_left() + self.cursor
     }
 
+    #[inline]
+    pub fn set_buffer(&mut self, buf: &Buffer) {
+        self.buffer_id = buf.to_id();
+    }
+
     pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
-        match evnt {
-            Event::Td(Ted::NewBuffer) => {
-                let buffer_id = {
-                    let buffer = Buffer::empty();
-                    let buffer_id = buffer.to_id();
-                    app.add_buffer(buffer);
-                    buffer_id
+        match app.take_buffer(&self.buffer_id) {
+            Some(mut buf) => {
+                let evnt = match self.ftype.on_event(app, &mut buf, evnt)? {
+                    Event::Noop => Event::Noop,
+                    evnt => buf.on_event(evnt)?,
                 };
-                self.buffer_id = buffer_id;
-                Ok(Event::Noop)
+                app.add_buffer(buf);
+                Ok(evnt)
             }
-            evnt => match app.take_buffer(&self.buffer_id) {
-                Some(mut buf) => {
-                    let evnt = match self.ftype.on_event(app, &mut buf, evnt)? {
-                        Event::Noop => Event::Noop,
-                        evnt => buf.on_event(evnt)?,
-                    };
-                    app.add_buffer(buf);
-                    Ok(evnt)
-                }
-                None => Ok(evnt),
-            },
+            None => Ok(evnt),
         }
     }
 

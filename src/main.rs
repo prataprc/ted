@@ -10,6 +10,11 @@ use ted::state::{Opt, State};
 fn main() {
     let opts = Opt::from_args();
 
+    if opts.version {
+        println!("dev {}", env!("CARGO_PKG_VERSION"));
+        process::exit(0);
+    }
+
     std::panic::set_hook(box |panic_info| {
         let s = match panic_info.payload().downcast_ref::<String>() {
             Some(s) => s.to_string(),

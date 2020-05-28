@@ -45,6 +45,12 @@ pub struct Opt {
     #[structopt(long = "stats")]
     pub stats: bool,
 
+    #[structopt(short = "R", long = "read-only")]
+    pub read_only: bool,
+
+    #[structopt(long = "version")]
+    pub version: bool,
+
     pub files: Vec<String>,
 }
 

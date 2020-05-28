@@ -6,6 +6,8 @@ use std::{convert::TryFrom, convert::TryInto, ffi, fmt, fs, result, str::FromStr
 use crate::{Error, Result};
 
 config![
+    // read-only will force all files to be opened in read-only mode.
+    (read_only, bool, false),
     (scroll_off, u16, 0),
     (line_number, bool, true),
     (wrap, bool, true),
@@ -26,6 +28,7 @@ impl fmt::Display for Config {
             self.wrap,
             self.left_margin_char,
             self.top_margin_char
-        )
+        )?;
+        write!(f, concat!("{{ read_only = {} }}"), self.read_only)
     }
 }

@@ -234,6 +234,11 @@ impl App {
         for loc in locs.into_iter() {
             match loc.to_rw_file() {
                 Some(f) => match Buffer::from_reader(f, loc.clone()) {
+                    Ok(mut buf) if self.config.read_only => {
+                        trace!("opening {} in read-mode", loc);
+                        buf.set_read_only(true);
+                        self.add_buffer(buf)
+                    }
                     Ok(buf) => {
                         trace!("opening {} in write-mode", loc);
                         self.add_buffer(buf)
