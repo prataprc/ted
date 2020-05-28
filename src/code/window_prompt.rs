@@ -1,4 +1,5 @@
 use crossterm::queue;
+use regex::Regex;
 use unicode_width::UnicodeWidthChar;
 
 use std::{
@@ -19,8 +20,8 @@ use crate::{
 pub struct WindowPrompt {
     coord: Coord,
     span_lines: Vec<Spanline>,
-
     buffer: Buffer,
+    options: Vec<Regex>,
 }
 
 impl fmt::Display for WindowPrompt {
@@ -36,9 +37,14 @@ impl WindowPrompt {
             coord,
             span_lines: lines,
             buffer: Buffer::empty(),
+            options: Default::default(),
         };
         w.buffer.mode_insert().unwrap();
         w
+    }
+
+    pub fn set_options(&mut self, options: Vec<Regex>) {
+        self.options.extend(options.into_iter());
     }
 }
 
@@ -62,7 +68,20 @@ impl WindowPrompt {
         Cursor::new(col, hgt - 1)
     }
 
-    pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
+    pub fn prompt_match(&self) -> Option<String> {
+        let s = self.buffer.to_string();
+        if s.len() > 0 && self.options.len() == 0 {
+            return Some(s);
+        }
+        for re in self.options.iter() {
+            if re.is_match(s.as_str()) {
+                return Some(s);
+            }
+        }
+        None
+    }
+
+    pub fn on_event(&mut self, _: &mut App, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Noop),
             evnt => self.buffer.on_event(evnt),

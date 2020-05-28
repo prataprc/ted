@@ -323,6 +323,15 @@ pub struct Spanline {
     cursor: Option<Cursor>,
 }
 
+impl From<Span> for Spanline {
+    fn from(span: Span) -> Spanline {
+        Spanline {
+            cursor: None,
+            spans: vec![span],
+        }
+    }
+}
+
 impl FromIterator<Span> for Spanline {
     fn from_iter<T>(iter: T) -> Spanline
     where

@@ -450,7 +450,6 @@ fn empty_lines(
 ) -> Result<()> {
     let mut stdout = io::stdout();
     let (col, _) = coord.to_origin_cursor();
-    let (_, wth) = coord.to_size();
 
     if row <= max_row {
         trace!("EMPTY LINES {}..={}", row, max_row);

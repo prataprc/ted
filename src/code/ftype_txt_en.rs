@@ -118,7 +118,7 @@ impl Text {
                     prev_kind = Some(node.kind());
                 }
                 let span: Span = format!("{} {} {} {}", ws, ls, ss, ps).into();
-                app.notify("code", Notify::Status(vec![span]));
+                app.notify("code", Notify::Status(vec![span]))?;
                 Ok(Event::Noop)
             }
         }

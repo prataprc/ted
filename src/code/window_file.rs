@@ -150,7 +150,7 @@ impl WindowFile {
         match self.we.on_event(app, evnt)? {
             Td(Ted::StatusFile { .. }) => {
                 let span = self.status_file(app)?;
-                app.notify("code", Notify::Status(vec![span]));
+                app.notify("code", Notify::Status(vec![span]))?;
                 Ok(Event::Noop)
             }
             evnt => Ok(evnt),

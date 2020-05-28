@@ -26,6 +26,7 @@ use std::{
 
 use crate::{
     buffer::Buffer,
+    code::window_prompt::WindowPrompt,
     code::{config::Config, keymap::Keymap},
     code::{window_file::WindowFile, window_line::WindowLine},
     color_scheme::{ColorScheme, Highlight},
@@ -33,7 +34,7 @@ use crate::{
     location::Location,
     pubsub::PubSub,
     state::Opt,
-    window::{wait_ch, Coord, Cursor, Notify, Span},
+    window::{Coord, Cursor, Notify, Span, Spanline},
     Error, Result,
 };
 
@@ -51,11 +52,13 @@ pub struct App {
 }
 
 enum Inner {
-    Regular { stsline: WindowLine },
-    //Prompt {
-    //    stsline: WindowLine,
-    //    prompt: WindowPrompt,
-    //},
+    Regular {
+        stsline: WindowLine,
+    },
+    AnyKey {
+        stsline: Option<WindowLine>,
+        prompts: Vec<WindowPrompt>,
+    },
     //Command { cmdline: WindowLine, cmd: Command },
     None,
 }
@@ -74,14 +77,6 @@ impl AsRef<Config> for App {
 
 impl App {
     pub fn new(config: toml::Value, coord: Coord, opts: Opt) -> Result<App> {
-        let inner = Inner::Regular {
-            stsline: {
-                let (col, _) = coord.to_origin();
-                let (hgt, wth) = coord.to_size();
-                WindowLine::new("stsline", Coord::new(col, hgt, 1, wth))
-            },
-        };
-
         let config = {
             let cnf: Config = Default::default();
             cnf.mixin(config.try_into().unwrap())
@@ -104,10 +99,25 @@ impl App {
                 WindowLine::new("tbcline", Coord::new(col, hgt, 1, wth))
             },
             keymap: Default::default(),
-            inner,
+            inner: Default::default(),
         };
 
-        app.open_cmd_files(opts.files.clone())?;
+        let stsline = {
+            let (col, _) = coord.to_origin();
+            let (hgt, wth) = coord.to_size();
+            WindowLine::new("stsline", Coord::new(col, hgt, 1, wth))
+        };
+
+        let wps = app.open_cmd_files(opts.files.clone())?;
+        app.inner = if wps.len() > 0 {
+            Inner::AnyKey {
+                stsline: Some(stsline),
+                prompts: wps,
+            }
+        } else {
+            Inner::Regular { stsline }
+        };
+
         App::draw_screen(app.coord, &app.color_scheme)?;
 
         app.wfile = {
@@ -188,7 +198,7 @@ impl App {
 
 impl App {
     #[inline]
-    pub fn post(&mut self, msg: Notify) -> Result<()> {
+    pub fn post(&mut self, _msg: Notify) -> Result<()> {
         //match msg {
         //    Notify::Status(sl)) -> self.stsline.set(sl),
         //    Notify::TabComplete(sl) -> self.tbcline.set(sl),
@@ -199,6 +209,7 @@ impl App {
     pub fn to_cursor(&self) -> Cursor {
         match &self.inner {
             Inner::Regular { .. } => self.wfile.to_cursor(),
+            Inner::AnyKey { prompts, .. } => prompts[0].to_cursor(),
             // Inner::Command { cmdline, .. } => cmdline.to_cursor(),
             Inner::None => Default::default(),
         }
@@ -219,7 +230,24 @@ impl App {
                 let evnt = wfile.on_event(self, evnt)?;
                 self.wfile = wfile;
                 evnt
-            } //Inner::Command { cmdline, .. } => {
+            }
+            Inner::AnyKey { prompts, stsline } => {
+                let evnt = prompts[0].on_event(self, evnt)?;
+                match prompts[0].prompt_match() {
+                    Some(_) if prompts.len() > 1 => {
+                        prompts.remove(0);
+                    }
+                    Some(_) => {
+                        prompts.remove(0);
+                        inner = Inner::Regular {
+                            stsline: stsline.take().unwrap(),
+                        };
+                    }
+                    None => (),
+                }
+                evnt
+            }
+            //Inner::Command { cmdline, .. } => {
             //    let wline = mem::replace(cmdline, Default::default());
             //    let evnt = wline.on_event(self, evnt)?;
             //    *cmdline = wline;
@@ -238,9 +266,9 @@ impl App {
 
         let mut inner = mem::replace(&mut self.inner, Default::default());
         match &mut inner {
-            Inner::Regular { stsline } => {
-                stsline.on_refresh(self)?;
-            } //Inner::Command { cmdline, cmd } => {
+            Inner::Regular { stsline } => stsline.on_refresh(self)?,
+            Inner::AnyKey { prompts, .. } => prompts[0].on_refresh(self)?,
+            //Inner::Command { cmdline, cmd } => {
             //    // self.cmd.on_refresh()?;
             //    let wline = mem::replace(cmdline, Default::default());
             //    wline.on_refresh(self)?;
@@ -284,7 +312,7 @@ impl App {
         Ok(())
     }
 
-    fn open_cmd_files(&mut self, files: Vec<String>) -> Result<()> {
+    fn open_cmd_files(&mut self, files: Vec<String>) -> Result<Vec<WindowPrompt>> {
         let locs: Vec<Location> = files
             .into_iter()
             .map(|f| {
@@ -292,7 +320,7 @@ impl App {
                 Location::new_disk(&f)
             })
             .collect();
-        let mut e_files = vec![];
+        let mut efiles = vec![];
         for loc in locs.into_iter() {
             match loc.to_rw_file() {
                 Some(f) => match Buffer::from_reader(f, loc.clone()) {
@@ -300,7 +328,7 @@ impl App {
                         trace!("opening {} in write-mode", loc);
                         self.add_buffer(buf)
                     }
-                    Err(err) => e_files.push((loc, err)),
+                    Err(err) => efiles.push((loc, err)),
                 },
                 None => match loc.to_r_file() {
                     Some(f) => match Buffer::from_reader(f, loc.clone()) {
@@ -309,22 +337,30 @@ impl App {
                             buf.set_read_only(true);
                             self.add_buffer(buf);
                         }
-                        Err(err) => e_files.push((loc, err)),
+                        Err(err) => efiles.push((loc, err)),
                     },
                     None => {
                         let err = "file missing/no-permission".to_string();
-                        e_files.push((loc, Error::IOError(err)))
+                        efiles.push((loc, Error::IOError(err)))
                     }
                 },
             }
         }
 
-        for (loc, err) in e_files.into_iter() {
-            println!("{:?} : {}", loc.to_long_string()?, err);
-            println!(" press any key to continue");
-            wait_ch(None);
+        let mut wps = vec![];
+        for (loc, err) in efiles.into_iter() {
+            let span1 = {
+                let st = format!("{:?} : {}", loc.to_long_string()?, err);
+                span!(st: st).using(self.color_scheme.to_style(Highlight::Error))
+            };
+            let span2 = {
+                let span = span!(st: format!(" press any key to continue"));
+                span.using(self.color_scheme.to_style(Highlight::Prompt))
+            };
+            let span_lines: Vec<Spanline> = vec![span1.into(), span2.into()];
+            wps.push(WindowPrompt::new(self.coord, span_lines));
         }
 
-        Ok(())
+        Ok(wps)
     }
 }

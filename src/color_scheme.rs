@@ -98,9 +98,10 @@ special-comment = { on = "#373737", with = "#4e4e4e"}
 debug           = { on = "#373737", with = "#4e4e4e"}
 underline       = { on = "#373737", with = "#4e4e4e"}
 ignore          = { on = "#373737", with = "#4e4e4e"}
-error           = { on = "#373737", with = "#4e4e4e"}
+error           = { on = "#373737", with = "#da2323"}
 todo            = { on = "#373737", with = "#4e4e4e"}
 line-nr         = { on = "#444444", with = "#86875f"}
+prompt          = { on = "#444444", with = "#cf7d00"}
 "##;
 
 #[derive(Clone)]
@@ -265,6 +266,7 @@ pub enum Highlight {
 
     // system highlight
     LineNr,
+    Prompt,
     //ColorColumn
     //Conceal
     //Cursor
@@ -370,6 +372,7 @@ impl<'a> From<&'a str> for Highlight {
             "todo" => Highlight::Todo,
             // system highlight
             "line-nr" => Highlight::LineNr,
+            "prompt" => Highlight::Prompt,
             _ => Highlight::Canvas,
         }
     }
@@ -417,6 +420,7 @@ impl fmt::Display for Highlight {
             Highlight::Todo => write!(f, "todo"),
             // system highlight
             Highlight::LineNr => write!(f, "line-nr"),
+            Highlight::Prompt => write!(f, "prompt"),
             Highlight::__Fin => unreachable!(),
         }
     }
