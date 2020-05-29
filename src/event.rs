@@ -183,7 +183,6 @@ impl Mto {
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum Ted {
-    PromptReply { input: String },
     StatusFile,
     StatusCursor,
 }
@@ -191,7 +190,6 @@ pub enum Ted {
 impl fmt::Display for Ted {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
-            Ted::PromptReply { input } => write!(f, "prompt_reply({})", input),
             Ted::StatusFile => write!(f, "status_file"),
             Ted::StatusCursor => write!(f, "status_cursor"),
         }

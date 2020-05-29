@@ -1,4 +1,5 @@
-//mod cmd;
+mod cmd;
+mod cmd_set;
 //mod cmd_edit;
 //mod cmd_file;
 //mod cmd_write;
@@ -26,6 +27,7 @@ use std::{
 
 use crate::{
     buffer::Buffer,
+    code::cmd::Command,
     code::window_prompt::WindowPrompt,
     code::{config::Config, keymap::Keymap},
     code::{window_file::WindowFile, window_line::WindowLine},
@@ -52,14 +54,16 @@ pub struct App {
 }
 
 enum Inner {
-    Regular {
+    Edit {
         stsline: WindowLine,
     },
     AnyKey {
-        stsline: Option<WindowLine>,
+        stsline: WindowLine,
         prompts: Vec<WindowPrompt>,
     },
-    //Command { cmdline: WindowLine, cmd: Command },
+    Command {
+        cmdline: WindowLine,
+    },
     None,
 }
 
@@ -92,30 +96,20 @@ impl App {
             buffers: Default::default(),
 
             wfile: Default::default(),
-            tbcline: {
-                let (col, _) = coord.to_origin();
-                let (hgt, wth) = coord.to_size();
-                let hgt = hgt.saturating_sub(1);
-                WindowLine::new_tab(Coord::new(col, hgt, 1, wth))
-            },
+            tbcline: App::new_tbc_line(coord),
             keymap: Default::default(),
             inner: Default::default(),
         };
 
-        let stsline = {
-            let (col, _) = coord.to_origin();
-            let (hgt, wth) = coord.to_size();
-            WindowLine::new_status(Coord::new(col, hgt, 1, wth))
-        };
-
+        let stsline = App::new_status_line(coord);
         let wps = app.open_cmd_files(opts.files.clone())?;
         app.inner = if wps.len() > 0 {
             Inner::AnyKey {
-                stsline: Some(stsline),
+                stsline,
                 prompts: wps,
             }
         } else {
-            Inner::Regular { stsline }
+            Inner::Edit { stsline }
         };
 
         App::draw_screen(app.coord, &app.color_scheme)?;
@@ -138,6 +132,25 @@ impl App {
         };
 
         Ok(app)
+    }
+
+    fn new_status_line(coord: Coord) -> WindowLine {
+        let (col, _) = coord.to_origin();
+        let (hgt, wth) = coord.to_size();
+        WindowLine::new_cmd(Coord::new(col, hgt, 1, wth))
+    }
+
+    fn new_cmd_line(coord: Coord) -> WindowLine {
+        let (col, _) = coord.to_origin();
+        let (hgt, wth) = coord.to_size();
+        WindowLine::new_cmd(Coord::new(col, hgt, 1, wth))
+    }
+
+    fn new_tbc_line(coord: Coord) -> WindowLine {
+        let (col, _) = coord.to_origin();
+        let (hgt, wth) = coord.to_size();
+        let hgt = hgt.saturating_sub(1);
+        WindowLine::new_tab(Coord::new(col, hgt, 1, wth))
     }
 }
 
@@ -297,9 +310,9 @@ impl App {
 
     pub fn to_cursor(&self) -> Cursor {
         match &self.inner {
-            Inner::Regular { .. } => self.wfile.to_cursor(),
+            Inner::Edit { .. } => self.wfile.to_cursor(),
             Inner::AnyKey { prompts, .. } => prompts[0].to_cursor(),
-            // Inner::Command { cmdline, .. } => cmdline.to_cursor(),
+            Inner::Command { cmdline } => cmdline.to_cursor(),
             Inner::None => Default::default(),
         }
     }
@@ -312,40 +325,17 @@ impl App {
         };
         self.keymap = keymap;
 
-        let mut inner = mem::replace(&mut self.inner, Default::default());
-        let evnt = match &mut inner {
-            Inner::Regular { .. } => {
-                let mut wfile = mem::replace(&mut self.wfile, Default::default());
-                let evnt = wfile.on_event(self, evnt)?;
-                self.wfile = wfile;
-                evnt
-            }
-            Inner::AnyKey { prompts, stsline } => {
-                let evnt = prompts[0].on_event(self, evnt)?;
-                match prompts[0].prompt_match() {
-                    Some(_) if prompts.len() > 1 => {
-                        prompts.remove(0);
-                    }
-                    Some(_) => {
-                        prompts.remove(0);
-                        inner = Inner::Regular {
-                            stsline: stsline.take().unwrap(),
-                        };
-                    }
-                    None => (),
-                }
-                evnt
-            }
-            //Inner::Command { cmdline, .. } => {
-            //    let wline = mem::replace(cmdline, Default::default());
-            //    let evnt = wline.on_event(self, evnt)?;
-            //    *cmdline = wline;
-            //    evnt
-            //}
-            Inner::None => evnt,
-        };
+        let inner = mem::replace(&mut self.inner, Default::default());
+        let (inner, evnt) = inner.on_event(self, evnt)?;
         self.inner = inner;
-        Ok(evnt)
+        match evnt {
+            Event::Cmd(name, args) => {
+                let mut cmd: Command = (name, args).into();
+                cmd.on_command(self);
+                Ok(Event::Noop)
+            }
+            evnt => Ok(evnt),
+        }
     }
 
     pub fn on_refresh(&mut self) -> Result<()> {
@@ -353,27 +343,86 @@ impl App {
         wfile.on_refresh(self)?;
         self.wfile = wfile;
 
-        let mut inner = mem::replace(&mut self.inner, Default::default());
-        match &mut inner {
-            Inner::Regular { stsline } => stsline.on_refresh(self)?,
-            Inner::AnyKey { prompts, stsline } => {
-                prompts[0].on_refresh(self)?;
-                stsline.as_mut().unwrap().on_refresh(self)?;
-            }
-            //Inner::Command { cmdline, cmd } => {
-            //    // self.cmd.on_refresh()?;
-            //    let wline = mem::replace(cmdline, Default::default());
-            //    wline.on_refresh(self)?;
-            //    *cmdline = wline;
-            //}
-            Inner::None => (),
-        }
-        self.inner = inner;
+        let inner = mem::replace(&mut self.inner, Default::default());
+        self.inner = inner.on_refresh(self)?;
 
         //let mut wline = mem::replace(&mut self.tbcline, Default::default());
         //wline.on_refresh(self)?;
         //self.tbcline = wline;
 
         Ok(())
+    }
+}
+
+impl Inner {
+    fn on_event(self, app: &mut App, evnt: Event) -> Result<(Inner, Event)> {
+        use crate::buffer::NL;
+
+        match (self, evnt) {
+            (Inner::Edit { .. }, Event::Char(':', m)) if m.is_empty() => {
+                let cmdline = App::new_cmd_line(app.coord);
+                Ok((Inner::Command { cmdline }, Event::Noop))
+            }
+            (Inner::Edit { stsline }, evnt) => {
+                let mut wfile = mem::replace(&mut app.wfile, Default::default());
+                let evnt = wfile.on_event(app, evnt)?;
+                app.wfile = wfile;
+                Ok((Inner::Edit { stsline }, evnt))
+            }
+            (
+                Inner::AnyKey {
+                    mut prompts,
+                    stsline,
+                },
+                evnt,
+            ) => {
+                let evnt = prompts[0].on_event(app, evnt)?;
+                if prompts[0].prompt_match().is_some() {
+                    prompts.remove(0);
+                }
+                Ok(match prompts.len() {
+                    0 => (Inner::AnyKey { prompts, stsline }, evnt),
+                    _ => (Inner::Edit { stsline }, evnt),
+                })
+            }
+            (Inner::Command { cmdline }, Event::Char(NL, m)) if m.is_empty() => {
+                let s = cmdline.to_string().trim().to_string();
+                let inner = {
+                    let stsline = App::new_status_line(app.coord);
+                    Inner::Edit { stsline }
+                };
+                let parts: Vec<&str> = s.splitn(2, ' ').collect();
+                match parts.as_slice() {
+                    [name] if name.len() == 0 => Ok((inner, Event::Noop)),
+                    [name] => {
+                        let name = name.to_string();
+                        Ok((inner, Event::Cmd(name, "".to_string())))
+                    }
+                    [name, args] => {
+                        let args = args.to_string();
+                        Ok((inner, Event::Cmd(name.to_string(), args)))
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            (Inner::Command { mut cmdline }, evnt) => {
+                let evnt = cmdline.on_event(app, evnt)?;
+                Ok((Inner::Command { cmdline }, evnt))
+            }
+            (Inner::None, evnt) => Ok((Inner::None, evnt)),
+        }
+    }
+
+    fn on_refresh(mut self, app: &mut App) -> Result<Inner> {
+        match &mut self {
+            Inner::Edit { stsline } => stsline.on_refresh(app)?,
+            Inner::AnyKey { prompts, stsline } => {
+                prompts[0].on_refresh(app)?;
+                stsline.on_refresh(app)?;
+            }
+            Inner::Command { cmdline } => cmdline.on_refresh(app)?,
+            Inner::None => (),
+        }
+        Ok(self)
     }
 }
