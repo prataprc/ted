@@ -7,12 +7,12 @@ use unicode_width::UnicodeWidthChar;
 use std::{
     cmp, fmt,
     io::{self, Write},
-    result,
+    mem, result,
 };
 
 use crate::{
     buffer::Buffer,
-    code::App,
+    code::{keymap::Keymap, App},
     event::Event,
     window::{Coord, Cursor, Span, Spanline},
     Error, Result,
@@ -22,6 +22,7 @@ use crate::{
 pub struct WindowPrompt {
     coord: Coord,
     span_lines: Vec<Spanline>,
+    keymap: Keymap,
     buffer: Buffer,
     options: Vec<Regex>,
 }
@@ -38,6 +39,7 @@ impl WindowPrompt {
         let mut w = WindowPrompt {
             coord,
             span_lines: lines,
+            keymap: Default::default(),
             buffer: Buffer::empty(),
             options: Default::default(),
         };
@@ -86,7 +88,13 @@ impl WindowPrompt {
     pub fn on_event(&mut self, _: &mut App, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Noop),
-            evnt => self.buffer.on_event(evnt),
+            evnt => {
+                let mut km = mem::replace(&mut self.keymap, Default::default());
+                let evnt = km.fold(&self.buffer, evnt)?;
+                let evnt = self.buffer.on_event(evnt)?;
+                self.keymap = km;
+                Ok(evnt)
+            }
         }
     }
 

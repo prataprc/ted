@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     buffer::{self, Buffer},
-    code::App,
+    code::{keymap::Keymap, App},
     color_scheme::Highlight,
     event::Event,
     location::Location,
@@ -31,6 +31,7 @@ enum Inner {
     Cmd {
         cursor: Cursor,
         obc_xy: buffer::Cursor,
+        keymap: Keymap,
         buffer: Buffer,
     },
     Status {
@@ -78,6 +79,7 @@ impl WindowLine {
             inner: Inner::Cmd {
                 cursor,
                 obc_xy,
+                keymap: Default::default(),
                 buffer,
             },
         }
@@ -124,9 +126,12 @@ impl WindowLine {
 
     pub fn on_event(&mut self, _app: &mut App, evnt: Event) -> Result<Event> {
         match &mut self.inner {
-            Inner::Cmd { buffer, .. } => match evnt {
+            Inner::Cmd { buffer, keymap, .. } => match evnt {
                 Event::Esc => Ok(Event::Esc),
-                evnt => buffer.on_event(evnt),
+                evnt => {
+                    let evnt = keymap.fold(buffer, evnt)?;
+                    buffer.on_event(evnt)
+                }
             },
             Inner::Status { .. } => Ok(evnt),
             Inner::Tab { .. } => Ok(evnt),
@@ -146,6 +151,7 @@ impl WindowLine {
                 buffer,
                 obc_xy,
                 cursor,
+                ..
             } => {
                 let (name, coord) = (&self.name, self.coord);
                 let mut v = NoWrap::new(name, coord, *cursor, *obc_xy);

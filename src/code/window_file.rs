@@ -135,11 +135,6 @@ impl WindowFile {
 
 impl WindowFile {
     #[inline]
-    pub fn to_buffer_id(&self) -> String {
-        self.we.to_buffer_id()
-    }
-
-    #[inline]
     pub fn to_cursor(&self) -> Cursor {
         self.we.to_cursor()
     }

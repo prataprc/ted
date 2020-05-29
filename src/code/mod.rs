@@ -9,6 +9,7 @@ mod config;
 mod ftype;
 mod ftype_txt_en;
 mod keymap;
+mod keymap_edit;
 mod view;
 mod window_edit;
 mod window_file;
@@ -28,8 +29,8 @@ use std::{
 use crate::{
     buffer::Buffer,
     code::cmd::Command,
+    code::config::Config,
     code::window_prompt::WindowPrompt,
-    code::{config::Config, keymap::Keymap},
     code::{window_file::WindowFile, window_line::WindowLine},
     color_scheme::{ColorScheme, Highlight},
     event::Event,
@@ -49,7 +50,6 @@ pub struct App {
 
     wfile: WindowFile,
     tbcline: WindowLine,
-    keymap: Keymap,
     inner: Inner,
 }
 
@@ -97,7 +97,6 @@ impl App {
 
             wfile: Default::default(),
             tbcline: App::new_tbcline(coord),
-            keymap: Default::default(),
             inner: Default::default(),
         };
 
@@ -318,13 +317,6 @@ impl App {
     }
 
     pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
-        let mut keymap = mem::replace(&mut self.keymap, Default::default());
-        let evnt = {
-            let buf = self.as_mut_buffer(&self.wfile.to_buffer_id());
-            keymap.fold(buf, evnt)?
-        };
-        self.keymap = keymap;
-
         let inner = mem::replace(&mut self.inner, Default::default());
         let (inner, evnt) = inner.on_event(self, evnt)?;
         self.inner = inner;

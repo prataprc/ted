@@ -228,53 +228,86 @@ impl Style {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum Highlight {
-    Canvas = 0,
-    // code syntax.
-    Comment,
-    Constant,
-    Str,
-    Character,
-    Number,
-    Boolean,
-    Float,
-    Identifier,
-    Function,
-    Statement,
-    Conditional,
-    Repeat,
-    Label,
-    Operator,
-    Keyword,
-    Exception,
-    PreProc,
-    Include,
-    Define,
-    Macro,
-    PreCondit,
-    Type,
-    StorageClass,
-    Structure,
-    Typedef,
-    Special,
-    SpecialChar,
-    Tag,
-    Delimiter,
-    SpecialComment,
-    Debug,
-    Underlined,
-    Ignore,
-    Error,
-    Todo,
+macro_rules! highlight {
+    ($(($variant:ident, $s:expr)),*) => (
+        #[derive(Clone, Copy)]
+        pub enum Highlight {
+            Canvas = 0,
+            $($variant,)*
+        }
 
+        impl Default for Highlight {
+            fn default() -> Self {
+                Highlight::Canvas
+            }
+        }
+
+        impl<'a> From<&'a str> for Highlight {
+            fn from(s: &'a str) -> Highlight {
+                match s {
+                    $($s => Highlight::$variant,)*
+                    _ => Highlight::Canvas,
+                }
+            }
+        }
+
+        impl fmt::Display for Highlight {
+            fn fmt(
+                //
+                &self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+                match self {
+                    Highlight::Canvas => write!(f, "canvas"),
+                    $(Highlight::$variant => write!(f, $s),)*
+                }
+            }
+        }
+    );
+}
+
+highlight![
+    // code syntax.
+    (Comment, "comment"),
+    (Constant, "constant"),
+    (Str, "string"),
+    (Character, "char"),
+    (Number, "number"),
+    (Boolean, "boolean"),
+    (Float, "float"),
+    (Identifier, "identifier"),
+    (Function, "function"),
+    (Statement, "statement"),
+    (Conditional, "conditional"),
+    (Repeat, "repeat"),
+    (Label, "label"),
+    (Operator, "operator"),
+    (Keyword, "keyword"),
+    (Exception, "exception"),
+    (PreProc, "preproc"),
+    (Include, "include"),
+    (Define, "define"),
+    (Macro, "macro"),
+    (PreCondit, "precondit"),
+    (Type, "type"),
+    (StorageClass, "storage-class"),
+    (Structure, "structure"),
+    (Typedef, "typedef"),
+    (Special, "special"),
+    (SpecialChar, "special-char"),
+    (Tag, "tag"),
+    (Delimiter, "delimiter"),
+    (SpecialComment, "special-comment"),
+    (Debug, "debug"),
+    (Underlined, "underlined"),
+    (Ignore, "ignore"),
+    (Error, "error"),
+    (Todo, "todo"),
     // system highlight
-    LineNr,
-    Prompt,
-    StatusLine,
-    TabLine,
-    TabOption,
-    TabSelect,
+    (LineNr, "line-nr"),
+    (Prompt, "prompt"),
+    (StatusLine, "status-line"),
+    (TabLine, "tab-line"),
+    (TabOption, "tab-option"),
+    (TabSelect, "tab-select"),
     //ColorColumn
     //Conceal
     //Cursor
@@ -325,115 +358,5 @@ pub enum Highlight {
     //VisualNOS
     //WarningMsg
     //WildMenu
-    __Fin,
-}
-
-impl Default for Highlight {
-    fn default() -> Highlight {
-        Highlight::Canvas
-    }
-}
-
-impl<'a> From<&'a str> for Highlight {
-    fn from(s: &'a str) -> Highlight {
-        match s {
-            "canvas" => Highlight::Canvas,
-            //
-            "comment" => Highlight::Comment,
-            "constant" => Highlight::Constant,
-            "string" => Highlight::Str,
-            "char" => Highlight::Character,
-            "number" => Highlight::Number,
-            "boolean" => Highlight::Boolean,
-            "float" => Highlight::Float,
-            "identifier" => Highlight::Identifier,
-            "function" => Highlight::Function,
-            "statement" => Highlight::Statement,
-            "conditional" => Highlight::Conditional,
-            "repeat" => Highlight::Repeat,
-            "label" => Highlight::Label,
-            "operator" => Highlight::Operator,
-            "keyword" => Highlight::Keyword,
-            "exception" => Highlight::Exception,
-            "preproc" => Highlight::PreProc,
-            "include" => Highlight::Include,
-            "define" => Highlight::Define,
-            "macro" => Highlight::Macro,
-            "precondit" => Highlight::PreCondit,
-            "type" => Highlight::Type,
-            "storage-class" => Highlight::StorageClass,
-            "structure" => Highlight::Structure,
-            "typedef" => Highlight::Typedef,
-            "special" => Highlight::Special,
-            "special-char" => Highlight::SpecialChar,
-            "tag" => Highlight::Tag,
-            "delimiter" => Highlight::Delimiter,
-            "special-comment" => Highlight::SpecialComment,
-            "debug" => Highlight::Debug,
-            "underline" => Highlight::Underlined,
-            "ignore" => Highlight::Ignore,
-            "error" => Highlight::Error,
-            "todo" => Highlight::Todo,
-            // system highlight
-            "line-nr" => Highlight::LineNr,
-            "prompt" => Highlight::Prompt,
-            "status-line" => Highlight::StatusLine,
-            "tab-line" => Highlight::TabLine,
-            "tab-option" => Highlight::TabOption,
-            "tab-select" => Highlight::TabSelect,
-            _ => Highlight::Canvas,
-        }
-    }
-}
-
-impl fmt::Display for Highlight {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        match self {
-            Highlight::Canvas => write!(f, "canvas"),
-            //
-            Highlight::Comment => write!(f, "comment"),
-            Highlight::Constant => write!(f, "constant"),
-            Highlight::Str => write!(f, "string"),
-            Highlight::Character => write!(f, "char"),
-            Highlight::Number => write!(f, "number"),
-            Highlight::Boolean => write!(f, "boolean"),
-            Highlight::Float => write!(f, "float"),
-            Highlight::Identifier => write!(f, "identifier"),
-            Highlight::Function => write!(f, "function"),
-            Highlight::Statement => write!(f, "statement"),
-            Highlight::Conditional => write!(f, "conditional"),
-            Highlight::Repeat => write!(f, "repeat"),
-            Highlight::Label => write!(f, "label"),
-            Highlight::Operator => write!(f, "operator"),
-            Highlight::Keyword => write!(f, "keyword"),
-            Highlight::Exception => write!(f, "exception"),
-            Highlight::PreProc => write!(f, "preproc"),
-            Highlight::Include => write!(f, "include"),
-            Highlight::Define => write!(f, "define"),
-            Highlight::Macro => write!(f, "macro"),
-            Highlight::PreCondit => write!(f, "precondit"),
-            Highlight::Type => write!(f, "type"),
-            Highlight::StorageClass => write!(f, "storage-class"),
-            Highlight::Structure => write!(f, "structure"),
-            Highlight::Typedef => write!(f, "typedef"),
-            Highlight::Special => write!(f, "special"),
-            Highlight::SpecialChar => write!(f, "special-char"),
-            Highlight::Tag => write!(f, "tag"),
-            Highlight::Delimiter => write!(f, "delimiter"),
-            Highlight::SpecialComment => write!(f, "special-comment"),
-            Highlight::Debug => write!(f, "debug"),
-            Highlight::Underlined => write!(f, "underline"),
-            Highlight::Ignore => write!(f, "ignore"),
-            Highlight::Error => write!(f, "error"),
-            Highlight::Todo => write!(f, "todo"),
-            // system highlight
-            Highlight::LineNr => write!(f, "line-nr"),
-            Highlight::Prompt => write!(f, "prompt"),
-            Highlight::StatusLine => write!(f, "status-line"),
-            Highlight::TabLine => write!(f, "tab-line"),
-            Highlight::TabOption => write!(f, "tab-option"),
-            Highlight::TabSelect => write!(f, "tab-select"),
-            Highlight::__Fin => unreachable!(),
-        }
-    }
-}
+    (__Fin, "__fin")
+];

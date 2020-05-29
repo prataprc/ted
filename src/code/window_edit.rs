@@ -4,7 +4,7 @@ use std::{fmt, result};
 
 use crate::{
     buffer::{self, Buffer},
-    code::{config::Config, ftype::FType, App},
+    code::{config::Config, ftype::FType, keymap::Keymap, App},
     event::Event,
     window::{Coord, Cursor},
     Result,
@@ -16,6 +16,7 @@ pub struct WindowEdit {
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     buffer_id: String,
+    keymap: Keymap,
     ftype: FType,
 }
 
@@ -44,6 +45,7 @@ impl WindowEdit {
             cursor,
             obc_xy: (0, 0).into(),
             buffer_id: buf.to_id(),
+            keymap: Default::default(),
             ftype: Default::default(),
         };
 
@@ -81,6 +83,7 @@ impl WindowEdit {
     pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
         match app.take_buffer(&self.buffer_id) {
             Some(mut buf) => {
+                let evnt = self.keymap.fold(&mut buf, evnt)?;
                 let evnt = match self.ftype.on_event(app, &mut buf, evnt)? {
                     Event::Noop => Event::Noop,
                     evnt => buf.on_event(evnt)?,
