@@ -1,4 +1,6 @@
 use crossterm::{cursor as term_cursor, queue};
+#[allow(unused_imports)]
+use log::trace;
 
 use std::{
     fmt,
@@ -63,7 +65,10 @@ impl WindowLine {
         let name = "cmdline".to_string();
         let buffer = {
             let loc = Location::new_ted(&name);
-            Buffer::from_reader(vec![].as_slice(), loc).unwrap()
+            let bs = vec![];
+            let mut buffer = Buffer::from_reader(bs.as_slice(), loc).unwrap();
+            buffer.mode_insert();
+            buffer
         };
         let cursor = NoWrap::initial_cursor(false /*line_number*/);
         let obc_xy = (0, 0).into();
@@ -100,6 +105,14 @@ impl WindowLine {
 }
 
 impl WindowLine {
+    #[inline]
+    pub fn as_buffer(&self) -> Option<&Buffer> {
+        match &self.inner {
+            Inner::Cmd { buffer, .. } => Some(buffer),
+            _ => None,
+        }
+    }
+
     #[inline]
     pub fn to_cursor(&self) -> Cursor {
         match self.inner {
@@ -138,6 +151,7 @@ impl WindowLine {
                 let mut v = NoWrap::new(name, coord, *cursor, *obc_xy);
                 v.set_scroll_off(0).set_line_number(false);
                 *cursor = v.render(buffer, app.as_color_scheme())?;
+                *obc_xy = buffer.to_xy_cursor();
             }
             Inner::Status { spans } => {
                 for span in spans.iter() {

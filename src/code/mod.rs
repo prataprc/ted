@@ -96,12 +96,12 @@ impl App {
             buffers: Default::default(),
 
             wfile: Default::default(),
-            tbcline: App::new_tbc_line(coord),
+            tbcline: App::new_tbcline(coord),
             keymap: Default::default(),
             inner: Default::default(),
         };
 
-        let stsline = App::new_status_line(coord);
+        let stsline = App::new_stsline(coord);
         let wps = app.open_cmd_files(opts.files.clone())?;
         app.inner = if wps.len() > 0 {
             Inner::AnyKey {
@@ -134,19 +134,19 @@ impl App {
         Ok(app)
     }
 
-    fn new_status_line(coord: Coord) -> WindowLine {
+    fn new_stsline(coord: Coord) -> WindowLine {
+        let (col, _) = coord.to_origin();
+        let (hgt, wth) = coord.to_size();
+        WindowLine::new_status(Coord::new(col, hgt, 1, wth))
+    }
+
+    fn new_cmdline(coord: Coord) -> WindowLine {
         let (col, _) = coord.to_origin();
         let (hgt, wth) = coord.to_size();
         WindowLine::new_cmd(Coord::new(col, hgt, 1, wth))
     }
 
-    fn new_cmd_line(coord: Coord) -> WindowLine {
-        let (col, _) = coord.to_origin();
-        let (hgt, wth) = coord.to_size();
-        WindowLine::new_cmd(Coord::new(col, hgt, 1, wth))
-    }
-
-    fn new_tbc_line(coord: Coord) -> WindowLine {
+    fn new_tbcline(coord: Coord) -> WindowLine {
         let (col, _) = coord.to_origin();
         let (hgt, wth) = coord.to_size();
         let hgt = hgt.saturating_sub(1);
@@ -328,10 +328,11 @@ impl App {
         let inner = mem::replace(&mut self.inner, Default::default());
         let (inner, evnt) = inner.on_event(self, evnt)?;
         self.inner = inner;
+
         match evnt {
             Event::Cmd(name, args) => {
                 let mut cmd: Command = (name, args).into();
-                cmd.on_command(self);
+                cmd.on_command(self)?;
                 Ok(Event::Noop)
             }
             evnt => Ok(evnt),
@@ -360,7 +361,8 @@ impl Inner {
 
         match (self, evnt) {
             (Inner::Edit { .. }, Event::Char(':', m)) if m.is_empty() => {
-                let cmdline = App::new_cmd_line(app.coord);
+                let mut cmdline = App::new_cmdline(app.coord);
+                cmdline.on_event(app, Event::Char(':', m))?;
                 Ok((Inner::Command { cmdline }, Event::Noop))
             }
             (Inner::Edit { stsline }, evnt) => {
@@ -386,9 +388,12 @@ impl Inner {
                 })
             }
             (Inner::Command { cmdline }, Event::Char(NL, m)) if m.is_empty() => {
-                let s = cmdline.to_string().trim().to_string();
+                let s = {
+                    let s = cmdline.as_buffer().unwrap().to_string();
+                    s.trim().to_string()
+                };
                 let inner = {
-                    let stsline = App::new_status_line(app.coord);
+                    let stsline = App::new_stsline(app.coord);
                     Inner::Edit { stsline }
                 };
                 let parts: Vec<&str> = s.splitn(2, ' ').collect();

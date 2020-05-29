@@ -41,7 +41,7 @@ impl WindowPrompt {
             buffer: Buffer::empty(),
             options: Default::default(),
         };
-        w.buffer.mode_insert().unwrap();
+        w.buffer.mode_insert();
         w
     }
 

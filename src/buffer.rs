@@ -2,6 +2,8 @@
 //! over text content.
 
 use lazy_static::lazy_static;
+#[allow(unused_imports)]
+use log::trace;
 use regex::Regex;
 use ropey::{self, Rope, RopeSlice};
 
@@ -473,20 +475,18 @@ impl Buffer {
         Ok(evnt)
     }
 
-    pub fn mode_normal(&mut self) -> Result<()> {
+    pub fn mode_normal(&mut self) {
         self.inner = match mem::replace(&mut self.inner, Default::default()) {
             Inner::Insert(ib) => Inner::Normal(ib.into()),
             inner @ Inner::Normal(_) => inner,
         };
-        Ok(())
     }
 
-    pub fn mode_insert(&mut self) -> Result<()> {
+    pub fn mode_insert(&mut self) {
         self.inner = match mem::replace(&mut self.inner, Default::default()) {
             Inner::Normal(nb) => Inner::Insert(nb.into()),
             inner @ Inner::Insert(_) => inner,
         };
-        Ok(())
     }
 }
 
@@ -627,7 +627,7 @@ impl Buffer {
             Esc => {
                 self.repeat()?;
                 mto_left(self, 1, DP::LineBound)?;
-                self.mode_normal()?;
+                self.mode_normal();
                 Event::Noop
             }
             // on going insert

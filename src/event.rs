@@ -316,7 +316,7 @@ impl fmt::Display for Event {
             Tab => write!(f, "tab"),
             Delete => write!(f, "delete"),
             Esc => write!(f, "esc"),
-            Char(ch, _) => write!(f, "char({})", ch),
+            Char(ch, _) => write!(f, "char({:?})", ch),
             B(n, dp) => write!(f, "b({},{})", n, dp),
             G(n) => write!(f, "g({})", n),
             F(n, dp) => write!(f, "f({},{})", n, dp),

@@ -116,6 +116,7 @@ impl WindowEdit {
             let buf = app.as_buffer(&self.buffer_id);
             v.render(buf, app.as_color_scheme())?
         };
+        self.obc_xy = app.as_buffer(&self.buffer_id).to_xy_cursor();
 
         Ok(())
     }

@@ -390,11 +390,12 @@ impl NoWrap {
 
         let full_coord = self.outer_coord();
         let (col, mut row) = full_coord.to_origin_cursor();
+        let max_row = row + full_coord.hgt;
         let (hgt, wth) = self.coord.to_size();
         let nu_wth = self.nu.to_width();
 
         let do_padding = |line: ropey::RopeSlice| -> Vec<char> {
-            line.chars_at(nbc_xy.col - (self.cursor.col as usize))
+            line.chars_at(nbc_xy.col.saturating_sub(self.cursor.col as usize))
                 .chain(repeat(' '))
                 .take((wth - nu_wth) as usize)
                 .collect()
@@ -414,8 +415,8 @@ impl NoWrap {
         }
 
         empty_lines(
-            tail_line(col, row, row + hgt - 1, &self.nu, buf, scheme)?,
-            row + hgt - 1,
+            tail_line(col, row, max_row - 1, &self.nu, buf, scheme)?,
+            max_row - 1,
             full_coord,
             &self.nu,
             scheme,
@@ -484,7 +485,7 @@ fn tail_line(
 ) -> Result<u16> {
     let n = buf.n_chars();
     let ok1 = n == 0;
-    let ok2 = max_row > 0 && (row == max_row) && buf.is_trailing_newline();
+    let ok2 = (row <= max_row) && buf.is_trailing_newline();
 
     let n = if ok1 { 1 } else { buf.char_to_line(n - 1) + 1 };
     let mut stdout = io::stdout();
