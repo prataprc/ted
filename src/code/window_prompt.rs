@@ -39,7 +39,7 @@ impl WindowPrompt {
         let mut w = WindowPrompt {
             coord,
             span_lines: lines,
-            keymap: Default::default(),
+            keymap: Keymap::new_prompt(),
             buffer: Buffer::empty(),
             options: Default::default(),
         };

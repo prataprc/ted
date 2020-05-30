@@ -1,8 +1,20 @@
-use crate::{buffer::Buffer, code::keymap_edit::KeyEdit, event::Event, Result};
+use crate::{
+    //
+    buffer::Buffer,
+    code::keymap_cmd::KeyCmd,
+    code::keymap_edit::KeyEdit,
+    code::keymap_less::KeyLess,
+    code::keymap_prompt::KeyPrompt,
+    event::Event,
+    Result,
+};
 
 #[derive(Clone)]
 pub enum Keymap {
     Edit(KeyEdit),
+    Cmd(KeyCmd),
+    Prompt(KeyPrompt),
+    Less(KeyLess),
 }
 
 impl Default for Keymap {
@@ -12,9 +24,30 @@ impl Default for Keymap {
 }
 
 impl Keymap {
+    pub fn new_edit() -> Keymap {
+        Default::default()
+    }
+
+    pub fn new_cmd() -> Keymap {
+        Keymap::Cmd(Default::default())
+    }
+
+    pub fn new_prompt() -> Keymap {
+        Keymap::Prompt(Default::default())
+    }
+
+    pub fn new_less() -> Keymap {
+        Keymap::Less(Default::default())
+    }
+}
+
+impl Keymap {
     pub fn fold(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
         match self {
-            Keymap::Edit(k) => k.fold(buf, evnt),
+            Keymap::Edit(km) => km.fold(buf, evnt),
+            Keymap::Cmd(km) => km.fold(buf, evnt),
+            Keymap::Prompt(km) => km.fold(buf, evnt),
+            Keymap::Less(km) => km.fold(buf, evnt),
         }
     }
 }

@@ -45,7 +45,7 @@ impl WindowEdit {
             cursor,
             obc_xy: (0, 0).into(),
             buffer_id: buf.to_id(),
-            keymap: Default::default(),
+            keymap: Keymap::new_edit(),
             ftype: Default::default(),
         };
 

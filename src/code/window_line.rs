@@ -79,7 +79,7 @@ impl WindowLine {
             inner: Inner::Cmd {
                 cursor,
                 obc_xy,
-                keymap: Default::default(),
+                keymap: Keymap::new_cmd(),
                 buffer,
             },
         }
