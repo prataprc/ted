@@ -1,0 +1,141 @@
+{
+  "name": "tss",
+  "rules": {
+    "color_name": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "black"
+        },
+        {
+          "type": "STRING",
+          "value": "darkgrey"
+        },
+        {
+          "type": "STRING",
+          "value": "dark-grey"
+        },
+        {
+          "type": "STRING",
+          "value": "dark_grey"
+        },
+        {
+          "type": "STRING",
+          "value": "red"
+        },
+        {
+          "type": "STRING",
+          "value": "darkred"
+        },
+        {
+          "type": "STRING",
+          "value": "dark-red"
+        },
+        {
+          "type": "STRING",
+          "value": "dark_red"
+        },
+        {
+          "type": "STRING",
+          "value": "green"
+        },
+        {
+          "type": "STRING",
+          "value": "darkgreen"
+        },
+        {
+          "type": "STRING",
+          "value": "dark-green"
+        },
+        {
+          "type": "STRING",
+          "value": "dark_green"
+        },
+        {
+          "type": "STRING",
+          "value": "yellow"
+        },
+        {
+          "type": "STRING",
+          "value": "darkyellow"
+        },
+        {
+          "type": "STRING",
+          "value": "dark-yellow"
+        },
+        {
+          "type": "STRING",
+          "value": "dark_yellow"
+        },
+        {
+          "type": "STRING",
+          "value": "blue"
+        },
+        {
+          "type": "STRING",
+          "value": "darkblue"
+        },
+        {
+          "type": "STRING",
+          "value": "dark-blue"
+        },
+        {
+          "type": "STRING",
+          "value": "dark_blue"
+        },
+        {
+          "type": "STRING",
+          "value": "magenta"
+        },
+        {
+          "type": "STRING",
+          "value": "darkmagenta"
+        },
+        {
+          "type": "STRING",
+          "value": "dark-magenta"
+        },
+        {
+          "type": "STRING",
+          "value": "dark_magenta"
+        },
+        {
+          "type": "STRING",
+          "value": "cyan"
+        },
+        {
+          "type": "STRING",
+          "value": "darkcyan"
+        },
+        {
+          "type": "STRING",
+          "value": "dark-cyan"
+        },
+        {
+          "type": "STRING",
+          "value": "dark_cyan"
+        },
+        {
+          "type": "STRING",
+          "value": "white"
+        },
+        {
+          "type": "STRING",
+          "value": "grey"
+        }
+      ]
+    }
+  },
+  "extras": [
+    {
+      "type": "PATTERN",
+      "value": "\\s"
+    }
+  ],
+  "conflicts": [],
+  "externals": [],
+  "inline": [],
+  "supertypes": []
+}
+

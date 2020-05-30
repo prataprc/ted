@@ -45,12 +45,20 @@ fn main() {
     check_exit!(auto_cfg_npm(), 1);
     check_exit!(install_npm_pkgs(), 2);
 
-    let parsers = vec![Parser {
-        name: "txt_en".to_string(),
-        dir: "ts/txt_en".into(),
-        grammar: "ts/txt_en/grammar.js".into(),
-        sources: vec!["ts/txt_en/src/parser.c".into()],
-    }];
+    let parsers = vec![
+        Parser {
+            name: "txt_en".to_string(),
+            dir: "ts/txt_en".into(),
+            grammar: "ts/txt_en/grammar.js".into(),
+            sources: vec!["ts/txt_en/src/parser.c".into()],
+        },
+        Parser {
+            name: "tss".to_string(),
+            dir: "ts/tss".into(),
+            grammar: "ts/tss/grammar.js".into(),
+            sources: vec!["ts/tss/src/parser.c".into()],
+        },
+    ];
     for parser in parsers.into_iter() {
         check_exit!(build_parser(parser), 3);
     }
