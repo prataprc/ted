@@ -79,6 +79,12 @@ impl AsRef<Config> for App {
     }
 }
 
+impl AsMut<Config> for App {
+    fn as_mut(&mut self) -> &mut Config {
+        &mut self.config
+    }
+}
+
 impl App {
     pub fn new(config: toml::Value, coord: Coord, opts: Opt) -> Result<App> {
         let config = {
@@ -349,8 +355,6 @@ impl App {
 
 impl Inner {
     fn on_event(self, app: &mut App, evnt: Event) -> Result<(Inner, Event)> {
-        use crate::buffer::NL;
-
         match (self, evnt) {
             (Inner::Edit { .. }, Event::Char(':', m)) if m.is_empty() => {
                 let mut cmdline = App::new_cmdline(app.coord);
@@ -379,32 +383,20 @@ impl Inner {
                     _ => (Inner::Edit { stsline }, evnt),
                 })
             }
-            (Inner::Command { cmdline }, Event::Char(NL, m)) if m.is_empty() => {
-                let s = {
-                    let s = cmdline.as_buffer().unwrap().to_string();
-                    s.trim().to_string()
-                };
-                let inner = {
-                    let stsline = App::new_stsline(app.coord);
-                    Inner::Edit { stsline }
-                };
-                let parts: Vec<&str> = s.splitn(2, ' ').collect();
-                match parts.as_slice() {
-                    [name] if name.len() == 0 => Ok((inner, Event::Noop)),
-                    [name] => {
-                        let name = name.to_string();
-                        Ok((inner, Event::Cmd(name, "".to_string())))
-                    }
-                    [name, args] => {
-                        let args = args.to_string();
-                        Ok((inner, Event::Cmd(name.to_string(), args)))
-                    }
-                    _ => unreachable!(),
-                }
-            }
             (Inner::Command { mut cmdline }, evnt) => {
                 let evnt = cmdline.on_event(app, evnt)?;
-                Ok((Inner::Command { cmdline }, evnt))
+                let (inner, evnt) = match evnt {
+                    Event::Esc => {
+                        let stsline = App::new_stsline(app.coord);
+                        (Inner::Edit { stsline }, Event::Noop)
+                    }
+                    evnt @ Event::Cmd(_, _) => {
+                        let stsline = App::new_stsline(app.coord);
+                        (Inner::Edit { stsline }, evnt)
+                    }
+                    evnt => (Inner::Command { cmdline }, evnt),
+                };
+                Ok((inner, evnt))
             }
             (Inner::None, evnt) => Ok((Inner::None, evnt)),
         }

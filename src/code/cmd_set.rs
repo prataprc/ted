@@ -1,4 +1,9 @@
-use crate::{code::App, Result};
+use log::{error, trace};
+
+use crate::{
+    code::{config::Config, App},
+    Result,
+};
 
 #[derive(Clone, Default)]
 pub struct Set {
@@ -13,6 +18,29 @@ impl Set {
 
 impl Set {
     pub fn on_command(&mut self, app: &mut App) -> Result<()> {
-        todo!()
+        let config: &mut Config = app.as_mut();
+        match self.param.as_str() {
+            "wrap" => {
+                config.wrap = true;
+                trace!("set all windows to wrap text");
+            }
+            "nowrap" => {
+                config.wrap = false;
+                trace!("set all windows to non-wrap text");
+            }
+            "ro" => {
+                config.read_only = true;
+                trace!("set default file open to read-only mode");
+            }
+            "noro" => {
+                config.read_only = false;
+                trace!("set default file open to read-write mode");
+            }
+            _ => {
+                error!("invalid configuration command {}", self.param);
+            }
+        }
+
+        Ok(())
     }
 }

@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use log::trace;
+
 use crate::{
     code::{cmd_set::Set, App},
     Result,
@@ -18,7 +21,7 @@ impl Default for Command {
 impl From<(String, String)> for Command {
     fn from(parts: (String, String)) -> Command {
         match parts.0.as_str() {
-            "set" => Command::Set(Set::new(parts.1)),
+            ":set" => Command::Set(Set::new(parts.1)),
             _ => Default::default(),
         }
     }

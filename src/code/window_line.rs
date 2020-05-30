@@ -108,14 +108,6 @@ impl WindowLine {
 
 impl WindowLine {
     #[inline]
-    pub fn as_buffer(&self) -> Option<&Buffer> {
-        match &self.inner {
-            Inner::Cmd { buffer, .. } => Some(buffer),
-            _ => None,
-        }
-    }
-
-    #[inline]
     pub fn to_cursor(&self) -> Cursor {
         match self.inner {
             Inner::Cmd { cursor, .. } => self.coord.to_top_left() + cursor,
@@ -128,6 +120,16 @@ impl WindowLine {
         match &mut self.inner {
             Inner::Cmd { buffer, keymap, .. } => match evnt {
                 Event::Esc => Ok(Event::Esc),
+                Event::Enter => {
+                    let s = buffer.to_string().trim().to_string();
+                    let parts: Vec<&str> = s.splitn(2, ' ').collect();
+                    Ok(match parts.as_slice() {
+                        [nm] if nm.len() == 0 => Event::Noop,
+                        [nm] => Event::Cmd(nm.to_string(), "".to_string()),
+                        [nm, ars] => Event::Cmd(nm.to_string(), ars.to_string()),
+                        _ => unreachable!(),
+                    })
+                }
                 evnt => {
                     let evnt = keymap.fold(buffer, evnt)?;
                     buffer.on_event(evnt)

@@ -338,6 +338,7 @@ impl fmt::Display for Event {
 
 impl From<TermEvent> for Event {
     fn from(evnt: TermEvent) -> Event {
+        use crate::buffer::NL;
         use Event::{BackTab, Backspace, Char, Delete, Enter, Esc, FKey};
         use Event::{Md, Mt, Tab};
 
@@ -352,6 +353,7 @@ impl From<TermEvent> for Event {
                     KeyCode::Tab if empty => Tab,
                     KeyCode::Delete if empty => Delete,
                     KeyCode::Char('[') if ctrl => Esc,
+                    KeyCode::Char(NL) if empty => Enter,
                     KeyCode::Char(ch) => Char(ch, m),
                     //
                     KeyCode::BackTab if empty => BackTab,
