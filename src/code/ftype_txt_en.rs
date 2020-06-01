@@ -19,31 +19,26 @@ pub struct Text {
 
 impl Default for Text {
     fn default() -> Text {
-        let parser = {
-            let mut p = ts::Parser::new();
-            let language = unsafe { tree_sitter_txt_en() };
-            p.set_language(language).unwrap();
-            p
-        };
-
+        let parser = Text::new_parser().unwrap();
         Text { parser, tree: None }
     }
 }
 
 impl Clone for Text {
     fn clone(&self) -> Text {
-        let parser = {
-            let mut p = ts::Parser::new();
-            let language = unsafe { tree_sitter_txt_en() };
-            p.set_language(language).unwrap();
-            p
-        };
-
+        let parser = Text::new_parser().unwrap();
         Text { parser, tree: None }
     }
 }
 
 impl Text {
+    fn new_parser() -> Result<ts::Parser> {
+        let mut p = ts::Parser::new();
+        let language = unsafe { tree_sitter_txt_en() };
+        err_at!(FailParse, p.set_language(language))?;
+        Ok(p)
+    }
+
     pub fn to_type_name(&self) -> String {
         "txt".to_string()
     }

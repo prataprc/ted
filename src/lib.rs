@@ -10,6 +10,7 @@ pub mod config;
 pub mod color_scheme;
 pub mod location;
 mod tabc;
+pub mod tss;
 
 pub mod buffer;
 pub mod event;
@@ -30,6 +31,7 @@ pub enum Error {
     NoTopic,
     Invalid(String),
     FailConvert(String),
+    FailParse(String),
     FailBuffer(String),
 }
 
@@ -43,6 +45,7 @@ impl fmt::Display for Error {
             Error::NoTopic => write!(f, "NoTopic"),
             Error::Invalid(msg) => write!(f, "Invalid: {}", msg),
             Error::FailConvert(msg) => write!(f, "FailConvert: {}", msg),
+            Error::FailParse(msg) => write!(f, "FailParse: {}", msg),
             Error::FailBuffer(msg) => write!(f, "FailBuffer: {}", msg),
         }
     }
