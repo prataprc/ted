@@ -2,7 +2,7 @@ module.exports = grammar({
   name: 'tss',
 
   rules: {
-    source_file: $ => repeat(seq($.selectors, $.properties)),
+    source_file: $ => repeat(seq($.selectors, choice($.highlight, $.properties))),
 
     selectors: $ => seq($.selector, repeat(seq(',', $.selector))),
     selector: $ => repeat1($.sel_symbol),
@@ -75,5 +75,49 @@ module.exports = grammar({
         'white',
         'grey',
     ),
+    highlight: $ => choice(
+        'comment',
+        'constant',
+        'string',
+        'char',
+        'number',
+        'boolean',
+        'float',
+        'identifier',
+        'function',
+        'statement',
+        'conditional',
+        'repeat',
+        'label',
+        'operator',
+        'keyword',
+        'exception',
+        'preproc',
+        'include',
+        'define',
+        'macro',
+        'precondit',
+        'type',
+        'storage-class',
+        'structure',
+        'typedef',
+        'special',
+        'special-char',
+        'tag',
+        'delimiter',
+        'special-comment',
+        'debug',
+        'underlined',
+        'ignore',
+        'error',
+        'todo',
+        'line-nr',
+        'prompt',
+        'status-line',
+        'tab-line',
+        'tab-option',
+        'tab-select'
+    )
   }
 });
+

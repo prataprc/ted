@@ -141,6 +141,11 @@
     "fields": {}
   },
   {
+    "type": "highlight",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "properties",
     "named": true,
     "fields": {
@@ -340,6 +345,10 @@
       "required": false,
       "types": [
         {
+          "type": "highlight",
+          "named": true
+        },
+        {
           "type": "properties",
           "named": true
         },
@@ -401,6 +410,26 @@
   },
   {
     "type": "bold",
+    "named": false
+  },
+  {
+    "type": "boolean",
+    "named": false
+  },
+  {
+    "type": "char",
+    "named": false
+  },
+  {
+    "type": "comment",
+    "named": false
+  },
+  {
+    "type": "conditional",
+    "named": false
+  },
+  {
+    "type": "constant",
     "named": false
   },
   {
@@ -492,7 +521,35 @@
     "named": false
   },
   {
+    "type": "debug",
+    "named": false
+  },
+  {
+    "type": "define",
+    "named": false
+  },
+  {
+    "type": "delimiter",
+    "named": false
+  },
+  {
+    "type": "error",
+    "named": false
+  },
+  {
+    "type": "exception",
+    "named": false
+  },
+  {
     "type": "fg",
+    "named": false
+  },
+  {
+    "type": "float",
+    "named": false
+  },
+  {
+    "type": "function",
     "named": false
   },
   {
@@ -504,7 +561,35 @@
     "named": false
   },
   {
+    "type": "identifier",
+    "named": false
+  },
+  {
+    "type": "ignore",
+    "named": false
+  },
+  {
+    "type": "include",
+    "named": false
+  },
+  {
     "type": "italic",
+    "named": false
+  },
+  {
+    "type": "keyword",
+    "named": false
+  },
+  {
+    "type": "label",
+    "named": false
+  },
+  {
+    "type": "line-nr",
+    "named": false
+  },
+  {
+    "type": "macro",
     "named": false
   },
   {
@@ -512,7 +597,31 @@
     "named": false
   },
   {
+    "type": "number",
+    "named": false
+  },
+  {
+    "type": "operator",
+    "named": false
+  },
+  {
+    "type": "precondit",
+    "named": false
+  },
+  {
+    "type": "preproc",
+    "named": false
+  },
+  {
+    "type": "prompt",
+    "named": false
+  },
+  {
     "type": "red",
+    "named": false
+  },
+  {
+    "type": "repeat",
     "named": false
   },
   {
@@ -522,6 +631,66 @@
   {
     "type": "rgb_color",
     "named": true
+  },
+  {
+    "type": "special",
+    "named": false
+  },
+  {
+    "type": "special-char",
+    "named": false
+  },
+  {
+    "type": "special-comment",
+    "named": false
+  },
+  {
+    "type": "statement",
+    "named": false
+  },
+  {
+    "type": "status-line",
+    "named": false
+  },
+  {
+    "type": "storage-class",
+    "named": false
+  },
+  {
+    "type": "string",
+    "named": false
+  },
+  {
+    "type": "structure",
+    "named": false
+  },
+  {
+    "type": "tab-line",
+    "named": false
+  },
+  {
+    "type": "tab-option",
+    "named": false
+  },
+  {
+    "type": "tab-select",
+    "named": false
+  },
+  {
+    "type": "tag",
+    "named": false
+  },
+  {
+    "type": "todo",
+    "named": false
+  },
+  {
+    "type": "type",
+    "named": false
+  },
+  {
+    "type": "typedef",
+    "named": false
   },
   {
     "type": "underline",

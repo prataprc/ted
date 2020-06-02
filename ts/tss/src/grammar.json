@@ -11,8 +11,17 @@
             "name": "selectors"
           },
           {
-            "type": "SYMBOL",
-            "name": "properties"
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "highlight"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "properties"
+              }
+            ]
           }
         ]
       }
@@ -538,6 +547,175 @@
         {
           "type": "STRING",
           "value": "grey"
+        }
+      ]
+    },
+    "highlight": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "comment"
+        },
+        {
+          "type": "STRING",
+          "value": "constant"
+        },
+        {
+          "type": "STRING",
+          "value": "string"
+        },
+        {
+          "type": "STRING",
+          "value": "char"
+        },
+        {
+          "type": "STRING",
+          "value": "number"
+        },
+        {
+          "type": "STRING",
+          "value": "boolean"
+        },
+        {
+          "type": "STRING",
+          "value": "float"
+        },
+        {
+          "type": "STRING",
+          "value": "identifier"
+        },
+        {
+          "type": "STRING",
+          "value": "function"
+        },
+        {
+          "type": "STRING",
+          "value": "statement"
+        },
+        {
+          "type": "STRING",
+          "value": "conditional"
+        },
+        {
+          "type": "STRING",
+          "value": "repeat"
+        },
+        {
+          "type": "STRING",
+          "value": "label"
+        },
+        {
+          "type": "STRING",
+          "value": "operator"
+        },
+        {
+          "type": "STRING",
+          "value": "keyword"
+        },
+        {
+          "type": "STRING",
+          "value": "exception"
+        },
+        {
+          "type": "STRING",
+          "value": "preproc"
+        },
+        {
+          "type": "STRING",
+          "value": "include"
+        },
+        {
+          "type": "STRING",
+          "value": "define"
+        },
+        {
+          "type": "STRING",
+          "value": "macro"
+        },
+        {
+          "type": "STRING",
+          "value": "precondit"
+        },
+        {
+          "type": "STRING",
+          "value": "type"
+        },
+        {
+          "type": "STRING",
+          "value": "storage-class"
+        },
+        {
+          "type": "STRING",
+          "value": "structure"
+        },
+        {
+          "type": "STRING",
+          "value": "typedef"
+        },
+        {
+          "type": "STRING",
+          "value": "special"
+        },
+        {
+          "type": "STRING",
+          "value": "special-char"
+        },
+        {
+          "type": "STRING",
+          "value": "tag"
+        },
+        {
+          "type": "STRING",
+          "value": "delimiter"
+        },
+        {
+          "type": "STRING",
+          "value": "special-comment"
+        },
+        {
+          "type": "STRING",
+          "value": "debug"
+        },
+        {
+          "type": "STRING",
+          "value": "underlined"
+        },
+        {
+          "type": "STRING",
+          "value": "ignore"
+        },
+        {
+          "type": "STRING",
+          "value": "error"
+        },
+        {
+          "type": "STRING",
+          "value": "todo"
+        },
+        {
+          "type": "STRING",
+          "value": "line-nr"
+        },
+        {
+          "type": "STRING",
+          "value": "prompt"
+        },
+        {
+          "type": "STRING",
+          "value": "status-line"
+        },
+        {
+          "type": "STRING",
+          "value": "tab-line"
+        },
+        {
+          "type": "STRING",
+          "value": "tab-option"
+        },
+        {
+          "type": "STRING",
+          "value": "tab-select"
         }
       ]
     }
