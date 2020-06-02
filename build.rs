@@ -58,6 +58,16 @@ fn main() {
             grammar: "ts/tss/grammar.js".into(),
             sources: vec!["ts/tss/src/parser.c".into()],
         },
+        Parser {
+            name: "toml".to_string(),
+            dir: "ts/toml".into(),
+            grammar: "ts/toml/grammar.js".into(),
+            sources: vec![
+                "ts/toml/src/parser.c".into(),
+                "ts/toml/src/scanner.c".into(),
+                "ts/toml/src/binding.cc".into(),
+            ],
+        },
     ];
     for parser in parsers.into_iter() {
         check_exit!(build_parser(parser), 3);
@@ -87,6 +97,11 @@ fn install_npm_pkgs() -> Result<(), String> {
             "npm",
             vec!["install", "--save-dev", "tree-sitter-cli"],
             "npm --save-dev tree-sitter-cli",
+        ),
+        (
+            "npm",
+            vec!["install", "--save", "regexp-util"],
+            "npm --save regexp-util",
         ),
     ];
     for c in commands.into_iter() {
@@ -148,6 +163,21 @@ fn build_parser(parser: Parser) -> Result<(), String> {
         let _sd = SwitchDir::to_manifest_dir();
         let mut b = cc::Build::new();
         b.include(err_at!(env::current_dir())?.join(parser.dir).join("src"));
+        b.include(
+            ["/", "usr", "include", "nodejs", "src"]
+                .iter()
+                .collect::<path::PathBuf>(),
+        );
+        b.include(
+            ["/", "usr", "include", "nodejs", "deps", "v8", "include"]
+                .iter()
+                .collect::<path::PathBuf>(),
+        );
+        b.include(
+            err_at!(env::current_dir())?
+                .join("node_modules")
+                .join("nan"),
+        );
         for file in parser.sources.iter() {
             b.file(file);
         }
