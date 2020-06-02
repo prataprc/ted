@@ -162,6 +162,7 @@ fn build_parser(parser: Parser) -> Result<(), String> {
     {
         let _sd = SwitchDir::to_manifest_dir();
         let mut b = cc::Build::new();
+        b.warnings(false); // TODO: is this good practise ?
         b.include(err_at!(env::current_dir())?.join(parser.dir).join("src"));
         b.include(
             ["/", "usr", "include", "nodejs", "src"]
