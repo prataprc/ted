@@ -5,7 +5,7 @@ use std::mem;
 
 use crate::{
     buffer::Buffer,
-    event::{Event, Mod, Mto, Ted, DP},
+    event::{Event, Mod, Mto, DP},
     Error, Result,
 };
 
@@ -35,8 +35,10 @@ impl KeyEdit {
     }
 
     fn normal_fold(&mut self, evnt: Event) -> Result<Event> {
+        use crate::event::Code::{StatusCursor, StatusFile};
         use crate::event::Event::{Backspace, Char, Enter};
-        use crate::event::Event::{Md, Mt, Td, B, F, G, N, T};
+        use crate::event::Event::{Code, Md, Mt, B, F, G, N, T};
+
         let noop = Event::Noop;
 
         let prefix = mem::replace(&mut self.prefix, Default::default());
@@ -103,7 +105,7 @@ impl KeyEdit {
                 evnt => (noop, evnt),
             },
             G(n) if m_empty => match evnt {
-                Char('g', _) if ctrl => (noop, Td(Ted::StatusCursor)),
+                Char('g', _) if ctrl => (noop, Code(StatusCursor)),
                 Char('g', _) => (noop, Mt(Mto::Row(n, DP::Caret))),
                 Char('e', _) => (noop, Mt(Mto::Word(n, DP::Left, DP::End))),
                 Char('E', _) => (noop, Mt(Mto::WWord(n, DP::Left, DP::End))),
@@ -170,7 +172,7 @@ impl KeyEdit {
             },
             // control commands
             Event::Noop | N(_) => match evnt {
-                Char('g', _) if ctrl => (noop, Td(Ted::StatusFile)),
+                Char('g', _) if ctrl => (noop, Code(StatusFile)),
                 evnt => (prefix, evnt),
             },
             prefix => (prefix, evnt),

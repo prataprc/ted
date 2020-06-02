@@ -66,7 +66,7 @@ impl Text {
         buf: &mut Buffer,
         evnt: Event,
     ) -> Result<Event> {
-        use crate::event::{Event::Td, Ted};
+        use crate::event::Code::StatusCursor;
 
         self.tree = match self.tree.take() {
             tree @ Some(_) => tree,
@@ -75,7 +75,7 @@ impl Text {
 
         let evnt = match evnt {
             Event::Noop => Event::Noop,
-            Td(Ted::StatusCursor) => self.to_status_cursor(app, evnt)?,
+            Event::Code(StatusCursor) => self.to_status_cursor(app, evnt)?,
             evnt => evnt,
         };
 

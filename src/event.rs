@@ -182,16 +182,16 @@ impl Mto {
 }
 
 #[derive(Clone, Eq, PartialEq)]
-pub enum Ted {
+pub enum Code {
     StatusFile,
     StatusCursor,
 }
 
-impl fmt::Display for Ted {
+impl fmt::Display for Code {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
-            Ted::StatusFile => write!(f, "status_file"),
-            Ted::StatusCursor => write!(f, "status_cursor"),
+            Code::StatusFile => write!(f, "status_file"),
+            Code::StatusCursor => write!(f, "status_cursor"),
         }
     }
 }
@@ -207,7 +207,7 @@ pub enum Event {
     Char(char, KeyModifiers),
     FKey(u8, KeyModifiers),
     BackTab,
-    // folded events
+    // folded events for buffer management.
     B(usize, DP),   // (n, Left/Right)
     G(usize),       // (n,)
     F(usize, DP),   // (n, Left/Right)
@@ -218,7 +218,7 @@ pub enum Event {
     Mt(Mto),        // (n, motion-event)
     // other events
     List(Vec<Event>),
-    Td(Ted),
+    Code(Code),
     Cmd(String, String), // (command-name, arguments)
     Prompt(String),
     Noop,
@@ -307,7 +307,7 @@ impl Extend<Event> for Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Event::{BackTab, Cmd, FKey, List, Md, Mt, Noop, Op, Prompt, Td};
+        use Event::{BackTab, Cmd, Code, FKey, List, Md, Mt, Noop, Op, Prompt};
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
 
         match self {
@@ -325,7 +325,7 @@ impl fmt::Display for Event {
             Op(n, opr) => write!(f, "op({},{})", n, opr),
             Md(md) => write!(f, "md({})", md),
             Mt(mt) => write!(f, "mt({})", mt),
-            Td(td) => write!(f, "td({})", td),
+            Code(cd) => write!(f, "Code({})", cd),
             List(es) => write!(f, "list({})", es.len()),
             Cmd(name, _) => write!(f, "cmd({})", name),
             FKey(ch, _) => write!(f, "fkey({})", ch),

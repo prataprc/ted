@@ -11,7 +11,7 @@ use crate::{
     buffer::Buffer,
     code::window_edit::WindowEdit,
     code::{config::Config, App},
-    event::{Event, Ted},
+    event::Event,
     window::{Coord, Cursor, Notify, Span},
     Error, Result,
 };
@@ -140,10 +140,10 @@ impl WindowFile {
     }
 
     pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
-        use crate::event::Event::Td;
+        use crate::event::{Code::StatusFile, Event::Code};
 
         match self.we.on_event(app, evnt)? {
-            Td(Ted::StatusFile { .. }) => {
+            Code(StatusFile { .. }) => {
                 let span = self.status_file(app)?;
                 app.notify("code", Notify::Status(vec![span]))?;
                 Ok(Event::Noop)
