@@ -76,6 +76,78 @@ impl Wrap {
         Ok(self.refresh(buf, cs)?.account_nu(nu_wth))
     }
 
+    // return array of (buffer-cursor, row-len)
+    fn wrap_view(
+        crow: u16,
+        coord: Coord,
+        bc_xy: buffer::Cursor,
+        buf: &Buffer,
+    ) -> Result<Vec<(usize, u16)>> {
+        use crate::event::DP::Right;
+        let (hgt, wth) = coord.to_size();
+
+        let (tops, bots) = (crow as usize, hgt.saturating_sub(crow) as usize);
+
+        let mut rows: Vec<(usize, u16)> = {
+            let (mut bc, bc_row) = {
+                let line_idx = bc_xy.row.saturating_sub(tops);
+                (buf.line_to_char(line_idx), line_idx)
+            };
+
+            let mut top_rows = vec![];
+            for line in buf.lines_at(bc_row, Right)?.take(tops) {
+                let mut n = line.len_chars();
+                while n > (wth as usize) {
+                    top_rows.push((bc, wth));
+                    bc += wth as usize;
+                    n -= wth as usize;
+                }
+                if n > 0 {
+                    top_rows.push((bc, n as u16));
+                }
+            }
+            top_rows.reverse();
+            top_rows.into_iter().take(tops).collect()
+        };
+
+        rows.extend::<Vec<(usize, u16)>>({
+            let (mut bc, bc_row) = (buf.line_to_char(bc_xy.row), bc_xy.row);
+
+            let mut bot_rows: Vec<(usize, u16)> = vec![];
+            for line in buf.lines_at(bc_row, Right)?.take(bots) {
+                let mut n = line.len_chars();
+                while n > (wth as usize) {
+                    bot_rows.push((bc, wth));
+                    bc += wth as usize;
+                    n -= wth as usize;
+                }
+                if n > 0 {
+                    bot_rows.push((bc, n as u16));
+                }
+            }
+            bot_rows.into_iter().take(bots).collect()
+        });
+
+        Ok(rows)
+    }
+
+    //fn shift_cursor(&self, buf: &Buffer) {
+    //    let view = {
+    //        let Cursor { row, _ } = self.cursor;
+    //        Self::wrap_view(row, self.coord, self.obc_xy, buf)
+    //    };
+
+    //    let nbc_xy = buf.to_xy_cursor();
+    //    let nbc = buf.line_to_char(nbc_xy.row);
+    //    let bc_row = if (nbc.col % (wth as usize)) == 0 {
+    //        nbc.row + (nbc.col / (wth as usize)).saturating_sub(1)
+    //    } else {
+    //        nbc.row + (nbc.col / (wth as usize))
+    //    };
+
+    //    rows.crop_scroll_offset().contains(bc_row)
+    //}
+
     // number of cells to move forward.
     fn shift_after(&self, buf: &Buffer) -> usize {
         let nbc_xy = buf.to_xy_cursor();
@@ -643,11 +715,9 @@ impl Row {
         use std::iter::repeat;
 
         let mut bcs: Vec<Option<usize>> = {
-            let bc_end = bc + (ln as usize);
-            let iter = (bc..bc_end).into_iter().map(|bc| Some(bc));
-            iter.collect()
+            let bc_end = bc.saturating_add(ln as usize);
+            (bc..bc_end).map(Some).collect()
         };
-        assert!(bcs.len() < 10_000, "assert {}", bcs.len()); // TODO no magic
         bcs.extend(&{
             let n = wth.saturating_sub(bcs.len() as u16) as usize;
             let pad: Vec<Option<usize>> = repeat(None).take(n).collect();
