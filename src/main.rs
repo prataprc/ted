@@ -20,7 +20,7 @@ fn main() {
             Some(s) => s.to_string(),
             None => "???".to_string(),
         };
-        let mut strng = format!("panic occured: {:?}", s);
+        let mut strng = format!("panic occured: {}", s);
         strng.push_str(&format!("{}", std::backtrace::Backtrace::capture()));
         fs::write("ted-panic.out", strng.as_bytes()).unwrap();
     });

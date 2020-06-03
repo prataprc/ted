@@ -543,13 +543,7 @@ impl WrapView {
             bot_rows.into_iter().take(bots).collect()
         });
 
-        assert_eq!(
-            rows.len(),
-            self.coord.hgt as usize,
-            "{} {}",
-            rows.len(),
-            self.coord.hgt
-        );
+        assert_eq!(rows.len(), self.coord.hgt as usize);
         Ok(rows)
     }
 
