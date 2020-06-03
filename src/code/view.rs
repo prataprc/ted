@@ -72,162 +72,34 @@ impl Wrap {
     pub fn render(mut self, buf: &Buffer, cs: &ColorScheme) -> Result<Cursor> {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
-        self = self.shift_cursor(buf);
+        self = self.shift_cursor(buf)?;
         Ok(self.refresh(buf, cs)?.account_nu(nu_wth))
     }
 
-    // return array of (buffer-cursor, row-len)
-    fn wrap_view(
-        crow: u16,
-        coord: Coord,
-        bc_xy: buffer::Cursor,
-        buf: &Buffer,
-    ) -> Result<Vec<(usize, u16)>> {
-        use crate::event::DP::Right;
-        let (hgt, wth) = coord.to_size();
-
-        let (tops, bots) = (crow as usize, hgt.saturating_sub(crow) as usize);
-
-        let mut rows: Vec<(usize, u16)> = {
-            let (mut bc, bc_row) = {
-                let line_idx = bc_xy.row.saturating_sub(tops);
-                (buf.line_to_char(line_idx), line_idx)
-            };
-
-            let mut top_rows = vec![];
-            for line in buf.lines_at(bc_row, Right)?.take(tops) {
-                let mut n = line.len_chars();
-                while n > (wth as usize) {
-                    top_rows.push((bc, wth));
-                    bc += wth as usize;
-                    n -= wth as usize;
-                }
-                if n > 0 {
-                    top_rows.push((bc, n as u16));
-                }
-            }
-            top_rows.reverse();
-            top_rows.into_iter().take(tops).collect()
+    fn shift_cursor(&self, buf: &Buffer) -> Result<Self> {
+        let view = {
+            let mut view = WrapView::new(self.coord, self.cursor, self.obc_xy);
+            view.set_scroll_off(self.scroll_off)
+                .line_number(self.line_number);
+            view.into_new_view()?;
         };
 
-        rows.extend::<Vec<(usize, u16)>>({
-            let (mut bc, bc_row) = (buf.line_to_char(bc_xy.row), bc_xy.row);
+        trace!("SHIFT {}->{}@{}", self, view.cursor, view.coord);
 
-            let mut bot_rows: Vec<(usize, u16)> = vec![];
-            for line in buf.lines_at(bc_row, Right)?.take(bots) {
-                let mut n = line.len_chars();
-                while n > (wth as usize) {
-                    bot_rows.push((bc, wth));
-                    bc += wth as usize;
-                    n -= wth as usize;
-                }
-                if n > 0 {
-                    bot_rows.push((bc, n as u16));
-                }
-            }
-            bot_rows.into_iter().take(bots).collect()
-        });
-
-        Ok(rows)
-    }
-
-    //fn shift_cursor(&self, buf: &Buffer) {
-    //    let view = {
-    //        let Cursor { row, _ } = self.cursor;
-    //        Self::wrap_view(row, self.coord, self.obc_xy, buf)
-    //    };
-
-    //    let nbc_xy = buf.to_xy_cursor();
-    //    let nbc = buf.line_to_char(nbc_xy.row);
-    //    let bc_row = if (nbc.col % (wth as usize)) == 0 {
-    //        nbc.row + (nbc.col / (wth as usize)).saturating_sub(1)
-    //    } else {
-    //        nbc.row + (nbc.col / (wth as usize))
-    //    };
-
-    //    rows.crop_scroll_offset().contains(bc_row)
-    //}
-
-    // number of cells to move forward.
-    fn shift_after(&self, buf: &Buffer) -> usize {
-        let nbc_xy = buf.to_xy_cursor();
-
-        let mut n = 0;
-        for row in self.obc_xy.row..=nbc_xy.row {
-            n += match row {
-                row if row == self.obc_xy.row => {
-                    let m = self.coord.to_cells(buf.line_len(row));
-                    m.saturating_sub(self.obc_xy.col)
-                }
-                row if row == nbc_xy.row => nbc_xy.col,
-                row => self.coord.to_cells(buf.line_len(row)),
-            }
-        }
-        n
-    }
-
-    // number of cells to move backward.
-    fn shift_before(&self, buf: &Buffer) -> usize {
-        let nbc_xy = buf.to_xy_cursor();
-
-        let mut n = 0;
-        for row in (nbc_xy.row..=self.obc_xy.row).rev() {
-            n += match row {
-                row if row == self.obc_xy.row => self.obc_xy.col,
-                row if row == nbc_xy.row => {
-                    let m = self.coord.to_cells(buf.line_len(row));
-                    m.saturating_sub(nbc_xy.col)
-                }
-                row => self.coord.to_cells(buf.line_len(row)),
-            }
-        }
-        n
-    }
-
-    fn shift_cursor(mut self, buf: &Buffer) -> Self {
-        use crate::event::DP::{Left, Right};
-        use std::cmp::Ordering::{Equal, Greater, Less};
-
-        let scroll_off = self.scroll_off; // accounting for scroll-offset.
-        let nbc_xy = buf.to_xy_cursor();
-
-        // create possible cursor positions.
-        let mut cursors: Vec<Cursor> = {
-            let iter = if nbc_xy < self.obc_xy {
-                self.cursor.prev_cursors(self.coord).into_iter().rev()
-            } else {
-                self.cursor.next_cursors(self.coord).into_iter().rev()
-            };
-            iter.skip((scroll_off * self.coord.wth) as usize)
-                .rev()
-                .collect()
-        };
-        // compute the number of cells to drain and its direction.
-        let same_row = nbc_xy.row == self.obc_xy.row;
-        let (m, dp) = match nbc_xy.cmp(&self.obc_xy) {
-            Equal => return self,
-            Greater if same_row => (nbc_xy.col - self.obc_xy.col, Right),
-            Greater => (self.shift_after(buf), Right),
-            Less if same_row => (self.obc_xy.col - nbc_xy.col, Left),
-            Less => (self.shift_before(buf), Left),
-        };
-        cursors.drain(..cmp::min(m, cursors.len()));
-        // compute cursor.
-        self = match (cursors.pop(), dp) {
-            (Some(cursor), _) => {
-                trace!("SHIFT {}->{}", self, cursor);
-                self.cursor = cursor;
-                self
-            }
-            (None, DP::Left) => self.into_resized(nbc_xy, scroll_off, Left),
-            (None, DP::Right) => self.into_resized(nbc_xy, scroll_off, Right),
-            _ => unreachable!(),
-        };
-
-        self
+        Ok(Wrap {
+            name: self.name,
+            coord: view.coord,
+            cursor: view.cursor,
+            obc_xy: view.bc_xy,
+            nu: ColNu::new(view.bc_xy.row, self.line_number),
+            scroll_off: self.scroll_off,
+            line_number: self.line_number,
+        })
     }
 
     fn refresh(self, buf: &Buffer, scheme: &ColorScheme) -> Result<Cursor> {
+        use std::iter::repeat;
+
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         trace!("REFRESH {} nbc_xy:{} line_idx:{}", self, nbc_xy, line_idx);
@@ -235,49 +107,27 @@ impl Wrap {
         let mut stdout = io::stdout();
 
         let full_coord = self.outer_coord();
-        let (col, mut row) = full_coord.to_origin_cursor();
+        let (col, row) = full_coord.to_origin_cursor();
         let max_row = row + full_coord.hgt;
 
-        let mut wv = WrapView::new(line_idx, self.coord, buf)?;
-        wv.align(buf.to_cursor(), self.cursor);
+        let mut view = WrapView::new(self.coord, self.cursor, self.obc_xy);
+        let view_rows = view.to_view_rows(buf)?;
 
-        'a: for (l, line) in wv.lines.iter().enumerate() {
-            for (r, rline) in line.rows.iter().enumerate() {
-                let mut nu_span = match r {
-                    0 => self.nu.to_span(ColKind::Nu(line.nu), scheme),
-                    _ => self.nu.to_span(ColKind::Wrap, scheme),
-                };
-                nu_span.set_cursor(Cursor { col, row });
-
-                let bcs: Vec<usize> = {
-                    let iter = rline.cells.iter().filter_map(|c| c.bc);
-                    iter.collect()
-                };
-                let line_span = match (bcs.first(), bcs.last()) {
-                    (Some(fbc), Some(ebc)) => {
-                        let start = buf.line_to_char(l) + *fbc;
-                        let iter = buf.chars_at(start, DP::Right)?;
-                        let chs: Vec<char> = iter.take(*ebc - *fbc + 1).collect();
-                        //trace!(
-                        //   "loop {} {} ({} {})->({}, {})",
-                        //   l, r, fbc, ebc, col, row
-                        //);
-                        span!(st: String::from_iter(chs))
-                    }
-                    _ => {
-                        // trace!("loop {} {} -> ({}, {})", l, r, col, row);
-                        span!(st: "".to_string())
-                    }
-                };
-                // trace!("    text {:?}", line_span.to_content());
-                err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
-
-                row += 1;
-                if row >= max_row {
-                    break 'a;
-                }
-            }
+        for (r, (line_nu, bc_caret, n) in view_rows.iter().enumerate() {
+            let mut nu_span = match line_nu {
+                Some(nu) => self.nu.to_span(ColKind::Nu(nu), scheme),
+                None => self.nu.to_span(ColKind::Wrap, scheme),
+            };
+            nu_span.set_cursor(Cursor { col, row: row + r });
+            let chars = {
+                let iter = buf.chars_at(bc_caret).chain(repeat(' '))
+                iter.take(bc_caret + (n as usize))
+            };
+            let line_span = span!(st: String::from_iter(chs));
+            // trace!("    text {:?}", line_span.to_content());
+            err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
         }
+        let row = row + view_rows.len();
         empty_lines(
             tail_line(col, row, max_row - 1, &self.nu, buf, scheme)?,
             max_row - 1,
@@ -296,38 +146,6 @@ impl Wrap {
                 self.coord.resize_to(hgt, wth - nu_wth)
             };
             self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
-        }
-    }
-
-    fn into_resized(self, nbc_xy: buffer::Cursor, so: u16, dp: DP) -> Self {
-        let nu = ColNu::new(nbc_xy.row, self.line_number);
-        let old_wth = ColNu::new(self.obc_xy.row, self.line_number).to_width();
-        let new_wth = nu.to_width();
-        let coord = {
-            let (hgt, wth) = self.coord.to_size();
-            self.coord.resize_to(hgt, wth + old_wth - new_wth)
-        };
-        let cursor = match dp {
-            DP::Left => Cursor {
-                row: so,
-                col: (nbc_xy.col % (coord.wth as usize)) as u16,
-            },
-            DP::Right => Cursor {
-                row: coord.hgt.saturating_sub(so + 1),
-                col: (nbc_xy.col % (coord.wth as usize)) as u16,
-            },
-            _ => unreachable!(),
-        };
-
-        trace!("RESIZE {}->{}@{}", self, cursor, coord);
-        Wrap {
-            name: self.name,
-            coord: coord,
-            cursor: cursor,
-            obc_xy: self.obc_xy,
-            nu,
-            scroll_off: self.scroll_off,
-            line_number: self.line_number,
         }
     }
 
@@ -391,11 +209,11 @@ impl NoWrap {
     pub fn render(mut self, buf: &Buffer, cs: &ColorScheme) -> Result<Cursor> {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
-        self = self.shift_cursor(buf);
+        self = self.shift_cursor(buf)?;
         Ok(self.refresh(buf, cs)?.account_nu(nu_wth))
     }
 
-    fn shift_cursor(self, buf: &Buffer) -> Self {
+    fn shift_cursor(self, buf: &Buffer) -> Result<Self> {
         let scroll_off = self.scroll_off; // accounting for scroll-offset.
 
         let (r_min, r_max) = if self.coord.hgt < (scroll_off * 2) {
@@ -441,7 +259,7 @@ impl NoWrap {
         };
 
         trace!("SHIFT {}->{}@{}", self, cursor, coord);
-        NoWrap {
+        Ok(NoWrap {
             name: self.name,
             coord,
             cursor,
@@ -449,7 +267,7 @@ impl NoWrap {
             nu,
             scroll_off: self.scroll_off,
             line_number: self.line_number,
-        }
+        })
     }
 
     fn refresh(self, buf: &Buffer, scheme: &ColorScheme) -> Result<Cursor> {
@@ -583,192 +401,169 @@ fn tail_line(
     Ok(new_row)
 }
 
-enum VShift {
-    Left(usize),
-    Right(usize),
-    Skip,
-    Done,
-}
-
 struct WrapView {
-    lines: Vec<Line>,
+    coord: Coord, // full coordinate including line-number
+    cursor: Cursor,
+    bc_xy: buffer::Cursor,
+    scroll_off: u16,
+    line_number: bool,
 }
 
 impl WrapView {
-    fn new(line_idx: usize, coord: Coord, buf: &Buffer) -> Result<WrapView> {
-        let mut lines = vec![];
-        let iter = (line_idx..).take(coord.hgt as usize).enumerate();
-        for (row, line_idx) in iter {
-            assert!(row < 1_000, "assert {}", row); // TODO: avoid magic number
-            Line::new_line(line_idx, row as u16, coord.wth, buf)
-                //
-                .map(|line| lines.push(line));
+    fn new(coord: Coord, cursor: Cursor, bc_xy: buffer::Cursor) -> WrapView {
+        WrapView {
+            coord,
+            bc_xy,
+            cursor,
+            scroll_off: Default::default(),
+
+            rows: Default::default(),
         }
-        Ok(WrapView { lines })
     }
 
-    fn align(&mut self, bc: usize, cursor: Cursor) {
-        loop {
-            match self.do_align(bc, cursor) {
-                VShift::Left(_) => {
-                    let line = self.lines.remove(0);
-                    line.drop_row().map(|line| self.lines.push(line));
+    fn set_scroll_off(&mut self, scroll_off: u16) -> &mut Self {
+        self.scroll_off = scroll_off;
+        self
+    }
+
+    fn set_line_number(&mut self, line_number: bool) -> &mut Self {
+        self.line_number = line_number;
+        self
+    }
+
+    fn into_new_view(mut self, buf: &Buffer) -> Result<Self> {
+        let nbc_xy = buf.to_xy_cursor();
+
+        match self.to_cursor(buf, self.to_view_rows(buf)?) {
+            Some(cursor) => {
+                self.cursor = cursor;
+                self.bc_xy = nbc_xy;
+                self
+            }
+            None => {
+                let coord = {
+                    let old_nu = ColNu::new(self.bc_xy.row, self.line_number);
+                    let nu = ColNu::new(nbc_xy.row, self.line_number);
+                    let (hgt, wth) = coord.to_size();
+                    self.coord
+                        .resize_to(hgt, wth + old_nu.to_width() - nu.to_width())
+                };
+                let cursor = {
+                    let row = if nbc_xy <= self.bc_xy {
+                        self.scroll_off + 1
+                    } else {
+                        let (hgt, _) = coord.to_size();
+                        hgt.saturating_sub(self.scroll_off + 1)
+                    };
+                    let col = nbc_xy.col % (wth as usize) as u16;
+                    Cursor { row, col }
+                };
+
+                self.coord = coord;
+                self.cursor = cursor;
+                self.bc_xy = nbc_xy;
+                self
+            }
+        }
+    }
+}
+
+impl WrapView {
+    // return (Option<line_nu>, buffer_cursor, len)
+    fn to_view_rows(&self, buf: &Buffer) -> Result<Vec<(Option<usize>, usize, u16)>> {
+        use crate::event::DP::Right;
+
+        let (coord, cursor, bc_xy) = (self.coord, self.cursor, self.bc_xy);
+        let (hgt, wth) = coord.to_size();
+        let tops = cursor.row as usize;
+        let bots = hgt.saturating_sub(cursor_row) as usize;
+
+        // (Option<line_nu>, buffer-cursor, line-len)
+        let mut rows: Vec<(Option<usize>, usize, u16)> = {
+            let (mut bc, line_idx) = {
+                let line_idx = bc_xy.row.saturating_sub(tops);
+                (buf.line_to_char(line_idx), line_idx)
+            };
+            let mut top_rows = vec![];
+            let mut line_nu = Some(line_idx);
+            let mut iter = buf.lines_at(line_idx, Right)?.take(tops);
+            for (i, line) in iter.enumerate() {
+                let mut n = line.len_chars();
+                while n > (wth as usize) {
+                    top_rows.push((line_nu.take(), bc, wth));
+                    bc += wth as usize;
+                    n -= wth as usize;
                 }
-                VShift::Right(_) => unreachable!(),
-                VShift::Skip => (),
-                VShift::Done => break,
+                if n > 0 {
+                    top_rows.push((line_nu.take(), bc, n as u16));
+                }
+                line_nu = Some(line_idx + i);
             }
-        }
-    }
-
-    fn do_align(&self, bc: usize, cursor: Cursor) -> VShift {
-        for line in self.lines.iter() {
-            match line.align(bc, cursor) {
-                VShift::Left(n) => return VShift::Left(n),
-                VShift::Right(_) => unreachable!(),
-                VShift::Skip => (),
-                VShift::Done => return VShift::Done,
+            {
+                top_rows.reverse();
+                top_rows = top_rows.into_iter().take(tops).collect()
+                top_rows.reverse();
+                top_rows
             }
-        }
-        VShift::Done
-    }
-}
-
-struct Line {
-    nu: usize,
-    rows: Vec<Row>,
-}
-
-impl Line {
-    fn new_line(line_idx: usize, row: u16, wth: u16, buf: &Buffer) -> Option<Self> {
-        use std::iter::repeat;
-
-        let len_chars = match buf.n_lines() {
-            rows if line_idx == rows => Some(0),
-            rows if line_idx < rows => Some(buf.line_len(line_idx)),
-            _ => None,
-        }?;
-        let bc = buf.char_to_line(buf.to_cursor());
-
-        let mut rows: Vec<(u16, usize, u16, u16)> = {
-            let iter = repeat(wth).take(len_chars / (wth as usize));
-            iter.enumerate()
-                .map(|(r, wth)| {
-                    assert!(r < 1_000, "assert {}", r); // TODO no magi number
-                    (row + (r as u16), bc + (r * (wth as usize)), wth, wth)
-                })
-                .collect()
         };
 
-        if (len_chars % (wth as usize)) > 0 {
-            let r = rows.len();
-            let w = len_chars % (wth as usize);
-            assert!(w <= (wth as usize), "assert {} {}", w, wth);
-            assert!(r < 1_000, "assert {}", r); // TODO avoid magic number
-            let row = row + (r as u16);
-            rows.push((row, bc + (r * (wth as usize)), w as u16, wth))
-        }
-
-        let rows: Vec<Row> = {
-            let i1 = rows.into_iter();
-            let i2 = i1.map(|(row, bc, ln, wth)| Row::new_row(row, bc, ln, wth));
-            i2.collect()
-        };
-
-        Some(Line {
-            nu: line_idx + 1,
-            rows,
-        })
-    }
-
-    fn align(&self, bc: usize, cursor: Cursor) -> VShift {
-        for row in self.rows.iter() {
-            match row.align(bc, cursor) {
-                shift @ VShift::Left(_) => return shift,
-                shift @ VShift::Right(_) => return shift,
-                VShift::Skip => (),
-                VShift::Done => return VShift::Done,
+        rows.extend::<Vec<(usize, u16)>>({
+            let (mut bc, line_idx) = (buf.line_to_char(bc_xy.row), bc_xy.row);
+            let mut bot_rows: Vec<(Option<usize>, usize, u16)> = vec![];
+            let mut line_nu = Some(bc_row);
+            let mut iter = buf.lines_at(bc_row, Right)?.take(bots);
+            for (i, line) in iter.enumarate() {
+                let mut n = line.len_chars();
+                while n > (wth as usize) {
+                    bot_rows.push((line_nu.take(), bc, wth));
+                    bc += wth as usize;
+                    n -= wth as usize;
+                }
+                if n > 0 {
+                    bot_rows.push((line_nu.take(), bc, n as u16));
+                }
+                line_nu = Some(line_idx + i);
             }
-        }
-        VShift::Done
-    }
-
-    fn drop_row(mut self) -> Option<Self> {
-        match self.rows.len() {
-            0 => None,
-            1 => None,
-            _ => {
-                self.rows.remove(0);
-                self.rows.iter_mut().for_each(|r| r.pull_row());
-                Some(self)
-            }
-        }
-    }
-}
-
-struct Row {
-    cells: Vec<Cell>,
-}
-
-impl Row {
-    fn new_row(row: u16, bc: usize, ln: u16, wth: u16) -> Row {
-        use std::iter::repeat;
-
-        let mut bcs: Vec<Option<usize>> = {
-            let bc_end = bc.saturating_add(ln as usize);
-            (bc..bc_end).map(Some).collect()
-        };
-        bcs.extend(&{
-            let n = wth.saturating_sub(bcs.len() as u16) as usize;
-            let pad: Vec<Option<usize>> = repeat(None).take(n).collect();
-            pad
+            bot_rows.into_iter().take(bots).collect()
         });
 
-        let cells = {
-            let iter = bcs.into_iter().zip((0..wth).into_iter());
-            iter.map(|(bc, col)| Cell { bc, col, row }).collect()
-        };
-        Row { cells }
+        assert!(rows, self.coord.hgt);
+        Ok(rows)
     }
 
-    fn align(&self, bc: usize, cursor: Cursor) -> VShift {
-        use std::cmp::Ordering::{Equal, Greater, Less};
-
-        let mut cells: Vec<&Cell> = self
-            .cells
-            .iter()
-            .take_while(|cell| {
-                let ok = cell.row < cursor.row;
-                ok || (cell.row == cursor.row) && (cell.col <= cursor.col)
-            })
-            .collect();
-
-        cells = {
-            let iter = cells.into_iter().rev().skip_while(|c| c.bc.is_none());
-            iter.collect()
+    fn to_cursor(
+        //
+        &self, buf: &Buffer, rs: Vec<(Option<usize>, usize, u16)>
+    ) -> Option<Cursor> {
+        let rows = {
+            // crop the rows for scroll offset.
+            let so = self.scroll_off;
+            match (so * 2, rs.len()) {
+                (m, n) if m < n => rs,
+                (_, n) => rs.drain(so..(n - so)).collect(),
+            }
         };
 
-        match cells.first() {
-            Some(Cell {
-                bc: Some(cell_bc), ..
-            }) => match cell_bc.cmp(&bc) {
-                Equal => VShift::Done,
-                Less => VShift::Left(bc - cell_bc),
-                Greater => VShift::Right(cell_bc - bc),
-            },
-            _ => VShift::Skip,
-        }
-    }
+        let nbc_xy = buf.to_xy_cursor();
 
-    fn pull_row(&mut self) {
-        for cell in self.cells.iter_mut() {
-            cell.row = cell.row.saturating_sub(1)
-        }
-    }
-}
+        let (_, wth) = coord.to_size();
+        let nbc_caret = {
+            let col = if (nbc_xy.col % (wth as usize)) == 0 {
+                (nbc_xy.col / (wth as usize)).saturating_sub(1) * wth
+            } else {
+                (nbc_xy.col / (wth as usize)) * wth
+            };
+            buf.line_to_char(nbc_xy.row) + col
+        };
 
-struct Cell {
-    bc: Option<usize>,
-    col: u16,
-    row: u16,
+        for (row, (_, bc_caret, _)) in rows.into_iter().enumerate() {
+            if bc_caret == nbc_caret {
+                return Cursor {
+                    col: nbc_xy.col % wth,
+                    row,
+                };
+            }
+        }
+        return None;
+    }
 }
