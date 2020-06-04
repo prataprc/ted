@@ -10,7 +10,9 @@ use crate::{Error, Result};
 
 macro_rules! config {
     ($(($field:ident, $t:ty, $val:expr)),*) => (
-        #[derive(Clone, Debug)]
+        use serde_derive::{Serialize, Deserialize};
+
+        #[derive(Clone, Debug, Serialize)]
         pub struct Config {
             $(pub $field: $t,)*
         }

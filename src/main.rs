@@ -27,7 +27,10 @@ fn main() {
 
     match State::new(opts) {
         Ok(state) => match state.event_loop() {
-            Ok(_) => process::exit(0),
+            Ok(outs) => {
+                println!("{}", outs);
+                process::exit(0);
+            }
             Err(err) => {
                 println!("{}", err);
                 process::exit(2);

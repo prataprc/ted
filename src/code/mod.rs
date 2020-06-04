@@ -21,6 +21,7 @@ mod window_prompt;
 
 use crossterm::{cursor as term_cursor, queue};
 use log::trace;
+use toml;
 
 use std::{
     ffi,
@@ -95,7 +96,11 @@ impl App {
             cnf.mixin(config.try_into().unwrap())
         };
 
-        trace!("starting app `code` coord:{} config...\n{}", coord, config);
+        trace!(
+            "starting app `code` coord:{} config...\n{}",
+            coord,
+            err_at!(FailConvert, toml::to_string(&config))?
+        );
 
         let mut app = App {
             coord,

@@ -84,7 +84,7 @@ impl Terminal {
 
 impl fmt::Display for Terminal {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "Terminal<{},{}>", self.cols, self.rows)
+        write!(f, "Terminal<{},{}>", self.rows, self.cols)
     }
 }
 
@@ -166,7 +166,7 @@ impl State {
 }
 
 impl State {
-    pub fn event_loop(mut self) -> Result<()> {
+    pub fn event_loop(mut self) -> Result<String> {
         let mut stdout = io::stdout();
         let mut stats = Latency::new();
 
@@ -176,7 +176,7 @@ impl State {
         err_at!(Fatal, queue!(stdout, term_cursor::Show))?;
         err_at!(Fatal, stdout.flush())?;
 
-        let res = 'a: loop {
+        'a: loop {
             // new event
             let evnt: Event = {
                 let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
@@ -191,7 +191,7 @@ impl State {
             for evnt in evnt {
                 // preprocessing
                 let evnt = match evnt {
-                    Event::Char('q', _) if evnt.is_control() => break 'a Ok(()),
+                    Event::Char('q', _) if evnt.is_control() => break 'a,
                     _ => evnt,
                 };
                 // dispatch
@@ -203,7 +203,7 @@ impl State {
                 // post processing
                 for evnt in evnt {
                     match evnt {
-                        Event::Char('q', _) => break 'a Ok(()),
+                        Event::Char('q', _) => break 'a,
                         _ => (),
                     }
                 }
@@ -215,10 +215,9 @@ impl State {
             err_at!(Fatal, stdout.flush())?;
 
             stats.sample(start.elapsed().unwrap());
-        };
+        }
 
-        stats.pretty_print("");
-        res
+        Ok(stats.pretty_print())
     }
 }
 
@@ -290,18 +289,20 @@ impl Latency {
         percentiles
     }
 
-    fn pretty_print(&self, prefix: &str) {
+    fn pretty_print(&self) -> String {
         let mean = self.mean();
-        println!(
-            "{}duration (min, avg, max): {:?}",
-            prefix,
+        let mut outs = format!(
+            //
+            "duration (min, avg, max): {:?}",
             (self.min, mean, self.max)
         );
-        for (duration, n) in self.percentiles().into_iter() {
+        for (dur, n) in self.percentiles().into_iter() {
             if n > 0 {
-                println!("{}  {} percentile = {}", prefix, duration, n);
+                outs.push_str(&format!("  {} percentile = {}", dur, n));
             }
         }
+
+        outs
     }
 }
 
@@ -342,7 +343,7 @@ fn init_logger(opts: &Opt) -> Result<()> {
 
     trace!(
         "logging initialized file:{:?} trace:{}",
-        opts.log_file,
+        log_file,
         opts.trace
     );
     Ok(())

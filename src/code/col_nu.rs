@@ -5,10 +5,31 @@ use crate::{
     window::Span,
 };
 
+#[derive(Clone)]
 pub enum ColKind {
     Nu(usize),
     Wrap,
     Empty,
+}
+
+impl fmt::Display for ColKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            ColKind::Nu(nu) => write!(f, "ColKind::Nu<{}>", nu),
+            ColKind::Wrap => write!(f, "ColKind::Wrap"),
+            ColKind::Empty => write!(f, "ColKind::Empty"),
+        }
+    }
+}
+
+impl fmt::Debug for ColKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            ColKind::Nu(nu) => write!(f, "ColKind::Nu<{}>", nu),
+            ColKind::Wrap => write!(f, "ColKind::Wrap"),
+            ColKind::Empty => write!(f, "ColKind::Empty"),
+        }
+    }
 }
 
 #[derive(Clone)]

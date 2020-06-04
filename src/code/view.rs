@@ -110,45 +110,26 @@ impl Wrap {
 
         let full_coord = self.outer_coord();
         let (col, row) = full_coord.to_origin_cursor();
-        let max_row = row + full_coord.hgt;
 
         let view_rows = {
             let view = WrapView::new(self.coord, self.cursor, self.obc_xy);
             view.to_view_rows(buf)?
         };
-
-        for (r, (line_nu, bc_caret, n)) in view_rows.iter().enumerate() {
+        let iter = (row..full_coord.hgt).zip(view_rows.into_iter());
+        for (row, (col_kind, bc_caret, n)) in iter {
             let nu_span = {
-                let mut nu_span = match line_nu {
-                    Some(num) => self.nu.to_span(ColKind::Nu(*num), scheme),
-                    None => self.nu.to_span(ColKind::Wrap, scheme),
-                };
-                nu_span.set_cursor(Cursor {
-                    col,
-                    row: row + (r as u16),
-                });
+                let mut nu_span = self.nu.to_span(col_kind, scheme);
+                nu_span.set_cursor(Cursor { col, row });
                 nu_span
             };
-
             let chars = {
-                let iter = buf.chars_at(*bc_caret, Right)?.chain(repeat(' '));
-                iter.take(bc_caret + (*n as usize))
+                let iter = buf.chars_at(bc_caret, Right)?.chain(repeat(' '));
+                iter.take(n as usize)
             };
             let line_span = span!(st: String::from_iter(chars));
-            // trace!("    text {:?}", line_span.to_content());
+            trace!("    text {:?}", line_span.to_content());
             err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
         }
-        let row: u16 = {
-            let row = (row as usize) + view_rows.len();
-            err_at!(FailConvert, row.try_into())?
-        };
-        empty_lines(
-            tail_line(col, row, max_row - 1, &self.nu, buf, scheme)?,
-            max_row - 1,
-            full_coord,
-            &self.nu,
-            scheme,
-        )?;
 
         Ok(self.cursor)
     }
@@ -318,13 +299,7 @@ impl NoWrap {
             row += 1;
         }
 
-        empty_lines(
-            tail_line(col, row, max_row - 1, &self.nu, buf, scheme)?,
-            max_row - 1,
-            full_coord,
-            &self.nu,
-            scheme,
-        )?;
+        empty_lines(row, max_row - 1, full_coord, &self.nu, scheme)?;
 
         Ok(self.cursor)
     }
@@ -485,35 +460,36 @@ impl WrapView {
 }
 
 impl WrapView {
-    // return (Option<line_nu>, buffer_cursor, len)
-    fn to_view_rows(&self, buf: &Buffer) -> Result<Vec<(Option<usize>, usize, u16)>> {
+    // return (ColKind, buffer_cursor, len)
+    fn to_view_rows(&self, buf: &Buffer) -> Result<Vec<(ColKind, usize, u16)>> {
         use crate::event::DP::Right;
+        use std::iter::repeat;
 
         let (coord, cursor, bc_xy) = (self.coord, self.cursor, self.bc_xy);
         let (hgt, wth) = coord.to_size();
         let tops = cursor.row as usize;
         let bots = hgt.saturating_sub(cursor.row) as usize;
 
-        // (Option<line_nu>, buffer-cursor, line-len)
-        let mut rows: Vec<(Option<usize>, usize, u16)> = {
-            let (mut bc, line_idx) = {
-                let line_idx = bc_xy.row.saturating_sub(tops);
-                (buf.line_to_char(line_idx), line_idx)
-            };
+        // (ColKind, buffer-cursor, line-len)
+        let mut rows: Vec<(ColKind, usize, u16)> = {
+            let line_idx = bc_xy.row.saturating_sub(tops);
             let mut top_rows = vec![];
-            let mut line_nu = Some(line_idx);
-            let iter = buf.lines_at(line_idx, Right)?.take(tops);
-            for (i, line) in iter.enumerate() {
-                let mut n = line.len_chars();
-                while n > (wth as usize) {
-                    top_rows.push((line_nu.take(), bc, wth));
-                    bc += wth as usize;
-                    n -= wth as usize;
-                }
-                if n > 0 {
-                    top_rows.push((line_nu.take(), bc, n as u16));
-                }
-                line_nu = Some(line_idx + i);
+            let iter = {
+                let iter = buf.lines_at(line_idx, Right)?.take(tops);
+                (line_idx..).zip(iter)
+            };
+            for (bc_row, line) in iter {
+                let bc = buf.line_to_char(bc_row);
+                let ns: Vec<u16> = wrap_lines(line.len_chars(), wth)?;
+                let bcs: Vec<usize> = {
+                    let iter = (0..ns.len()).map(|j| bc + (j * (wth as usize)));
+                    iter.collect()
+                };
+                col_kinds(bc_row + 1, ns.len())
+                    .into_iter()
+                    .zip(bcs.into_iter())
+                    .zip(ns.into_iter())
+                    .for_each(|((ck, bc), n)| top_rows.push((ck, bc, n)));
             }
             {
                 top_rows.reverse();
@@ -523,42 +499,58 @@ impl WrapView {
             }
         };
 
-        rows.extend::<Vec<(Option<usize>, usize, u16)>>({
-            let (mut bc, line_idx) = (buf.line_to_char(bc_xy.row), bc_xy.row);
-            let mut bot_rows: Vec<(Option<usize>, usize, u16)> = vec![];
-            let mut line_nu = Some(line_idx);
-            let iter = buf.lines_at(line_idx, Right)?.take(bots);
-            for (i, line) in iter.enumerate() {
-                let mut n = line.len_chars();
-                while n > (wth as usize) {
-                    bot_rows.push((line_nu.take(), bc, wth));
-                    bc += wth as usize;
-                    n -= wth as usize;
-                }
-                if n > 0 {
-                    bot_rows.push((line_nu.take(), bc, n as u16));
-                }
-                line_nu = Some(line_idx + i);
+        rows.extend::<Vec<(ColKind, usize, u16)>>({
+            let mut bot_rows = vec![];
+            let iter = {
+                let iter = buf.lines_at(bc_xy.row, Right)?.take(bots);
+                (bc_xy.row..).zip(iter)
+            };
+            for (bc_row, line) in iter {
+                let bc = buf.line_to_char(bc_row);
+                let ns: Vec<u16> = wrap_lines(line.len_chars(), wth)?;
+                let bcs: Vec<usize> = {
+                    let iter = (0..ns.len()).map(|j| bc + (j * (wth as usize)));
+                    iter.collect()
+                };
+                col_kinds(bc_row + 1, ns.len())
+                    .into_iter()
+                    .zip(bcs.into_iter())
+                    .zip(ns.into_iter())
+                    .for_each(|((ck, bc), n)| bot_rows.push((ck, bc, n)));
             }
             bot_rows.into_iter().take(bots).collect()
         });
 
+        {
+            let hgt = self.coord.hgt as usize;
+            if rows.len() == 0 {
+                rows.extend(vec![(ColKind::Nu(1), 0, 0)]);
+            }
+            if rows.len() < hgt {
+                let items: Vec<(ColKind, usize, u16)> = {
+                    let empty = (ColKind::Empty, 0, 0);
+                    repeat(empty).take(hgt - rows.len()).collect()
+                };
+                rows.extend(items)
+            }
+        }
+
         assert_eq!(rows.len(), self.coord.hgt as usize);
+
         Ok(rows)
     }
 
     fn to_cursor(
-        //
         &self,
         buf: &Buffer,
-        mut rs: Vec<(Option<usize>, usize, u16)>,
+        mut rows: Vec<(ColKind, usize, u16)>, // (ColKind, bc, n)
     ) -> Result<Option<Cursor>> {
         let rows = {
             // crop the rows for scroll offset.
             let so = self.scroll_off as usize;
-            match (so * 2, rs.len()) {
-                (m, n) if m < n => rs,
-                (_, n) => rs.drain(so..(n - so)).collect(),
+            match (so * 2, rows.len()) {
+                (m, n) if m < n => rows,
+                (_, n) => rows.drain(so..(n - so)).collect(),
             }
         };
 
@@ -589,4 +581,27 @@ impl WrapView {
         }
         return Ok(None);
     }
+}
+
+fn wrap_lines(n: usize, wth: u16) -> Result<Vec<u16>> {
+    use std::iter::repeat;
+
+    let (q, r) = (n / (wth as usize), n % (wth as usize));
+    let mut ns: Vec<u16> = repeat(wth).take(q).collect();
+    if r > 0 {
+        ns.push(err_at!(FailConvert, r.try_into())?);
+    }
+    Ok(ns)
+}
+
+fn col_kinds(nu: usize, n: usize) -> Vec<ColKind> {
+    use std::iter::repeat;
+
+    let mut list = vec![ColKind::Nu(nu)];
+    let tail: Vec<ColKind> = {
+        let iter = repeat(ColKind::Wrap).take(n.saturating_sub(1));
+        iter.collect()
+    };
+    list.extend(tail);
+    list
 }
