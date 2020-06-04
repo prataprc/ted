@@ -1,4 +1,6 @@
 use crossterm::style::{Attribute, Color};
+#[allow(unused_imports)]
+use log::trace;
 use toml;
 
 use std::{convert::TryFrom, fmt, iter::FromIterator, result};
@@ -6,6 +8,7 @@ use std::{convert::TryFrom, fmt, iter::FromIterator, result};
 use crate::{Error, Result};
 
 /// Colorscheme for ted applications.
+#[derive(Debug)]
 pub struct ColorScheme {
     name: String,
     hs: Vec<Style>,
@@ -44,10 +47,11 @@ impl TryFrom<toml::Value> for ColorScheme {
                 }
                 hl => {
                     let off = {
-                        let h: Highlight = hl.into();
+                        let h: Highlight = TryFrom::try_from(hl)?;
                         (h as u32) as usize
                     };
                     hs[off] = TryFrom::try_from(value.clone())?;
+                    trace!("convert {} {} {:?}", hl, off, hs[off]);
                 }
             }
         }
@@ -64,7 +68,7 @@ impl ColorScheme {
 
 const DEFAULT_STYLE: &'static str = r##"
 name            = "default"
-canvas          = { on = "#373737", with = "#cfcfdc"}
+canvas          = { on = "#373737", with = "#b9b9b9"}
 comment         = { on = "#373737", with = "#4e4e4e"}
 constant        = { on = "#373737", with = "#4e4e4e"}
 string          = { on = "#373737", with = "#4e4e4e"}
@@ -110,9 +114,15 @@ tab-select      = { on = "#272727", with = "#cf7d00"}
 
 #[derive(Clone)]
 pub struct Style {
-    pub fg: Color,
     pub bg: Color,
+    pub fg: Color,
     pub attrs: Vec<Attribute>,
+}
+
+impl fmt::Debug for Style {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(f, "Style<{:?},{:?}>", self.bg, self.fg)
+    }
 }
 
 impl Default for Style {
@@ -242,11 +252,17 @@ macro_rules! highlight {
             }
         }
 
-        impl<'a> From<&'a str> for Highlight {
-            fn from(s: &'a str) -> Highlight {
+        impl<'a> TryFrom<&'a str> for Highlight {
+            type Error = Error;
+
+            fn try_from(s: &'a str) -> Result<Highlight> {
                 match s {
-                    $($s => Highlight::$variant,)*
-                    _ => Highlight::Canvas,
+                    $($s => Ok(Highlight::$variant),)*
+                    "canvas" => Ok(Highlight::Canvas),
+                    _ => {
+                        let msg = format!("invalid highlight {}", s);
+                        err_at!(FailConvert, msg: msg)
+                    }
                 }
             }
         }
@@ -297,7 +313,7 @@ highlight![
     (Delimiter, "delimiter"),
     (SpecialComment, "special-comment"),
     (Debug, "debug"),
-    (Underlined, "underlined"),
+    (Underline, "underline"),
     (Ignore, "ignore"),
     (Error, "error"),
     (Todo, "todo"),

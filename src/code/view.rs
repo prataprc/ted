@@ -74,6 +74,7 @@ impl Wrap {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
         self = self.shift_cursor(buf)?;
+        self.nu.set_color_scheme(cs);
         Ok(self.refresh(buf, cs)?.account_nu(nu_wth))
     }
 
@@ -116,9 +117,10 @@ impl Wrap {
             view.to_view_rows(buf)?
         };
         let iter = (row..full_coord.hgt).zip(view_rows.into_iter());
+        let s_canvas = scheme.to_style(Highlight::Canvas);
         for (row, (col_kind, bc_caret, n)) in iter {
             let nu_span = {
-                let mut nu_span = self.nu.to_span(col_kind, scheme);
+                let mut nu_span = self.nu.to_span(col_kind);
                 nu_span.set_cursor(Cursor { col, row });
                 nu_span
             };
@@ -126,8 +128,11 @@ impl Wrap {
                 let iter = buf.chars_at(bc_caret, Right)?.chain(repeat(' '));
                 iter.take(n as usize)
             };
-            let line_span = span!(st: String::from_iter(chars));
-            trace!("    text {:?}", line_span.to_content());
+            let line_span = {
+                let span = span!(st: String::from_iter(chars));
+                span.using(s_canvas.clone())
+            };
+            // trace!("    text {:?}", line_span.to_content());
             err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
         }
 
@@ -205,6 +210,7 @@ impl NoWrap {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
         self = self.shift_cursor(buf)?;
+        self.nu.set_color_scheme(cs);
         Ok(self.refresh(buf, cs)?.account_nu(nu_wth))
     }
 
@@ -288,13 +294,17 @@ impl NoWrap {
 
         let from = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         let lines = buf.lines_at(from, DP::Right)?.map(do_padding);
+        let s_canvas = scheme.to_style(Highlight::Canvas);
         for (i, line) in lines.take(hgt as usize).enumerate() {
             let nu_span = {
-                let mut span = self.nu.to_span(ColKind::Nu(from + i + 1), scheme);
+                let mut span = self.nu.to_span(ColKind::Nu(from + i + 1));
                 span.set_cursor(Cursor { col, row });
                 span
             };
-            let line_span = span!(st: String::from_iter(line));
+            let line_span = {
+                let span = span!(st: String::from_iter(line));
+                span.using(s_canvas.clone())
+            };
             err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
             row += 1;
         }
@@ -336,13 +346,14 @@ fn empty_lines(
 
     if row <= max_row {
         trace!("EMPTY LINES {}..={}", row, max_row);
+        let s_canvas = scheme.to_style(Highlight::Canvas);
         for _ in row..=max_row {
-            let mut nu_span = nu.to_span(ColKind::Empty, scheme);
+            let mut nu_span = nu.to_span(ColKind::Empty);
             nu_span.set_cursor(Cursor { col, row });
             let line_span = {
                 let iter = repeat(' ').take((wth - nu.to_width()) as usize);
                 let span: Span = String::from_iter(iter).into();
-                span.using(scheme.to_style(Highlight::Canvas))
+                span.using(s_canvas.clone())
             };
             err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
             row += 1;
@@ -360,7 +371,6 @@ fn tail_line(
     max_row: u16,
     nu: &ColNu,
     buf: &Buffer,
-    scheme: &ColorScheme,
 ) -> Result<u16> {
     let n = buf.n_chars();
     let ok1 = n == 0;
@@ -370,7 +380,7 @@ fn tail_line(
     let mut stdout = io::stdout();
 
     let new_row = if ok1 || ok2 {
-        let mut span = nu.to_span(ColKind::Nu(n), scheme);
+        let mut span = nu.to_span(ColKind::Nu(n));
         span.set_cursor(Cursor { col, row });
         err_at!(Fatal, queue!(stdout, span))?;
         row + 1

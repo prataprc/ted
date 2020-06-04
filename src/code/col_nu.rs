@@ -1,7 +1,7 @@
 use std::{cmp, fmt, result};
 
 use crate::{
-    color_scheme::{ColorScheme, Highlight},
+    color_scheme::{ColorScheme, Highlight, Style},
     window::Span,
 };
 
@@ -38,6 +38,8 @@ impl fmt::Debug for ColKind {
 pub struct ColNu {
     width: u16,
     line_number: bool,
+    style_line_nr: Style,
+    style_empty: Style,
 }
 
 impl fmt::Display for ColNu {
@@ -57,7 +59,20 @@ impl ColNu {
             cmp::max(line_idx.to_string().len(), 4) as u16
         };
 
-        ColNu { width, line_number }
+        ColNu {
+            width,
+            line_number,
+            style_line_nr: Default::default(),
+            style_empty: Default::default(),
+        }
+    }
+
+    pub fn set_color_scheme(&mut self, scheme: &ColorScheme) -> &mut Self {
+        let mut empty = scheme.to_style(Highlight::Canvas);
+        self.style_line_nr = scheme.to_style(Highlight::LineNr);
+        empty.fg = self.style_line_nr.fg;
+        self.style_empty = empty;
+        self
     }
 
     pub fn to_width(&self) -> u16 {
@@ -68,23 +83,23 @@ impl ColNu {
         }
     }
 
-    pub fn to_span(&self, nu: ColKind, scheme: &ColorScheme) -> Span {
+    pub fn to_span(&self, nu: ColKind) -> Span {
         use ColKind::{Empty, Nu, Wrap};
 
         match nu {
             Nu(nu) if self.line_number => {
                 let width = (self.width as usize) - 1;
                 let span: Span = format!("{:>w$} ", nu, w = width).into();
-                span.using(scheme.to_style(Highlight::LineNr))
+                span.using(self.style_line_nr.clone())
             }
             Wrap if self.line_number => {
                 let width = (self.width as usize) - 1;
                 let span: Span = format!("{:>w$} ", "", w = width).into();
-                span.using(scheme.to_style(Highlight::LineNr))
+                span.using(self.style_line_nr.clone())
             }
             Empty => {
                 let span: Span = "~".to_string().into();
-                span.using(scheme.to_style(Highlight::Canvas))
+                span.using(self.style_empty.clone())
             }
             _ => "".to_string().into(),
         }
