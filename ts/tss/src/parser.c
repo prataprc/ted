@@ -28,7 +28,7 @@ enum {
   aux_sym_symbol_name_token1 = 2,
   anon_sym_DOT = 3,
   anon_sym_PLUS = 4,
-  anon_sym_DASH = 5,
+  anon_sym_TILDE = 5,
   anon_sym_GT = 6,
   anon_sym_LBRACE = 7,
   anon_sym_RBRACE = 8,
@@ -153,7 +153,7 @@ static const char *ts_symbol_names[] = {
   [aux_sym_symbol_name_token1] = "symbol_name_token1",
   [anon_sym_DOT] = ".",
   [anon_sym_PLUS] = "+",
-  [anon_sym_DASH] = "-",
+  [anon_sym_TILDE] = "~",
   [anon_sym_GT] = ">",
   [anon_sym_LBRACE] = "{",
   [anon_sym_RBRACE] = "}",
@@ -278,7 +278,7 @@ static TSSymbol ts_symbol_map[] = {
   [aux_sym_symbol_name_token1] = aux_sym_symbol_name_token1,
   [anon_sym_DOT] = anon_sym_DOT,
   [anon_sym_PLUS] = anon_sym_PLUS,
-  [anon_sym_DASH] = anon_sym_DASH,
+  [anon_sym_TILDE] = anon_sym_TILDE,
   [anon_sym_GT] = anon_sym_GT,
   [anon_sym_LBRACE] = anon_sym_LBRACE,
   [anon_sym_RBRACE] = anon_sym_RBRACE,
@@ -418,7 +418,7 @@ static const TSSymbolMetadata ts_symbol_metadata[] = {
     .visible = true,
     .named = false,
   },
-  [anon_sym_DASH] = {
+  [anon_sym_TILDE] = {
     .visible = true,
     .named = false,
   },
@@ -929,7 +929,6 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
       if (lookahead == '#') ADVANCE(323);
       if (lookahead == '+') ADVANCE(355);
       if (lookahead == ',') ADVANCE(327);
-      if (lookahead == '-') ADVANCE(356);
       if (lookahead == '.') ADVANCE(354);
       if (lookahead == '0') ADVANCE(372);
       if (lookahead == ':') ADVANCE(361);
@@ -953,6 +952,7 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
       if (lookahead == '{') ADVANCE(358);
       if (lookahead == '|') ADVANCE(365);
       if (lookahead == '}') ADVANCE(359);
+      if (lookahead == '~') ADVANCE(356);
       if (lookahead == '\t' ||
           lookahead == '\n' ||
           lookahead == '\r' ||
@@ -987,7 +987,6 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
     case 2:
       if (lookahead == '+') ADVANCE(355);
       if (lookahead == ',') ADVANCE(327);
-      if (lookahead == '-') ADVANCE(356);
       if (lookahead == '.') ADVANCE(354);
       if (lookahead == '>') ADVANCE(357);
       if (lookahead == 'b') ADVANCE(220);
@@ -1007,6 +1006,7 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
       if (lookahead == 't') ADVANCE(9);
       if (lookahead == 'u') ADVANCE(200);
       if (lookahead == '{') ADVANCE(358);
+      if (lookahead == '~') ADVANCE(356);
       if (lookahead == '\t' ||
           lookahead == '\n' ||
           lookahead == '\r' ||
@@ -2263,7 +2263,7 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
       ACCEPT_TOKEN(anon_sym_PLUS);
       END_STATE();
     case 356:
-      ACCEPT_TOKEN(anon_sym_DASH);
+      ACCEPT_TOKEN(anon_sym_TILDE);
       END_STATE();
     case 357:
       ACCEPT_TOKEN(anon_sym_GT);
@@ -2614,7 +2614,7 @@ static uint16_t ts_parse_table[LARGE_STATE_COUNT][SYMBOL_COUNT] = {
     [aux_sym_symbol_name_token1] = ACTIONS(1),
     [anon_sym_DOT] = ACTIONS(1),
     [anon_sym_PLUS] = ACTIONS(1),
-    [anon_sym_DASH] = ACTIONS(1),
+    [anon_sym_TILDE] = ACTIONS(1),
     [anon_sym_GT] = ACTIONS(1),
     [anon_sym_LBRACE] = ACTIONS(1),
     [anon_sym_RBRACE] = ACTIONS(1),
@@ -2820,7 +2820,7 @@ static uint16_t ts_small_parse_table[] = {
       anon_sym_COMMA,
       anon_sym_DOT,
       anon_sym_PLUS,
-      anon_sym_DASH,
+      anon_sym_TILDE,
       anon_sym_GT,
       anon_sym_LBRACE,
       anon_sym_underlined,
@@ -2866,7 +2866,7 @@ static uint16_t ts_small_parse_table[] = {
     ACTIONS(33), 1,
       anon_sym_PLUS,
     ACTIONS(35), 1,
-      anon_sym_DASH,
+      anon_sym_TILDE,
     ACTIONS(37), 1,
       anon_sym_GT,
     ACTIONS(31), 3,
@@ -2926,7 +2926,7 @@ static uint16_t ts_small_parse_table[] = {
     ACTIONS(39), 44,
       anon_sym_COMMA,
       anon_sym_PLUS,
-      anon_sym_DASH,
+      anon_sym_TILDE,
       anon_sym_GT,
       anon_sym_LBRACE,
       anon_sym_underlined,
@@ -2977,7 +2977,7 @@ static uint16_t ts_small_parse_table[] = {
       anon_sym_COMMA,
       anon_sym_DOT,
       anon_sym_PLUS,
-      anon_sym_DASH,
+      anon_sym_TILDE,
       anon_sym_GT,
       anon_sym_LBRACE,
       anon_sym_underlined,
@@ -3028,7 +3028,7 @@ static uint16_t ts_small_parse_table[] = {
       anon_sym_COMMA,
       anon_sym_DOT,
       anon_sym_PLUS,
-      anon_sym_DASH,
+      anon_sym_TILDE,
       anon_sym_GT,
       anon_sym_LBRACE,
       anon_sym_underlined,
@@ -3079,7 +3079,7 @@ static uint16_t ts_small_parse_table[] = {
       anon_sym_COMMA,
       anon_sym_DOT,
       anon_sym_PLUS,
-      anon_sym_DASH,
+      anon_sym_TILDE,
       anon_sym_GT,
       anon_sym_LBRACE,
       anon_sym_underlined,
@@ -3130,7 +3130,7 @@ static uint16_t ts_small_parse_table[] = {
       anon_sym_COMMA,
       anon_sym_DOT,
       anon_sym_PLUS,
-      anon_sym_DASH,
+      anon_sym_TILDE,
       anon_sym_GT,
       anon_sym_LBRACE,
       anon_sym_underlined,
@@ -3181,7 +3181,7 @@ static uint16_t ts_small_parse_table[] = {
       anon_sym_COMMA,
       anon_sym_DOT,
       anon_sym_PLUS,
-      anon_sym_DASH,
+      anon_sym_TILDE,
       anon_sym_GT,
       anon_sym_LBRACE,
       anon_sym_underlined,
@@ -3232,7 +3232,7 @@ static uint16_t ts_small_parse_table[] = {
       anon_sym_COMMA,
       anon_sym_DOT,
       anon_sym_PLUS,
-      anon_sym_DASH,
+      anon_sym_TILDE,
       anon_sym_GT,
       anon_sym_LBRACE,
       anon_sym_underlined,
@@ -3283,7 +3283,7 @@ static uint16_t ts_small_parse_table[] = {
       anon_sym_COMMA,
       anon_sym_DOT,
       anon_sym_PLUS,
-      anon_sym_DASH,
+      anon_sym_TILDE,
       anon_sym_GT,
       anon_sym_LBRACE,
       anon_sym_underlined,
