@@ -87,23 +87,44 @@
         }
       ]
     },
-    "sel_child": {
-      "type": "PREC_LEFT",
+    "symbol_name": {
+      "type": "PATTERN",
+      "value": "[a-z][0-9a-zA-Z-_]"
+    },
+    "field_name": {
+      "type": "PATTERN",
+      "value": "[a-z][0-9a-zA-Z-_]"
+    },
+    "sel_field": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "."
+        },
+        {
+          "type": "SYMBOL",
+          "name": "field_name"
+        }
+      ]
+    },
+    "sel_symbol_field": {
+      "type": "PREC",
       "value": 2,
       "content": {
         "type": "SEQ",
         "members": [
           {
             "type": "SYMBOL",
-            "name": "sel_symbol"
+            "name": "symbol_name"
           },
           {
             "type": "STRING",
-            "value": ">"
+            "value": "."
           },
           {
             "type": "SYMBOL",
-            "name": "sel_symbol"
+            "name": "field_name"
           }
         ]
       }
@@ -150,47 +171,26 @@
         ]
       }
     },
-    "sel_field": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "STRING",
-          "value": "."
-        },
-        {
-          "type": "SYMBOL",
-          "name": "field_name"
-        }
-      ]
-    },
-    "sel_symbol_field": {
-      "type": "PREC",
+    "sel_child": {
+      "type": "PREC_LEFT",
       "value": 2,
       "content": {
         "type": "SEQ",
         "members": [
           {
             "type": "SYMBOL",
-            "name": "symbol_name"
+            "name": "sel_symbol"
           },
           {
             "type": "STRING",
-            "value": "."
+            "value": ">"
           },
           {
             "type": "SYMBOL",
-            "name": "field_name"
+            "name": "sel_symbol"
           }
         ]
       }
-    },
-    "symbol_name": {
-      "type": "PATTERN",
-      "value": "[a-z][0-9a-zA-Z-_]"
-    },
-    "field_name": {
-      "type": "PATTERN",
-      "value": "[a-z][0-9a-zA-Z-_]"
     },
     "properties": {
       "type": "SEQ",
