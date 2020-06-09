@@ -167,6 +167,7 @@ impl TryFrom<toml::Value> for Style {
 impl Style {
     fn to_color(color: &str) -> Result<Color> {
         use std::iter::repeat;
+        let from_str_radix = u8::from_str_radix;
 
         let n = color.len();
         let color = match color {
@@ -191,8 +192,6 @@ impl Style {
             color => match color.chars().next() {
                 Some('#') if n == 1 => Color::Rgb { r: 0, g: 0, b: 0 },
                 Some('#') => {
-                    let from_str_radix = u8::from_str_radix;
-
                     let p = {
                         let iter = repeat('0').take(6_usize.saturating_sub(n));
                         String::from_iter(iter)

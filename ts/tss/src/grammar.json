@@ -1,27 +1,35 @@
 {
   "name": "tss",
   "rules": {
-    "source_file": {
+    "s": {
       "type": "REPEAT",
       "content": {
         "type": "SEQ",
         "members": [
           {
-            "type": "SYMBOL",
-            "name": "selectors"
+            "type": "FIELD",
+            "name": "selectors",
+            "content": {
+              "type": "SYMBOL",
+              "name": "selectors"
+            }
           },
           {
-            "type": "CHOICE",
-            "members": [
-              {
-                "type": "SYMBOL",
-                "name": "highlight"
-              },
-              {
-                "type": "SYMBOL",
-                "name": "properties"
-              }
-            ]
+            "type": "FIELD",
+            "name": "style",
+            "content": {
+              "type": "CHOICE",
+              "members": [
+                {
+                  "type": "SYMBOL",
+                  "name": "highlight"
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "properties"
+                }
+              ]
+            }
           }
         ]
       }
@@ -63,7 +71,7 @@
       "members": [
         {
           "type": "SYMBOL",
-          "name": "symbol_name"
+          "name": "sel_kind"
         },
         {
           "type": "SYMBOL",
@@ -71,7 +79,7 @@
         },
         {
           "type": "SYMBOL",
-          "name": "sel_symbol_field"
+          "name": "sel_kind_field"
         },
         {
           "type": "SYMBOL",
@@ -87,7 +95,7 @@
         }
       ]
     },
-    "symbol_name": {
+    "sel_kind": {
       "type": "PATTERN",
       "value": "[a-z][0-9a-zA-Z-_]"
     },
@@ -108,7 +116,7 @@
         }
       ]
     },
-    "sel_symbol_field": {
+    "sel_kind_field": {
       "type": "PREC",
       "value": 2,
       "content": {
@@ -116,7 +124,7 @@
         "members": [
           {
             "type": "SYMBOL",
-            "name": "symbol_name"
+            "name": "sel_kind"
           },
           {
             "type": "STRING",
@@ -208,8 +216,12 @@
               "type": "SEQ",
               "members": [
                 {
-                  "type": "SYMBOL",
-                  "name": "property"
+                  "type": "FIELD",
+                  "name": "property",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "property"
+                  }
                 },
                 {
                   "type": "STRING",
@@ -229,20 +241,36 @@
       "type": "CHOICE",
       "members": [
         {
-          "type": "SYMBOL",
-          "name": "fg"
+          "type": "FIELD",
+          "name": "fg",
+          "content": {
+            "type": "SYMBOL",
+            "name": "fg"
+          }
         },
         {
-          "type": "SYMBOL",
-          "name": "bg"
+          "type": "FIELD",
+          "name": "bg",
+          "content": {
+            "type": "SYMBOL",
+            "name": "bg"
+          }
         },
         {
-          "type": "SYMBOL",
-          "name": "attr1"
+          "type": "FIELD",
+          "name": "attr",
+          "content": {
+            "type": "SYMBOL",
+            "name": "attrb"
+          }
         },
         {
-          "type": "SYMBOL",
-          "name": "attr2"
+          "type": "FIELD",
+          "name": "attribute",
+          "content": {
+            "type": "SYMBOL",
+            "name": "attribute"
+          }
         }
       ]
     },
@@ -306,7 +334,7 @@
         }
       ]
     },
-    "attr1": {
+    "attrb": {
       "type": "SEQ",
       "members": [
         {
@@ -326,7 +354,7 @@
         }
       ]
     },
-    "attr2": {
+    "attribute": {
       "type": "SEQ",
       "members": [
         {
