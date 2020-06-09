@@ -2,24 +2,24 @@ module.exports = grammar({
   name: 'tss',
 
   rules: {
-    source_file: $ => repeat(seq($.selectors, choice($.highlight, $.properties))),
+    s: $ => repeat(seq($.selectors, choice($.highlight, $.properties))),
 
     selectors: $ => seq($.selector, repeat(seq(',', $.selector))),
     selector: $ => repeat1($.sel_symbol),
     sel_symbol: $ => choice(
-        $.symbol_name,
+        $.sel_kind,
         $.sel_field,
-        $.sel_symbol_field,
-        $.sel_next_child,
-        $.sel_prev_child,
+        $.sel_kind_field,
+        $.sel_twins,
+        $.sel_siblings,
         $.sel_child,
     ),
-    symbol_name: $ => /[a-z][0-9a-zA-Z-_]/,
+    sel_kind: $ => /[a-z][0-9a-zA-Z-_]/,
     field_name: $ => /[a-z][0-9a-zA-Z-_]/,
     sel_field: $ => seq('.', $.field_name),
-    sel_symbol_field: $ => prec(2, seq($.symbol_name, '.', $.field_name)),
-    sel_next_child: $ => prec.left(2, seq($.sel_symbol, '+', $.sel_symbol)),
-    sel_prev_child: $ => prec.left(2, seq($.sel_symbol, '~', $.sel_symbol)),
+    sel_kind_field: $ => prec(2, seq($.sel_kind, '.', $.field_name)),
+    sel_twins: $ => prec.left(2, seq($.sel_symbol, '+', $.sel_symbol)),
+    sel_siblings: $ => prec.left(2, seq($.sel_symbol, '~', $.sel_symbol)),
     sel_child: $ => prec.left(2, seq($.sel_symbol, '>', $.sel_symbol)),
 
     properties: $ => seq('{', field('properties', repeat(seq($.property, ','))), '}'),

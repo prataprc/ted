@@ -223,22 +223,7 @@
     }
   },
   {
-    "type": "sel_next_child",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "sel_symbol",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "sel_prev_child",
+    "type": "sel_siblings",
     "named": true,
     "fields": {},
     "children": {
@@ -269,15 +254,15 @@
           "named": true
         },
         {
-          "type": "sel_next_child",
-          "named": true
-        },
-        {
-          "type": "sel_prev_child",
+          "type": "sel_siblings",
           "named": true
         },
         {
           "type": "sel_symbol_field",
+          "named": true
+        },
+        {
+          "type": "sel_twins",
           "named": true
         },
         {
@@ -301,6 +286,21 @@
         },
         {
           "type": "symbol_name",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "sel_twins",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "sel_symbol",
           "named": true
         }
       ]

@@ -75,11 +75,11 @@
         },
         {
           "type": "SYMBOL",
-          "name": "sel_next_child"
+          "name": "sel_twins"
         },
         {
           "type": "SYMBOL",
-          "name": "sel_prev_child"
+          "name": "sel_siblings"
         },
         {
           "type": "SYMBOL",
@@ -129,7 +129,7 @@
         ]
       }
     },
-    "sel_next_child": {
+    "sel_twins": {
       "type": "PREC_LEFT",
       "value": 2,
       "content": {
@@ -150,7 +150,7 @@
         ]
       }
     },
-    "sel_prev_child": {
+    "sel_siblings": {
       "type": "PREC_LEFT",
       "value": 2,
       "content": {
