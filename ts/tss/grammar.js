@@ -2,7 +2,10 @@ module.exports = grammar({
   name: 'tss',
 
   rules: {
-    s: $ => repeat(seq($.selectors, choice($.highlight, $.properties))),
+    s: $ => repeat(seq(
+        field('selectors', $.selectors),
+        field('style', choice($.highlight, $.properties))
+    )),
 
     selectors: $ => seq($.selector, repeat(seq(',', $.selector))),
     selector: $ => repeat1($.sel_symbol),
@@ -22,12 +25,21 @@ module.exports = grammar({
     sel_siblings: $ => prec.left(2, seq($.sel_symbol, '~', $.sel_symbol)),
     sel_child: $ => prec.left(2, seq($.sel_symbol, '>', $.sel_symbol)),
 
-    properties: $ => seq('{', field('properties', repeat(seq($.property, ','))), '}'),
-    property: $ => choice($.fg, $.bg, $.attr1, $.attr2),
+    properties: $ => seq(
+        '{',
+        field('properties', repeat(seq(field('property', $.property), ','))),
+        '}'
+    ),
+    property: $ => choice(
+        field('fg', $.fg),
+        field('bg', $.bg),
+        field('attr', $.attrb),
+        field('attribute', $.attribute)
+    ),
     fg: $ => seq('fg', ':', choice($.rgb_color, $.ansi_color, $.color_name)),
     bg: $ => seq('bg', ':', choice($.rgb_color, $.ansi_color, $.color_name)),
-    attr1: $ => seq('attr', ':', repeat($.attrs)),
-    attr2: $ => seq('attribute', ':', repeat($.attrs)),
+    attrb: $ => seq('attr', ':', repeat($.attrs)),
+    attribute: $ => seq('attribute', ':', repeat($.attrs)),
     attrs : $ => seq($.attr, repeat($.attr_or)),
     attr_or: $ => seq('|', $.attr),
     attr: $ => choice(

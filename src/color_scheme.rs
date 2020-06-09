@@ -203,10 +203,13 @@ impl Style {
                     let b = err_at!(FailConvert, from_str_radix(&s[4..6], 16))?;
                     Color::Rgb { r, g, b }
                 }
-                Some(_) => {
-                    let n: u8 = err_at!(FailConvert, color.parse())?;
-                    Color::AnsiValue(n)
-                }
+                Some(_) => match err_at!(FailConvert, from_str_radix(color, 10)) {
+                    Ok(n) => Color::AnsiValue(n),
+                    _ => {
+                        let n = err_at!(FailConvert, from_str_radix(color, 16))?;
+                        Color::AnsiValue(n)
+                    }
+                },
                 None => err_at!(FailConvert, msg: format!("invalid color"))?,
             },
         };
