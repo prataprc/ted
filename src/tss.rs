@@ -9,6 +9,18 @@ extern "C" {
     fn tree_sitter_tss() -> ts::Language;
 }
 
+macro_rules! wrap_edge {
+    ($self:expr, $varn:ident) => {
+        match $self {
+            Edge::Kind
+            Edge::Field
+            Edge::KindField
+            _ => 
+        }
+        Edge::$varn(Box::new(
+    };
+}
+
 pub struct Token {
     kind: String,
     field: Option<String>,
@@ -296,6 +308,20 @@ impl Node {
     //    Node::End(Style)
     //}
 
+    fn to_state(&self) -> Option<usize> {
+        use Node::{Child, Descendant, End, Pattern, Select, Sibling, Twin};
+
+        match self {
+            Pattern { state, .. } => Some(*state),
+            Select { state, .. } => Some(*state),
+            Twin { state, .. } => Some(*state),
+            Sibling { state, .. } => Some(*state),
+            Child { state, .. } => Some(*state),
+            Descendant { state, .. } => Some(*state),
+            End(_) => None,
+        }
+    }
+
     fn to_select(&self) -> Result<Node> {
         use Node::{Pattern, Select};
 
@@ -309,117 +335,173 @@ impl Node {
         }
     }
 
-    //fn to_twin(&self, nth_child: usize, depth: usize) -> Node {
-    //    Node:Twin {
-    //        state: self.state,
-    //        edge: self.edge.clone(),
-    //        node: Rc::clone(&self.node)
-    //        nth_child,
-    //        depth
-    //    }
-    //}
+    fn to_twin(&self, nth_child: usize, depth: usize) -> Result<Node> {
+        use Node::{Pattern, Twin};
 
-    //fn to_sibling(&self, nth_child: usize, depth: usize) -> Node {
-    //    Node:Sibling {
-    //        state: self.state,
-    //        edge: self.edge.clone(),
-    //        node: Rc::clone(&self.node)
-    //        nth_child,
-    //        depth
-    //    }
-    //}
+        match self {
+            Pattern { state, edge, next } => Ok(Twin {
+                state: *state,
+                edge: edge.clone(),
+                next: Rc::clone(next),
+                nth_child,
+                depth,
+            }),
+            _ => err_at!(Fatal, msg: format!("invalid node"))?,
+        }
+    }
 
-    //fn to_child(&self, nth_child: usize, depth: usize) -> Node {
-    //    Node:Child {
-    //        state: self.state,
-    //        edge: self.edge.clone(),
-    //        node: Rc::clone(&self.node)
-    //        nth_child,
-    //        depth
-    //    }
-    //}
+    fn to_sibling(&self, nth_child: usize, depth: usize) -> Result<Node> {
+        use Node::{Pattern, Sibling};
 
-    //fn to_descendant(&self, nth_child: usize, depth: usize) -> Node {
-    //    Node:Descendant {
-    //        state: self.state,
-    //        edge: self.edge.clone(),
-    //        node: Rc::clone(&self.node)
-    //        nth_child,
-    //        depth
-    //    }
-    //}
+        match self {
+            Pattern { state, edge, next } => Ok(Sibling {
+                state: *state,
+                edge: edge.clone(),
+                next: Rc::clone(next),
+                nth_child,
+                depth,
+            }),
+            _ => err_at!(Fatal, msg: format!("invalid node"))?,
+        }
+    }
+
+    fn to_child(&self, nth_child: usize, depth: usize) -> Result<Node> {
+        use Node::{Child, Pattern};
+
+        match self {
+            Pattern { state, edge, next } => Ok(Child {
+                state: *state,
+                edge: edge.clone(),
+                next: Rc::clone(next),
+                nth_child,
+                depth,
+            }),
+            _ => err_at!(Fatal, msg: format!("invalid node"))?,
+        }
+    }
+
+    fn to_descendant(&self, nth_child: usize, depth: usize) -> Result<Node> {
+        use Node::{Descendant, Pattern};
+
+        match self {
+            Pattern { state, edge, next } => Ok(Descendant {
+                state: *state,
+                edge: edge.clone(),
+                next: Rc::clone(next),
+                nth_child,
+                depth,
+            }),
+            _ => err_at!(Fatal, msg: format!("invalid node"))?,
+        }
+    }
 }
 
-//struct Pattern(Rc<Node>);
-//
-//impl Pattern {
-//    fn compile(
-//        //
-//        ts_node: ts::Node, mut state: usize, nn: mut Node, tc: &mut TreeCursor) -> Node {
-//
-//        let node = match ts_node.child_count() {
-//            0 => unreachable!(),
-//            1 => {
-//                let child = ts_node.children(tc).next().unwrap();
-//                Some(Self::compile_sel(child, state, nn))
-//            },
-//            n => {
-//                let iter = ts_node.children(tc);
-//                nn = Self::compile_sel(child, state, nn);
-//                for child in iter {
-//                    nn.edge = Edge::Descendant(Box::new(nn.edge));
-//                    nn = Self::compile_sel(child, state, nn);
-//                    state = nn.state + 1;
-//                }
-//                Some(nn)
-//            }
-//        };
-//
-//        Pattern(Rc::new(node))
-//    }
-//
-//    fn compile_sel(
-//        //
-//        ts_node: ts::Node, state: usize, nn: Node, tc: &mut TreeCursor) -> Node {
-//        let cs = Vec<ts::Node> = ts_node.children(tc).collect();
-//
-//        let chd = &cs[0];
-//        match chd.kind() {
-//            "sel_kind" => {
-//                let edge = Edge::Kind((chd).into());
-//                Node::Pattern{edge, state, node: Rc::new(nn)}
-//            }
-//            "sel_field" => {
-//                let edge = Edge::Field((chd.child(1).unwrap()).into());
-//                Node::Pattern{edge, state, node: Rc::new(nn)}
-//            },
-//            "sel_symbol_field" => {
-//                let (ck, cf) = (chd.child(0).unwrap(), chd.child(2).unwrap()) {
-//                let edge = Edge::KindField(ck.into(), cf.into());
-//                Node::Pattern{edge, state, node: Rc::new(nn)}
-//            },
-//            "sel_twins" => {
-//                let (cl, cr) = (chd.child(0).unwrap(), chd.child(2).unwrap()) {
-//                nn = Self::compile_sel(cr, state, nn);
-//                nn.edge = Edge::Twin(Box::new(nn.edge));
-//                Self::compile_sel(cl, nn.state + 1, nn)
-//            }
-//            "sel_siblings" => {
-//                let (cl, cr) = (chd.child(0).unwrap(), chd.child(2).unwrap());
-//                nn = Self::compile_sel(cr, state, nn);
-//                nn.edge = Edge::Sibling(Box::new(nn.edge));
-//                Self::compile_sel(cl, nn.state + 1, nn)
-//            }
-//            "sel_child" => {
-//                let (cl, cr) = (chd.child(0).unwrap(), chd.child(2).unwrap()) {
-//                nn = Self::compile_sel(cr, state, nn);
-//                nn.edge = Edge::Child(Box::new(nn.edge));
-//                Self::compile_sel(cl, nn.state + 1, nn)
-//            }
-//        }
-//    }
-//}
-//
+struct Pattern(Rc<Node>);
+
+impl Pattern {
+    //fn compile(
+    //    //
+    //    ts_node: ts::Node, mut state: usize, mut nn: Node, tc: &mut TreeCursor) -> Result<Node> {
+
+    //    let node = match ts_node.child_count() {
+    //        0 => unreachable!(),
+    //        1 => {
+    //            let child = ts_node.children(tc).next().unwrap();
+    //            Self::compile_sel(child, state, nn)?
+    //        },
+    //        n => {
+    //            let iter = ts_node.children(tc);
+    //            nn = Self::compile_sel(child, state, nn)?;
+    //            for child in iter {
+    //                nn.edge = Edge::Descendant(Box::new(nn.edge));
+    //                nn = Self::compile_sel(child, state, nn)?;
+    //                state = nn.state + 1;
+    //            }
+    //            nn
+    //        }
+    //    };
+
+    //    Ok(Pattern(Rc::new(node)))
+    //}
+
+    fn compile_sel(
+        ts_node: ts::Node,
+        state: usize,
+        mut next: Node,
+        tc: &mut ts::TreeCursor,
+    ) -> Result<Node> {
+        let cs: Vec<ts::Node> = ts_node.children(tc).collect();
+
+        let chd = &cs[0];
+        match chd.kind() {
+            "sel_kind" => {
+                let edge = Edge::Kind(Span::from_node(&chd));
+                Ok(Node::Pattern {
+                    edge,
+                    state,
+                    next: Rc::new(next),
+                })
+            }
+            "sel_field" => {
+                let edge = {
+                    let cf = chd.child(1).unwrap();
+                    Edge::Field(Span::from_node(&cf))
+                };
+                Ok(Node::Pattern {
+                    edge,
+                    state,
+                    next: Rc::new(next),
+                })
+            }
+            "sel_symbol_field" => {
+                let edge = {
+                    let ck = Span::from_node(&chd.child(0).unwrap());
+                    let cf = Span::from_node(&chd.child(2).unwrap());
+                    Edge::KindField(ck, cf)
+                };
+                Ok(Node::Pattern {
+                    edge,
+                    state,
+                    next: Rc::new(next),
+                })
+            }
+            "sel_twins" => {
+                next = {
+                    let cr = chd.child(2).unwrap();
+                    Self::compile_sel(cr, state, next, tc)?
+                };
+                next.edge = Edge::Twin(Box::new(next.edge));
+
+                let cl = chd.child(0).unwrap();
+                let state = next.to_state().unwrap_or(state + 1) + 1;
+                Self::compile_sel(cl, state, next, tc)
+            }
+            "sel_siblings" => {
+                next = {
+                    let cr = chd.child(2).unwrap();
+                    Self::compile_sel(cr, state, next, tc)?
+                };
+                next.edge = Edge::Sibling(Box::new(next.edge));
+
+                let cl = chd.child(0).unwrap();
+                let state = next.to_state().unwrap_or(state + 1) + 1;
+                Self::compile_sel(cl, state, next, tc)
+            }
+            "sel_child" => {
+                next = {
+                    let cr = chd.child(2).unwrap();
+                    Self::compile_sel(cr, state, next, tc)?
+                };
+                next.edge = Edge::Child(Box::new(next.edge));
+
+                let cl = chd.child(0).unwrap();
+                let state = next.to_state().unwrap_or(state + 1) + 1;
+                Self::compile_sel(cl, state, next, tc)
+            }
+        }
+    }
+}
+
 //impl Pattern {
 //    fn pos_to_text(&mut self, text: &str) {
 //        match self.0.get_mut().unwrap() {
