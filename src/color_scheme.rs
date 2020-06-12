@@ -165,7 +165,7 @@ impl TryFrom<toml::Value> for Style {
 }
 
 impl Style {
-    fn to_color(color: &str) -> Result<Color> {
+    pub fn to_color(color: &str) -> Result<Color> {
         use std::iter::repeat;
         let from_str_radix = u8::from_str_radix;
 
@@ -216,7 +216,7 @@ impl Style {
         Ok(color)
     }
 
-    fn to_attrs(attr: &str) -> Result<Vec<Attribute>> {
+    pub fn to_attrs(attr: &str) -> Result<Vec<Attribute>> {
         let ss: Vec<&str> = if attr.contains(",") {
             attr.split(",").collect()
         } else if attr.contains("|") {

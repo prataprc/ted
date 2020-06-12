@@ -1,24 +1,26 @@
-use crossterm::style::{Attribute, Color};
 use tree_sitter as ts;
 
-use std::{fmt, rc::Rc, result};
+use std::{convert::TryFrom, fmt, mem, rc::Rc, result};
 
-use crate::{color_scheme::Style, Error, Result};
+use crate::{
+    color_scheme::{ColorScheme, Highlight, Style},
+    Error, Result,
+};
 
 extern "C" {
     fn tree_sitter_tss() -> ts::Language;
 }
 
 macro_rules! wrap_edge {
-    ($self:expr, $varn:ident) => {
-        match $self {
-            Edge::Kind
-            Edge::Field
-            Edge::KindField
-            _ => 
-        }
-        Edge::$varn(Box::new(
-    };
+    ($edge:expr, $varn:ident) => {{
+        *$edge = match mem::replace($edge, Default::default()) {
+            e @ Edge::Kind(_) => Edge::$varn(Box::new(e.clone())),
+            e @ Edge::Field(_) => Edge::$varn(Box::new(e.clone())),
+            e @ Edge::KindField(_, _) => Edge::$varn(Box::new(e.clone())),
+            _ => err_at!(Fatal, msg: format!("unexpected wrap_edge"))?,
+        };
+        Ok(())
+    }};
 }
 
 pub struct Token {
@@ -61,6 +63,12 @@ impl fmt::Display for Token {
 enum Span {
     Pos(usize, usize),
     Text(String),
+}
+
+impl Default for Span {
+    fn default() -> Span {
+        Span::Pos(0, 0)
+    }
 }
 
 impl fmt::Display for Span {
@@ -106,37 +114,59 @@ impl Span {
     }
 }
 
-//struct Atomata {
-//    patterns: Vec<Rc<Node>>,
-//    edges: Vec<Node>,
-//}
-//
-//impl From<ts::Tree> for Atomata {
-//    fn from(tree: ts::Tree) -> Atomata {
-//        let root = {
-//            assert_eq!(tree.root_node().kind(), "s");
-//            tree.root_node();
-//        };
-//
-//        let mut tc = ts_node.walk();
-//        let mut state = 1;
-//        let patterns = vec![];
-//        for child in root.children(&mut tc) {
-//            let selectors = child.child_by_field_name('selectors').unwrap();
-//            let nn = {
-//                let style = child.child_by_field_name('style').unwrap();
-//                Node::new_style(style)
-//            };
-//            for selector in selectors {
-//                let node = Pattern::compile(selector, state, nn, &mut tc);
-//                state = node.state + 1;
-//                patterns.push(node)
-//            }
-//        }
-//
-//        Atomata { patterns, edges: Default::default() }
-//    }
-//}
+struct Atomata {
+    patterns: Vec<Rc<Node>>,
+    edges: Vec<Node>,
+}
+
+impl TryFrom<String> for Atomata {
+    type Error = Error;
+
+    fn try_from(text: String) -> Result<Atomata> {
+        let tree = {
+            let mut p = ts::Parser::new();
+            let language = unsafe { tree_sitter_tss() };
+            err_at!(FailParse, p.set_language(language))?;
+            match p.parse(&text, None) {
+                Some(tree) => Ok(tree),
+                None => err_at!(Fatal, msg: format!("invalid ted style sheet")),
+            }?
+        };
+
+        let root = {
+            assert_eq!(tree.root_node().kind(), "s");
+            tree.root_node()
+        };
+
+        let mut tc = root.walk();
+        let mut patterns = vec![];
+        for i in 0..root.child_count() {
+            let child = root.child(i).unwrap();
+            let selectors = child.child_by_field_name("selectors").unwrap();
+            let style = {
+                let ts_node = child.child_by_field_name("style").unwrap();
+                Node::compile_style(ts_node, &text, &mut tc)?
+            };
+            let mut n_selectors = vec![selectors.child(0).unwrap()];
+            for selector in selectors.child(1).unwrap().children(&mut tc) {
+                n_selectors.push(selector.child(1).unwrap())
+            }
+            for n_sel in n_selectors.into_iter() {
+                let style = style.clone();
+                patterns.push(Rc::new(Node::compile_pattern(
+                    n_sel,
+                    style.clone(),
+                    &mut tc,
+                )?))
+            }
+        }
+
+        Ok(Atomata {
+            patterns,
+            edges: Default::default(),
+        })
+    }
+}
 
 //impl Atomata {
 //    fn apply(&mut self, token, Token) -> Option<Span> {
@@ -164,6 +194,12 @@ enum Edge {
     Sibling(Box<Edge>),
     Child(Box<Edge>),
     Descendant(Box<Edge>),
+}
+
+impl Default for Edge {
+    fn default() -> Edge {
+        Edge::Kind(Default::default())
+    }
 }
 
 impl fmt::Display for Edge {
@@ -204,45 +240,36 @@ impl Edge {
 
 #[derive(Clone)]
 enum Node {
-    Pattern {
-        state: usize,
-        edge: Edge,
-        next: Rc<Node>,
-    },
+    Pattern(Edge, Rc<Node>),
     Select {
-        state: usize,
         edge: Edge,
         next: Rc<Node>,
     },
     Twin {
-        state: usize,
         edge: Edge,
         next: Rc<Node>,
         nth_child: usize,
         depth: usize,
     },
     Sibling {
-        state: usize,
         edge: Edge,
         next: Rc<Node>,
         nth_child: usize,
         depth: usize,
     },
     Child {
-        state: usize,
         edge: Edge,
         next: Rc<Node>,
         nth_child: usize,
         depth: usize,
     },
     Descendant {
-        state: usize,
         edge: Edge,
         next: Rc<Node>,
         nth_child: usize,
         depth: usize,
     },
-    End(Style),
+    End(NodeStyle),
 }
 
 impl fmt::Display for Node {
@@ -250,7 +277,7 @@ impl fmt::Display for Node {
         use Node::{Child, Descendant, End, Pattern, Select, Sibling, Twin};
 
         match self {
-            Pattern { .. } => write!(f, "n-pattern"),
+            Pattern(_, _) => write!(f, "n-pattern"),
             Select { .. } => write!(f, "n-select"),
             Twin { .. } => write!(f, "n-twin"),
             Sibling { .. } => write!(f, "n-sibling"),
@@ -262,72 +289,11 @@ impl fmt::Display for Node {
 }
 
 impl Node {
-    //fn new_style(n: ts::Node, text: &str, scheme: &ColorScheme) -> Node {
-    //    let style = match n.kind() {
-    //        "highlight" => {
-    //            let mut cont: Span = (&n.child(0).unwrap()).into();
-    //            match cont.pos_to_text(text) {
-    //                Span::Text(hl) => scheme.to_style(hl),
-    //                _ => unreachable!(),
-    //            }
-    //        },
-    //        "properties" => {
-    //            let mut style: Style = Default::default(),
-    //            for mut nprop in n.child(1).children() {
-    //                nprop = nprop.child_by_field_name("property").unwrap();
-    //                match nprop.kind() {
-    //                    "fg" => {
-    //                        let mut cont: Span = nprop.child(2).into();
-    //                        cont.pos_to_text(text);
-    //                        style.fg = match cont {
-    //                            Span::Text(color) => Style::to_color(color),
-    //                            _ => unreachable!(),
-    //                        };
-    //                    }
-    //                    "bg" => {
-    //                        let mut cont: Span = nprop.child(2).into();
-    //                        cont.pos_to_text(text);
-    //                        style.bg = match cont {
-    //                            Span::Text(color) => Style::to_color(color),
-    //                            _ => unreachable!(),
-    //                        };
-    //                    }
-    //                    "attrb" | "attribute" => {
-    //                        let mut cont: Span = nprop.child(2).into();
-    //                        cont.pos_to_text(text);
-    //                        style.attrs = match cont {
-    //                            Span::Text(color) => Style::to_attrs(color),
-    //                            _ => unreachable!(),
-    //                        };
-    //                    }
-    //                }
-    //            }
-    //        }
-    //    };
-
-    //    Node::End(Style)
-    //}
-
-    fn to_state(&self) -> Option<usize> {
-        use Node::{Child, Descendant, End, Pattern, Select, Sibling, Twin};
-
-        match self {
-            Pattern { state, .. } => Some(*state),
-            Select { state, .. } => Some(*state),
-            Twin { state, .. } => Some(*state),
-            Sibling { state, .. } => Some(*state),
-            Child { state, .. } => Some(*state),
-            Descendant { state, .. } => Some(*state),
-            End(_) => None,
-        }
-    }
-
     fn to_select(&self) -> Result<Node> {
         use Node::{Pattern, Select};
 
         match self {
-            Pattern { state, edge, next } => Ok(Select {
-                state: *state,
+            Pattern(edge, next) => Ok(Select {
                 edge: edge.clone(),
                 next: Rc::clone(next),
             }),
@@ -339,8 +305,7 @@ impl Node {
         use Node::{Pattern, Twin};
 
         match self {
-            Pattern { state, edge, next } => Ok(Twin {
-                state: *state,
+            Pattern(edge, next) => Ok(Twin {
                 edge: edge.clone(),
                 next: Rc::clone(next),
                 nth_child,
@@ -354,8 +319,7 @@ impl Node {
         use Node::{Pattern, Sibling};
 
         match self {
-            Pattern { state, edge, next } => Ok(Sibling {
-                state: *state,
+            Pattern(edge, next) => Ok(Sibling {
                 edge: edge.clone(),
                 next: Rc::clone(next),
                 nth_child,
@@ -369,8 +333,7 @@ impl Node {
         use Node::{Child, Pattern};
 
         match self {
-            Pattern { state, edge, next } => Ok(Child {
-                state: *state,
+            Pattern(edge, next) => Ok(Child {
                 edge: edge.clone(),
                 next: Rc::clone(next),
                 nth_child,
@@ -384,8 +347,7 @@ impl Node {
         use Node::{Descendant, Pattern};
 
         match self {
-            Pattern { state, edge, next } => Ok(Descendant {
-                state: *state,
+            Pattern(edge, next) => Ok(Descendant {
                 edge: edge.clone(),
                 next: Rc::clone(next),
                 nth_child,
@@ -394,41 +356,148 @@ impl Node {
             _ => err_at!(Fatal, msg: format!("invalid node"))?,
         }
     }
+
+    fn as_mut_edge(&mut self) -> &mut Edge {
+        use Node::{Child, Descendant, End, Pattern, Select, Sibling, Twin};
+
+        match self {
+            Pattern(edge, _) => edge,
+            Select { edge, .. } => edge,
+            Twin { edge, .. } => edge,
+            Sibling { edge, .. } => edge,
+            Child { edge, .. } => edge,
+            Descendant { edge, .. } => edge,
+            End(_) => unreachable!(),
+        }
+    }
+
+    fn pos_to_text(&mut self, text: &str) -> Result<()> {
+        use Node::{Child, Descendant, End, Pattern, Select, Sibling, Twin};
+
+        match self {
+            Pattern(edge, _) => edge.pos_to_text(text),
+            Select { edge, .. } => edge.pos_to_text(text),
+            Twin { edge, .. } => edge.pos_to_text(text),
+            Sibling { edge, .. } => edge.pos_to_text(text),
+            Child { edge, .. } => edge.pos_to_text(text),
+            Descendant { edge, .. } => edge.pos_to_text(text),
+            End(_) => Ok(()),
+        }
+    }
+
+    fn to_end_style(&mut self, scheme: &ColorScheme) -> Result<()> {
+        use Node::{Child, Descendant, End, Pattern, Select, Sibling, Twin};
+
+        match self {
+            Pattern(_, next) => {
+                let n = Rc::get_mut(next).unwrap();
+                n.to_end_style(scheme)
+            }
+            Select { next, .. } => {
+                let n = Rc::get_mut(next).unwrap();
+                n.to_end_style(scheme)
+            }
+            Twin { next, .. } => {
+                let n = Rc::get_mut(next).unwrap();
+                n.to_end_style(scheme)
+            }
+            Sibling { next, .. } => {
+                let n = Rc::get_mut(next).unwrap();
+                n.to_end_style(scheme)
+            }
+            Child { next, .. } => {
+                let n = Rc::get_mut(next).unwrap();
+                n.to_end_style(scheme)
+            }
+            Descendant { next, .. } => {
+                let n = Rc::get_mut(next).unwrap();
+                n.to_end_style(scheme)
+            }
+            End(ns) => Ok(ns.to_style(scheme)),
+        }
+    }
 }
 
-struct Pattern(Rc<Node>);
+impl Node {
+    fn compile_style<'a>(
+        ts_node: ts::Node<'a>,
+        text: &str,
+        tc: &mut ts::TreeCursor<'a>,
+    ) -> Result<Node> {
+        let style = match ts_node.kind() {
+            "highlight" => {
+                let mut cont = Span::from_node(&ts_node.child(0).unwrap());
+                cont.pos_to_text(text);
+                match cont {
+                    Span::Text(hl) => {
+                        let hl: Highlight = TryFrom::try_from(hl.as_str())?;
+                        Ok(NodeStyle::Highlight(hl))
+                    }
+                    _ => err_at!(Fatal, msg: format!("unexpected style")),
+                }?
+            }
+            "properties" => {
+                let mut style: Style = Default::default();
+                for nprop in ts_node.child(1).unwrap().children(tc) {
+                    let nprop = nprop.child_by_field_name("property").unwrap();
+                    let mut cont = Span::from_node(&nprop.child(2).unwrap());
+                    cont.pos_to_text(text);
+                    match nprop.kind() {
+                        "fg" => {
+                            style.fg = match &cont {
+                                Span::Text(color) => Ok(Style::to_color(color)?),
+                                _ => err_at!(Fatal, msg: format!("unexpected")),
+                            }?;
+                        }
+                        "bg" => {
+                            style.bg = match &cont {
+                                Span::Text(color) => Ok(Style::to_color(color)?),
+                                _ => err_at!(Fatal, msg: format!("unexpected")),
+                            }?;
+                        }
+                        "attrb" | "attribute" => {
+                            style.attrs = match &cont {
+                                Span::Text(attrs) => Ok(Style::to_attrs(attrs)?),
+                                _ => err_at!(Fatal, msg: format!("unexpected")),
+                            }?;
+                        }
+                        _ => err_at!(Fatal, msg: format!("unexpected"))?,
+                    }
+                }
+                NodeStyle::Style(style)
+            }
+            kind => err_at!(Fatal, msg: format!("unexpected {:?}", kind))?,
+        };
 
-impl Pattern {
-    //fn compile(
-    //    //
-    //    ts_node: ts::Node, mut state: usize, mut nn: Node, tc: &mut TreeCursor) -> Result<Node> {
+        Ok(Node::End(style))
+    }
 
-    //    let node = match ts_node.child_count() {
-    //        0 => unreachable!(),
-    //        1 => {
-    //            let child = ts_node.children(tc).next().unwrap();
-    //            Self::compile_sel(child, state, nn)?
-    //        },
-    //        n => {
-    //            let iter = ts_node.children(tc);
-    //            nn = Self::compile_sel(child, state, nn)?;
-    //            for child in iter {
-    //                nn.edge = Edge::Descendant(Box::new(nn.edge));
-    //                nn = Self::compile_sel(child, state, nn)?;
-    //                state = nn.state + 1;
-    //            }
-    //            nn
-    //        }
-    //    };
-
-    //    Ok(Pattern(Rc::new(node)))
-    //}
-
-    fn compile_sel(
-        ts_node: ts::Node,
-        state: usize,
+    fn compile_pattern<'a>(
+        ts_node: ts::Node<'a>,
         mut next: Node,
-        tc: &mut ts::TreeCursor,
+        tc: &mut ts::TreeCursor<'a>,
+    ) -> Result<Node> {
+        match ts_node.child_count() {
+            0 => err_at!(Fatal, msg: format!("unexpected node")),
+            1 => Self::compile_sel(ts_node.child(0).unwrap(), next, tc),
+            _ => {
+                let mut cs: Vec<ts::Node> = ts_node.children(tc).collect();
+                cs.reverse();
+                let mut iter = cs.into_iter();
+                next = Self::compile_sel(iter.next().unwrap(), next, tc)?;
+                for child in iter {
+                    wrap_edge!(next.as_mut_edge(), Descendant)?;
+                    next = Self::compile_sel(child, next, tc)?;
+                }
+                Ok(next)
+            }
+        }
+    }
+
+    fn compile_sel<'a>(
+        ts_node: ts::Node<'a>,
+        mut next: Node,
+        tc: &mut ts::TreeCursor<'a>,
     ) -> Result<Node> {
         let cs: Vec<ts::Node> = ts_node.children(tc).collect();
 
@@ -436,22 +505,11 @@ impl Pattern {
         match chd.kind() {
             "sel_kind" => {
                 let edge = Edge::Kind(Span::from_node(&chd));
-                Ok(Node::Pattern {
-                    edge,
-                    state,
-                    next: Rc::new(next),
-                })
+                Ok(Node::Pattern(edge, Rc::new(next)))
             }
             "sel_field" => {
-                let edge = {
-                    let cf = chd.child(1).unwrap();
-                    Edge::Field(Span::from_node(&cf))
-                };
-                Ok(Node::Pattern {
-                    edge,
-                    state,
-                    next: Rc::new(next),
-                })
+                let edge = Edge::Field(Span::from_node(&chd.child(1).unwrap()));
+                Ok(Node::Pattern(edge, Rc::new(next)))
             }
             "sel_symbol_field" => {
                 let edge = {
@@ -459,57 +517,44 @@ impl Pattern {
                     let cf = Span::from_node(&chd.child(2).unwrap());
                     Edge::KindField(ck, cf)
                 };
-                Ok(Node::Pattern {
-                    edge,
-                    state,
-                    next: Rc::new(next),
-                })
+                Ok(Node::Pattern(edge, Rc::new(next)))
             }
             "sel_twins" => {
-                next = {
-                    let cr = chd.child(2).unwrap();
-                    Self::compile_sel(cr, state, next, tc)?
-                };
-                next.edge = Edge::Twin(Box::new(next.edge));
-
-                let cl = chd.child(0).unwrap();
-                let state = next.to_state().unwrap_or(state + 1) + 1;
-                Self::compile_sel(cl, state, next, tc)
+                next = Self::compile_sel(chd.child(2).unwrap(), next, tc)?;
+                wrap_edge!(next.as_mut_edge(), Twin)?;
+                Self::compile_sel(chd.child(0).unwrap(), next, tc)
             }
             "sel_siblings" => {
-                next = {
-                    let cr = chd.child(2).unwrap();
-                    Self::compile_sel(cr, state, next, tc)?
-                };
-                next.edge = Edge::Sibling(Box::new(next.edge));
-
-                let cl = chd.child(0).unwrap();
-                let state = next.to_state().unwrap_or(state + 1) + 1;
-                Self::compile_sel(cl, state, next, tc)
+                next = Self::compile_sel(chd.child(2).unwrap(), next, tc)?;
+                wrap_edge!(next.as_mut_edge(), Sibling)?;
+                Self::compile_sel(chd.child(0).unwrap(), next, tc)
             }
             "sel_child" => {
-                next = {
-                    let cr = chd.child(2).unwrap();
-                    Self::compile_sel(cr, state, next, tc)?
-                };
-                next.edge = Edge::Child(Box::new(next.edge));
-
-                let cl = chd.child(0).unwrap();
-                let state = next.to_state().unwrap_or(state + 1) + 1;
-                Self::compile_sel(cl, state, next, tc)
+                next = Self::compile_sel(chd.child(2).unwrap(), next, tc)?;
+                wrap_edge!(next.as_mut_edge(), Child)?;
+                Self::compile_sel(chd.child(0).unwrap(), next, tc)
             }
+            kind => err_at!(Fatal, msg: format!("unexpected {}", kind)),
         }
     }
 }
 
-//impl Pattern {
-//    fn pos_to_text(&mut self, text: &str) {
-//        match self.0.get_mut().unwrap() {
-//            Pattern { edge, .. } => edge.get_mut().unwrap().pos_to_text(),
-//            End { .. } => (),
-//        }
-//    }
-//}
+#[derive(Clone)]
+enum NodeStyle {
+    Highlight(Highlight),
+    Style(Style),
+}
+
+impl NodeStyle {
+    fn to_style(&mut self, scheme: &ColorScheme) {
+        match self {
+            NodeStyle::Style(_) => (),
+            NodeStyle::Highlight(hl) => {
+                *self = NodeStyle::Style(scheme.to_style(hl.clone()));
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 #[path = "tss_test.rs"]
