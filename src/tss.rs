@@ -1,6 +1,6 @@
 use tree_sitter as ts;
 
-use std::{convert::TryFrom, fmt, mem, rc::Rc, result, str::FromStr};
+use std::{convert::TryFrom, fmt, mem, rc::Rc, result};
 
 use crate::{
     color_scheme::{ColorScheme, Highlight, Style},
@@ -119,10 +119,8 @@ pub struct Automata {
     edges: Vec<Node>,
 }
 
-impl FromStr for Automata {
-    type Err = Error;
-
-    fn from_str(text: &str) -> Result<Automata> {
+impl Automata {
+    pub fn from_str(text: &str, scheme: &ColorScheme) -> Result<Automata> {
         let tree = {
             let mut p = ts::Parser::new();
             let language = unsafe { tree_sitter_tss() };
@@ -144,7 +142,7 @@ impl FromStr for Automata {
             let child = root.child(i).unwrap();
             let style = {
                 let ts_node = child.child_by_field_name("style").unwrap();
-                Node::compile_style(ts_node, text, &mut tc)?
+                Node::compile_style(ts_node, text, &mut tc, scheme)?
             };
             let n_selectors: Vec<ts::Node> = {
                 let xs = child.child_by_field_name("selectors").unwrap();
@@ -277,7 +275,7 @@ enum Node {
         depth: usize,
         nth_child: usize,
     },
-    End(NodeStyle),
+    End(Style),
 }
 
 impl fmt::Display for Node {
@@ -420,38 +418,6 @@ impl Node {
             End(_) => Ok(()),
         }
     }
-
-    fn to_end_style(&mut self, scheme: &ColorScheme) -> Result<()> {
-        use Node::{Child, Descendant, End, Pattern, Select, Sibling, Twin};
-
-        match self {
-            Pattern(_, next) => {
-                let n = Rc::get_mut(next).unwrap();
-                n.to_end_style(scheme)
-            }
-            Select { next, .. } => {
-                let n = Rc::get_mut(next).unwrap();
-                n.to_end_style(scheme)
-            }
-            Twin { next, .. } => {
-                let n = Rc::get_mut(next).unwrap();
-                n.to_end_style(scheme)
-            }
-            Sibling { next, .. } => {
-                let n = Rc::get_mut(next).unwrap();
-                n.to_end_style(scheme)
-            }
-            Child { next, .. } => {
-                let n = Rc::get_mut(next).unwrap();
-                n.to_end_style(scheme)
-            }
-            Descendant { next, .. } => {
-                let n = Rc::get_mut(next).unwrap();
-                n.to_end_style(scheme)
-            }
-            End(ns) => Ok(ns.to_style(scheme)),
-        }
-    }
 }
 
 impl Node {
@@ -459,7 +425,9 @@ impl Node {
         ts_node: ts::Node<'a>,
         text: &str,
         tc: &mut ts::TreeCursor<'a>,
+        scheme: &ColorScheme,
     ) -> Result<Node> {
+        let canvas = scheme.to_style(Highlight::Canvas);
         let style = match ts_node.kind() {
             "highlight" => {
                 let mut cont = Span::from_node(&ts_node.child(0).unwrap());
@@ -467,7 +435,7 @@ impl Node {
                 match cont {
                     Span::Text(hl) => {
                         let hl: Highlight = TryFrom::try_from(hl.as_str())?;
-                        Ok(NodeStyle::Highlight(hl))
+                        Ok(scheme.to_style(hl))
                     }
                     _ => err_at!(Fatal, msg: format!("unexpected style")),
                 }?
@@ -481,13 +449,19 @@ impl Node {
                     match nprop.kind() {
                         "fg" => {
                             style.fg = match &cont {
-                                Span::Text(color) => Ok(Style::to_color(color)?),
+                                Span::Text(color) => {
+                                    let fg = Style::to_color(color, &canvas)?;
+                                    Ok(fg)
+                                }
                                 _ => err_at!(Fatal, msg: format!("unexpected")),
                             }?;
                         }
                         "bg" => {
                             style.bg = match &cont {
-                                Span::Text(color) => Ok(Style::to_color(color)?),
+                                Span::Text(color) => {
+                                    let bg = Style::to_color(color, &canvas)?;
+                                    Ok(bg)
+                                }
                                 _ => err_at!(Fatal, msg: format!("unexpected")),
                             }?;
                         }
@@ -500,7 +474,7 @@ impl Node {
                         _ => err_at!(Fatal, msg: format!("unexpected"))?,
                     }
                 }
-                NodeStyle::Style(style)
+                style
             }
             kind => err_at!(Fatal, msg: format!("unexpected {:?}", kind))?,
         };
@@ -571,32 +545,6 @@ impl Node {
                 Self::compile_sel(chd.child(0).unwrap(), next, tc)
             }
             kind => err_at!(Fatal, msg: format!("unexpected {}", kind)),
-        }
-    }
-}
-
-#[derive(Clone)]
-enum NodeStyle {
-    Highlight(Highlight),
-    Style(Style),
-}
-
-impl fmt::Display for NodeStyle {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        match self {
-            NodeStyle::Highlight(hl) => write!(f, "{}", hl),
-            NodeStyle::Style(style) => write!(f, "{}", style),
-        }
-    }
-}
-
-impl NodeStyle {
-    fn to_style(&mut self, scheme: &ColorScheme) {
-        match self {
-            NodeStyle::Style(_) => (),
-            NodeStyle::Highlight(hl) => {
-                *self = NodeStyle::Style(scheme.to_style(hl.clone()));
-            }
         }
     }
 }

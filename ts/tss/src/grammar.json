@@ -1,6 +1,10 @@
 {
   "name": "tss",
   "rules": {
+    "comment": {
+      "type": "PATTERN",
+      "value": "#.*"
+    },
     "s": {
       "type": "REPEAT",
       "content": {
@@ -766,8 +770,12 @@
   },
   "extras": [
     {
+      "type": "SYMBOL",
+      "name": "comment"
+    },
+    {
       "type": "PATTERN",
-      "value": "\\s"
+      "value": "[ \\t]"
     }
   ],
   "conflicts": [],

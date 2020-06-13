@@ -39,6 +39,7 @@ impl TryFrom<toml::Value> for ColorScheme {
             hs
         };
 
+        let canvas: Style = Default::default();
         for (key, value) in table.iter() {
             match key.as_str() {
                 "name" => {
@@ -50,7 +51,7 @@ impl TryFrom<toml::Value> for ColorScheme {
                         let h: Highlight = TryFrom::try_from(hl)?;
                         (h as u32) as usize
                     };
-                    hs[off] = TryFrom::try_from(value.clone())?;
+                    hs[off] = Style::from_toml(&value, &canvas)?;
                     trace!("convert {} {} {:?}", hl, off, hs[off]);
                 }
             }
@@ -145,10 +146,8 @@ impl Default for Style {
     }
 }
 
-impl TryFrom<toml::Value> for Style {
-    type Error = Error;
-
-    fn try_from(value: toml::Value) -> Result<Self> {
+impl Style {
+    pub fn from_toml(value: &toml::Value, canvas: &Style) -> Result<Style> {
         use crate::Error::Invalid;
 
         let table = {
@@ -163,8 +162,8 @@ impl TryFrom<toml::Value> for Style {
                 value.as_str().ok_or(Invalid(msg))?
             };
             match key.as_str() {
-                "on" | "bg" => style.bg = Style::to_color(value)?,
-                "with" | "fg" => style.fg = Style::to_color(value)?,
+                "on" | "bg" => style.bg = Style::to_color(value, canvas)?,
+                "with" | "fg" => style.fg = Style::to_color(value, canvas)?,
                 "attr" | "attribute" => style.attrs = Style::to_attrs(value)?,
                 _ => (),
             }
@@ -172,10 +171,8 @@ impl TryFrom<toml::Value> for Style {
 
         Ok(style)
     }
-}
 
-impl Style {
-    pub fn to_color(color: &str) -> Result<Color> {
+    pub fn to_color(color: &str, canvas: &Style) -> Result<Color> {
         use std::iter::repeat;
         let from_str_radix = u8::from_str_radix;
 
@@ -198,6 +195,8 @@ impl Style {
             "darkcyan" | "dark-cyan" | "dark_cyan" => Color::DarkCyan,
             "white" => Color::White,
             "grey" => Color::Grey,
+            "bg-canvas" => canvas.bg,
+            "fg-canvas" => canvas.fg,
             _ if n == 0 => Color::Rgb { r: 0, g: 0, b: 0 },
             color => match color.chars().next() {
                 Some('#') if n == 1 => Color::Rgb { r: 0, g: 0, b: 0 },
@@ -297,6 +296,7 @@ highlight![
     (Comment, "comment"),
     (Constant, "constant"),
     (Str, "string"),
+    (EscapeSeq, "escape-seq"),
     (Character, "char"),
     (Number, "number"),
     (Boolean, "boolean"),

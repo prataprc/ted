@@ -1,7 +1,11 @@
 module.exports = grammar({
   name: 'tss',
 
+  extras: $ => [$.comment, /[ \t]/],
+
   rules: {
+    comment: $ => /#.*/,
+
     s: $ => repeat($.hl_rule),
     hl_rule: $ => seq(
         field('selectors', $.selectors),
