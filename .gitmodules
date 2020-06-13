@@ -1,3 +1,0 @@
-[submodule "ts/toml"]
-	path = ts/toml
-	url = https://github.com/ikatyang/tree-sitter-toml.git
