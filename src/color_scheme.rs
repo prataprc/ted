@@ -125,6 +125,16 @@ impl fmt::Debug for Style {
     }
 }
 
+impl fmt::Display for Style {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        let attrs = {
+            let attrs: Vec<String> = self.attrs.iter().map(|a| a.to_string()).collect();
+            attrs.join("|")
+        };
+        write!(f, "fg:{:?},bg:{:?},attrs:{}", self.bg, self.fg, attrs)
+    }
+}
+
 impl Default for Style {
     fn default() -> Style {
         Style {
