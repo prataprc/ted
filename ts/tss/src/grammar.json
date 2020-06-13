@@ -4,35 +4,47 @@
     "s": {
       "type": "REPEAT",
       "content": {
-        "type": "SEQ",
-        "members": [
-          {
-            "type": "FIELD",
-            "name": "selectors",
-            "content": {
-              "type": "SYMBOL",
-              "name": "selectors"
-            }
-          },
-          {
-            "type": "FIELD",
-            "name": "style",
-            "content": {
-              "type": "CHOICE",
-              "members": [
-                {
-                  "type": "SYMBOL",
-                  "name": "highlight"
-                },
-                {
-                  "type": "SYMBOL",
-                  "name": "properties"
-                }
-              ]
-            }
-          }
-        ]
+        "type": "SYMBOL",
+        "name": "hl_rule"
       }
+    },
+    "hl_rule": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "selectors",
+          "content": {
+            "type": "SYMBOL",
+            "name": "selectors"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ":"
+        },
+        {
+          "type": "FIELD",
+          "name": "style",
+          "content": {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "highlight"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "properties"
+              }
+            ]
+          }
+        },
+        {
+          "type": "STRING",
+          "value": ";"
+        }
+      ]
     },
     "selectors": {
       "type": "SEQ",
@@ -97,11 +109,11 @@
     },
     "sel_kind": {
       "type": "PATTERN",
-      "value": "[a-z][0-9a-zA-Z-_]"
+      "value": "[a-z][0-9a-zA-Z-_]+"
     },
     "field_name": {
       "type": "PATTERN",
-      "value": "[a-z][0-9a-zA-Z-_]"
+      "value": "[a-z][0-9a-zA-Z-_]+"
     },
     "sel_field": {
       "type": "SEQ",
@@ -581,6 +593,10 @@
     "highlight": {
       "type": "CHOICE",
       "members": [
+        {
+          "type": "STRING",
+          "value": "canvas"
+        },
         {
           "type": "STRING",
           "value": "comment"

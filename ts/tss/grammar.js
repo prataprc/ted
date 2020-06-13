@@ -2,10 +2,13 @@ module.exports = grammar({
   name: 'tss',
 
   rules: {
-    s: $ => repeat(seq(
+    s: $ => repeat($.hl_rule),
+    hl_rule: $ => seq(
         field('selectors', $.selectors),
-        field('style', choice($.highlight, $.properties))
-    )),
+        ':',
+        field('style', choice($.highlight, $.properties)),
+        ';'
+    ),
 
     selectors: $ => seq($.selector, repeat(seq(',', $.selector))),
     selector: $ => repeat1($.sel_symbol),
@@ -17,8 +20,8 @@ module.exports = grammar({
         $.sel_siblings,
         $.sel_child,
     ),
-    sel_kind: $ => /[a-z][0-9a-zA-Z-_]/,
-    field_name: $ => /[a-z][0-9a-zA-Z-_]/,
+    sel_kind: $ => /[a-z][0-9a-zA-Z-_]+/,
+    field_name: $ => /[a-z][0-9a-zA-Z-_]+/,
     sel_field: $ => seq('.', $.field_name),
     sel_kind_field: $ => prec(2, seq($.sel_kind, '.', $.field_name)),
     sel_twins: $ => prec.left(2, seq($.sel_symbol, '+', $.sel_symbol)),
@@ -88,6 +91,7 @@ module.exports = grammar({
         'grey',
     ),
     highlight: $ => choice(
+        'canvas',
         'comment',
         'constant',
         'string',

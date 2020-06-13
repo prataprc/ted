@@ -1,6 +1,6 @@
 use tree_sitter as ts;
 
-use std::{convert::TryFrom, fmt, mem, rc::Rc, result};
+use std::{convert::TryFrom, fmt, mem, rc::Rc, result, str::FromStr};
 
 use crate::{
     color_scheme::{ColorScheme, Highlight, Style},
@@ -114,20 +114,20 @@ impl Span {
     }
 }
 
-struct Atomata {
+pub struct Automata {
     patterns: Vec<Rc<Node>>,
     edges: Vec<Node>,
 }
 
-impl TryFrom<String> for Atomata {
-    type Error = Error;
+impl FromStr for Automata {
+    type Err = Error;
 
-    fn try_from(text: String) -> Result<Atomata> {
+    fn from_str(text: &str) -> Result<Automata> {
         let tree = {
             let mut p = ts::Parser::new();
             let language = unsafe { tree_sitter_tss() };
             err_at!(FailParse, p.set_language(language))?;
-            match p.parse(&text, None) {
+            match p.parse(text, None) {
                 Some(tree) => Ok(tree),
                 None => err_at!(Fatal, msg: format!("invalid ted style sheet")),
             }?
@@ -142,15 +142,14 @@ impl TryFrom<String> for Atomata {
         let mut patterns = vec![];
         for i in 0..root.child_count() {
             let child = root.child(i).unwrap();
-            let selectors = child.child_by_field_name("selectors").unwrap();
             let style = {
                 let ts_node = child.child_by_field_name("style").unwrap();
-                Node::compile_style(ts_node, &text, &mut tc)?
+                Node::compile_style(ts_node, text, &mut tc)?
             };
-            let mut n_selectors = vec![selectors.child(0).unwrap()];
-            for selector in selectors.child(1).unwrap().children(&mut tc) {
-                n_selectors.push(selector.child(1).unwrap())
-            }
+            let n_selectors: Vec<ts::Node> = {
+                let xs = child.child_by_field_name("selectors").unwrap();
+                xs.children(&mut tc).collect()
+            };
             for n_sel in n_selectors.into_iter() {
                 let style = style.clone();
                 patterns.push(Rc::new(Node::compile_pattern(
@@ -161,14 +160,23 @@ impl TryFrom<String> for Atomata {
             }
         }
 
-        Ok(Atomata {
+        Ok(Automata {
             patterns,
             edges: Default::default(),
         })
     }
 }
 
-//impl Atomata {
+impl fmt::Display for Automata {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        for node in self.patterns.iter() {
+            write!(f, "{}\n", node);
+        }
+        Ok(())
+    }
+}
+
+//impl Automata {
 //    fn apply(&mut self, token, Token) -> Option<Span> {
 //        use Node::{Select, Twin, Sibling, Child, Descendant, Pattern, End };
 //
@@ -210,10 +218,10 @@ impl fmt::Display for Edge {
             Kind(_) => write!(f, "e-kind"),
             Field(_) => write!(f, "e-field"),
             KindField(_, _) => write!(f, "e-kindf"),
-            Twin(_) => write!(f, "e-twin"),
-            Sibling(_) => write!(f, "e-sibling"),
-            Child(_) => write!(f, "e-child"),
-            Descendant(_) => write!(f, "e-descendant"),
+            Twin(edge) => write!(f, "e-twin<{}>", edge),
+            Sibling(edge) => write!(f, "e-sibling<{}>", edge),
+            Child(edge) => write!(f, "e-child<{}>", edge),
+            Descendant(edge) => write!(f, "e-descendant<{}>", edge),
         }
     }
 }
@@ -248,26 +256,26 @@ enum Node {
     Twin {
         edge: Edge,
         next: Rc<Node>,
-        nth_child: usize,
         depth: usize,
+        nth_child: usize,
     },
     Sibling {
         edge: Edge,
         next: Rc<Node>,
-        nth_child: usize,
         depth: usize,
+        nth_child: usize,
     },
     Child {
         edge: Edge,
         next: Rc<Node>,
-        nth_child: usize,
         depth: usize,
+        nth_child: usize,
     },
     Descendant {
         edge: Edge,
         next: Rc<Node>,
-        nth_child: usize,
         depth: usize,
+        nth_child: usize,
     },
     End(NodeStyle),
 }
@@ -277,13 +285,41 @@ impl fmt::Display for Node {
         use Node::{Child, Descendant, End, Pattern, Select, Sibling, Twin};
 
         match self {
-            Pattern(_, _) => write!(f, "n-pattern"),
-            Select { .. } => write!(f, "n-select"),
-            Twin { .. } => write!(f, "n-twin"),
-            Sibling { .. } => write!(f, "n-sibling"),
-            Child { .. } => write!(f, "n-child"),
-            Descendant { .. } => write!(f, "n-descendant"),
-            End(_) => write!(f, "n-end"),
+            Pattern(edge, node) => write!(f, "Pattern<{}> -> {}", edge, node),
+            Select { edge, next } => write!(f, "Select<{}> -> {}", edge, next),
+            Twin {
+                edge,
+                next,
+                depth,
+                nth_child,
+            } => write!(f, "Twin<{},{},{}> -> {}", edge, depth, nth_child, next),
+            Sibling {
+                edge,
+                next,
+                depth,
+                nth_child,
+            } => write!(
+                f,
+                "Sibling<{},{},{}> -> {}",
+                edge, depth, /**/ nth_child, next
+            ),
+            Child {
+                edge,
+                next,
+                depth,
+                nth_child,
+            } => write!(f, "Child<{},{},{}> -> {}", edge, depth, nth_child, next),
+            Descendant {
+                edge,
+                next,
+                depth,
+                nth_child,
+            } => write!(
+                f,
+                "Descendant<{},{},{}> -> {}",
+                edge, depth, nth_child, next
+            ),
+            End(style) => write!(f, "End<{}>", style),
         }
     }
 }
@@ -427,7 +463,7 @@ impl Node {
         let style = match ts_node.kind() {
             "highlight" => {
                 let mut cont = Span::from_node(&ts_node.child(0).unwrap());
-                cont.pos_to_text(text);
+                cont.pos_to_text(text)?;
                 match cont {
                     Span::Text(hl) => {
                         let hl: Highlight = TryFrom::try_from(hl.as_str())?;
@@ -441,7 +477,7 @@ impl Node {
                 for nprop in ts_node.child(1).unwrap().children(tc) {
                     let nprop = nprop.child_by_field_name("property").unwrap();
                     let mut cont = Span::from_node(&nprop.child(2).unwrap());
-                    cont.pos_to_text(text);
+                    cont.pos_to_text(text)?;
                     match nprop.kind() {
                         "fg" => {
                             style.fg = match &cont {
@@ -543,6 +579,15 @@ impl Node {
 enum NodeStyle {
     Highlight(Highlight),
     Style(Style),
+}
+
+impl fmt::Display for NodeStyle {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            NodeStyle::Highlight(hl) => write!(f, "{}", hl),
+            NodeStyle::Style(style) => write!(f, "{}", style),
+        }
+    }
 }
 
 impl NodeStyle {

@@ -146,6 +146,36 @@
     "fields": {}
   },
   {
+    "type": "hl_rule",
+    "named": true,
+    "fields": {
+      "selectors": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "selectors",
+            "named": true
+          }
+        ]
+      },
+      "style": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "highlight",
+            "named": true
+          },
+          {
+            "type": "properties",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "properties",
     "named": true,
     "fields": {
@@ -224,31 +254,16 @@
   {
     "type": "s",
     "named": true,
-    "fields": {
-      "selectors": {
-        "multiple": true,
-        "required": false,
-        "types": [
-          {
-            "type": "selectors",
-            "named": true
-          }
-        ]
-      },
-      "style": {
-        "multiple": true,
-        "required": false,
-        "types": [
-          {
-            "type": "highlight",
-            "named": true
-          },
-          {
-            "type": "properties",
-            "named": true
-          }
-        ]
-      }
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "hl_rule",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -417,6 +432,10 @@
     "named": false
   },
   {
+    "type": ";",
+    "named": false
+  },
+  {
     "type": ">",
     "named": false
   },
@@ -446,6 +465,10 @@
   },
   {
     "type": "boolean",
+    "named": false
+  },
+  {
+    "type": "canvas",
     "named": false
   },
   {
