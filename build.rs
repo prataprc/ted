@@ -65,7 +65,6 @@ fn main() {
             sources: vec![
                 "ts/toml/src/parser.c".into(),
                 "ts/toml/src/scanner.c".into(),
-                "ts/toml/src/binding.cc".into(),
             ],
         },
     ];
@@ -143,7 +142,7 @@ struct Parser {
 fn build_parser(parser: Parser) -> Result<(), String> {
     // generate
     {
-        let _sd = SwitchDir::to_lib_dir(&parser.dir);
+        let _sd = SwitchDir::to_lang_dir(&parser.dir);
         let cmd = "tree-sitter generate";
         match err_at!(process::Command::new("tree-sitter")
             .args(&["generate"])
@@ -212,7 +211,7 @@ impl SwitchDir {
         })
     }
 
-    fn to_lib_dir(to_dir: &ffi::OsStr) -> Result<SwitchDir, String> {
+    fn to_lang_dir(to_dir: &ffi::OsStr) -> Result<SwitchDir, String> {
         let cwd = err_at!(env::current_dir())?;
         err_at!(env::set_current_dir(to_dir))?;
         Ok(SwitchDir {
