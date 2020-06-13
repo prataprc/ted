@@ -113,11 +113,6 @@
     "fields": {}
   },
   {
-    "type": "comment",
-    "named": true,
-    "fields": {}
-  },
-  {
     "type": "fg",
     "named": true,
     "fields": {},
@@ -254,6 +249,21 @@
           }
         ]
       }
+    }
+  },
+  {
+    "type": "s",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "hl_rule",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -442,6 +452,10 @@
     "named": false
   },
   {
+    "type": "bg-canvas",
+    "named": false
+  },
+  {
     "type": "black",
     "named": false
   },
@@ -587,6 +601,10 @@
   },
   {
     "type": "fg",
+    "named": false
+  },
+  {
+    "type": "fg-canvas",
     "named": false
   },
   {

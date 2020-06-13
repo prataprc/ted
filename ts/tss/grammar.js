@@ -1,11 +1,9 @@
 module.exports = grammar({
   name: 'tss',
 
-  extras: $ => [$.comment, /[ \t]/],
+  extras: $ => [$.comment, /[ \t]/, $.newline],
 
   rules: {
-    comment: $ => /#.*/,
-
     s: $ => repeat($.hl_rule),
     hl_rule: $ => seq(
         field('selectors', $.selectors),
@@ -13,6 +11,8 @@ module.exports = grammar({
         field('style', choice($.highlight, $.properties)),
         ';'
     ),
+    comment: $ => /#.*/,
+    newline: $ => /\r?\n/,
 
     selectors: $ => seq($.selector, repeat(seq(',', $.selector))),
     selector: $ => repeat1($.sel_symbol),
@@ -93,6 +93,8 @@ module.exports = grammar({
         'dark_cyan',
         'white',
         'grey',
+        'bg-canvas',
+        'fg-canvas',
     ),
     highlight: $ => choice(
         'canvas',

@@ -1,10 +1,6 @@
 {
   "name": "tss",
   "rules": {
-    "comment": {
-      "type": "PATTERN",
-      "value": "#.*"
-    },
     "s": {
       "type": "REPEAT",
       "content": {
@@ -49,6 +45,14 @@
           "value": ";"
         }
       ]
+    },
+    "comment": {
+      "type": "PATTERN",
+      "value": "#.*"
+    },
+    "newline": {
+      "type": "PATTERN",
+      "value": "\\r?\\n"
     },
     "selectors": {
       "type": "SEQ",
@@ -591,6 +595,14 @@
         {
           "type": "STRING",
           "value": "grey"
+        },
+        {
+          "type": "STRING",
+          "value": "bg-canvas"
+        },
+        {
+          "type": "STRING",
+          "value": "fg-canvas"
         }
       ]
     },
@@ -776,6 +788,10 @@
     {
       "type": "PATTERN",
       "value": "[ \\t]"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "newline"
     }
   ],
   "conflicts": [],

@@ -140,6 +140,10 @@ impl Automata {
         let mut patterns = vec![];
         for i in 0..root.child_count() {
             let child = root.child(i).unwrap();
+            if child.kind() != "hl_rule" {
+                continue;
+            }
+
             let style = {
                 let ts_node = child.child_by_field_name("style").unwrap();
                 Node::compile_style(ts_node, text, &mut tc, scheme)?

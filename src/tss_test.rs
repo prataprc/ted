@@ -19,7 +19,8 @@ fn test_automata() {
         let bytes = fs::read(fpath).unwrap();
         from_utf8(&bytes).unwrap().to_string()
     };
-    let atm: Automata = text.parse().unwrap();
+    let scheme: ColorScheme = Default::default();
+    let atm = Automata::from_str(&text, &scheme).unwrap();
     println!("{}", atm);
 }
 
