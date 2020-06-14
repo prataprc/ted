@@ -1,6 +1,6 @@
 use tree_sitter as ts;
 
-use std::{convert::TryFrom, fmt, mem, rc::Rc, result};
+use std::{borrow::Borrow, convert::TryFrom, fmt, mem, rc::Rc, result};
 
 use crate::{
     color_scheme::{ColorScheme, Highlight, Style},
@@ -42,22 +42,6 @@ impl fmt::Display for Token {
         )
     }
 }
-
-//impl Token {
-//    fn match(&self, edge: &Edge) -> bool {
-//        match edge {
-//            Kind(k) if self.kind == k.as_text() => true,
-//            Field(f) => self.field.map(|field| field == f).unwrap_or(false),
-//            Field(f) if self.field.unwrap() == f.as_text() => true,
-//            KindField(k, f) {
-//                let ok1 = self.kind == k.as_text();
-//                let ok2 = self.field.map(|field| field == f).unwrap_or(false);
-//                ok1 && ok2
-//            }
-//            _ => false,
-//        }
-//    }
-//}
 
 #[derive(Clone)]
 enum Span {
@@ -116,7 +100,7 @@ impl Span {
 
 pub struct Automata {
     patterns: Vec<Rc<Node>>,
-    edges: Vec<Node>,
+    open_nodes: Vec<Node>,
 }
 
 impl Automata {
@@ -164,7 +148,7 @@ impl Automata {
 
         Ok(Automata {
             patterns,
-            edges: Default::default(),
+            open_nodes: Default::default(),
         })
     }
 }
@@ -178,22 +162,74 @@ impl fmt::Display for Automata {
     }
 }
 
-//impl Automata {
-//    fn apply(&mut self, token, Token) -> Option<Span> {
-//        use Node::{Select, Twin, Sibling, Child, Descendant, Pattern, End };
-//
-//        for node in self.edges.iter() {
-//            match node {
-//                Select { edge, next, .. } if token.match(edge) => {
-//                    next.to_()
-//                }
-//                Twin { .. } | Sibling { .. } =>  unreachable!(),
-//                Child { .. } | Descendant { .. } =>  unreachable!(),
-//                Pattern { .. } | End { .. } => unreachable!(),
-//            }
-//        }
-//    }
-//}
+impl Automata {
+    pub fn shift_in(&mut self, token: &Token) -> Result<Option<Style>> {
+        use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
+
+        let mut style1: Option<Style> = None;
+        let mut ops = vec![];
+        for (off, open_node) in self.open_nodes.iter().enumerate() {
+            let (next, drop) = open_node.is_match(token)?;
+            style1 = match next {
+                Some(Node::End(style)) => {
+                    ops.push((off, None));
+                    Some(style1.unwrap_or(style))
+                }
+                Some(node) => {
+                    ops.push((off, Some(node)));
+                    style1
+                }
+                None if drop => {
+                    ops.push((off, None));
+                    style1
+                }
+                None => style1,
+            }
+        }
+
+        for (off, node) in ops.into_iter() {
+            match node {
+                Some(node) => {
+                    mem::replace(&mut self.open_nodes[off], node);
+                }
+                None => {
+                    self.open_nodes.remove(off);
+                }
+            }
+        }
+
+        let msg = format!("unreachable");
+        let mut style2: Option<Style> = None;
+        for node in self.patterns.iter() {
+            style2 = match node.borrow() {
+                Pattern(e, n) if e.is_match(token)? => match n.borrow() {
+                    End(style) => Some(style2.unwrap_or(style.clone())),
+                    Pattern(_, _) => {
+                        let open_node = n.to_open_node(token)?;
+                        self.open_nodes.push(open_node);
+                        style2
+                    }
+                    Twin { .. } => err_at!(Fatal, msg: msg)?,
+                    Sibling { .. } => err_at!(Fatal, msg: msg)?,
+                    Child { .. } => err_at!(Fatal, msg: msg)?,
+                    Descendant { .. } => err_at!(Fatal, msg: msg)?,
+                },
+                Pattern(_, _) => style2,
+                Twin { .. } => err_at!(Fatal, msg: msg)?,
+                Sibling { .. } => err_at!(Fatal, msg: msg)?,
+                Child { .. } => err_at!(Fatal, msg: msg)?,
+                Descendant { .. } => err_at!(Fatal, msg: msg)?,
+                End(_) => err_at!(Fatal, msg: msg)?,
+            }
+        }
+
+        if let Some(style) = style1 {
+            Ok(Some(style))
+        } else {
+            Ok(style2)
+        }
+    }
+}
 
 #[derive(Clone)]
 enum Edge {
@@ -229,6 +265,27 @@ impl fmt::Display for Edge {
 }
 
 impl Edge {
+    fn is_match(&self, token: &Token) -> Result<bool> {
+        use Edge::{Child, Descendant, Field, Kind, KindField, Sibling, Twin};
+
+        match self {
+            Kind(k) => Ok(token.kind == k.as_text()?),
+            Field(f) => Ok(token.kind == f.as_text()?),
+            KindField(k, fl) => {
+                let ok1 = token.kind == k.as_text()?;
+                let ok2 = {
+                    let fl = fl.as_text()?;
+                    token.field.clone().map(|f| f == fl).unwrap_or(false)
+                };
+                Ok(ok1 && ok2)
+            }
+            Twin(_) => err_at!(Fatal, msg: format!("unreachable")),
+            Sibling(_) => err_at!(Fatal, msg: format!("unreachable")),
+            Child(_) => err_at!(Fatal, msg: format!("unreachable")),
+            Descendant(_) => err_at!(Fatal, msg: format!("unreachable")),
+        }
+    }
+
     fn pos_to_text(&mut self, text: &str) -> Result<()> {
         use Edge::{Child, Descendant, Field, Kind, KindField, Sibling, Twin};
 
@@ -251,10 +308,6 @@ impl Edge {
 #[derive(Clone)]
 enum Node {
     Pattern(Edge, Rc<Node>),
-    Select {
-        edge: Edge,
-        next: Rc<Node>,
-    },
     Twin {
         edge: Edge,
         next: Rc<Node>,
@@ -284,11 +337,10 @@ enum Node {
 
 impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Node::{Child, Descendant, End, Pattern, Select, Sibling, Twin};
+        use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
 
         match self {
             Pattern(edge, node) => write!(f, "Pattern<{}> -> {}", edge, node),
-            Select { edge, next } => write!(f, "Select<{}> -> {}", edge, next),
             Twin {
                 edge,
                 next,
@@ -327,80 +379,103 @@ impl fmt::Display for Node {
 }
 
 impl Node {
-    fn to_select(&self) -> Result<Node> {
-        use Node::{Pattern, Select};
+    fn to_open_node(&self, token: &Token) -> Result<Node> {
+        use Edge::{Child, Descendant, Field, Kind, KindField, Sibling, Twin};
 
         match self {
-            Pattern(edge, next) => Ok(Select {
-                edge: edge.clone(),
-                next: Rc::clone(next),
-            }),
-            _ => err_at!(Fatal, msg: format!("invalid node"))?,
+            Node::Pattern(edge, next) => match edge {
+                Kind(_) => err_at!(Fatal, msg: format!("unreachable")),
+                Field(_) => err_at!(Fatal, msg: format!("unreachable")),
+                KindField(_, _) => err_at!(Fatal, msg: format!("unreachable")),
+                Twin(ne) => Ok(Node::Twin {
+                    edge: ne.as_ref().clone(),
+                    next: Rc::clone(next),
+                    nth_child: token.sibling,
+                    depth: token.depth,
+                }),
+                Sibling(ne) => Ok(Node::Sibling {
+                    edge: ne.as_ref().clone(),
+                    next: Rc::clone(next),
+                    nth_child: token.sibling,
+                    depth: token.depth,
+                }),
+                Child(ne) => Ok(Node::Child {
+                    edge: ne.as_ref().clone(),
+                    next: Rc::clone(next),
+                    nth_child: token.sibling,
+                    depth: token.depth,
+                }),
+                Descendant(ne) => Ok(Node::Descendant {
+                    edge: ne.as_ref().clone(),
+                    next: Rc::clone(next),
+                    nth_child: token.sibling,
+                    depth: token.depth,
+                }),
+            },
+            node @ Node::End(_) => Ok(node.clone()),
+            Node::Twin { .. } => err_at!(Fatal, msg: format!("unreachable")),
+            Node::Sibling { .. } => err_at!(Fatal, msg: format!("unreachable")),
+            Node::Child { .. } => err_at!(Fatal, msg: format!("unreachable")),
+            Node::Descendant { .. } => err_at!(Fatal, msg: format!("unreachbl")),
         }
     }
 
-    fn to_twin(&self, nth_child: usize, depth: usize) -> Result<Node> {
-        use Node::{Pattern, Twin};
+    fn is_match(&self, token: &Token) -> Result<(Option<Node>, bool)> {
+        use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
 
-        match self {
-            Pattern(edge, next) => Ok(Twin {
-                edge: edge.clone(),
-                next: Rc::clone(next),
-                nth_child,
+        let (ok, drop, next) = match self {
+            Twin {
+                edge,
+                next,
                 depth,
-            }),
-            _ => err_at!(Fatal, msg: format!("invalid node"))?,
-        }
-    }
-
-    fn to_sibling(&self, nth_child: usize, depth: usize) -> Result<Node> {
-        use Node::{Pattern, Sibling};
-
-        match self {
-            Pattern(edge, next) => Ok(Sibling {
-                edge: edge.clone(),
-                next: Rc::clone(next),
                 nth_child,
+            } => {
+                let ok1 = token.depth == *depth;
+                let ok2 = token.sibling == nth_child + 1;
+                let ok3 = edge.is_match(token)?;
+                (ok1 && ok2 && ok3, !(ok1 && ok2), next)
+            }
+            Sibling {
+                edge,
+                next,
                 depth,
-            }),
-            _ => err_at!(Fatal, msg: format!("invalid node"))?,
-        }
-    }
-
-    fn to_child(&self, nth_child: usize, depth: usize) -> Result<Node> {
-        use Node::{Child, Pattern};
-
-        match self {
-            Pattern(edge, next) => Ok(Child {
-                edge: edge.clone(),
-                next: Rc::clone(next),
                 nth_child,
-                depth,
-            }),
-            _ => err_at!(Fatal, msg: format!("invalid node"))?,
-        }
-    }
+            } => {
+                let ok1 = token.depth == *depth;
+                let ok2 = *nth_child < token.sibling;
+                let ok3 = edge.is_match(token)?;
+                (ok1 && ok2 && ok3, !ok1, next)
+            }
+            Child {
+                edge, next, depth, ..
+            } => {
+                let ok1 = token.depth == depth + 1;
+                let ok3 = edge.is_match(token)?;
+                (ok1 && ok3, token.depth > (depth + 1), next)
+            }
+            Descendant {
+                edge, next, depth, ..
+            } => {
+                let ok1 = *depth < token.depth;
+                let ok3 = edge.is_match(token)?;
+                (ok1 && ok3, false, next)
+            }
+            Pattern(_, _) => err_at!(Fatal, msg: format!("unreachable"))?,
+            End(_) => err_at!(Fatal, msg: format!("unreachable"))?,
+        };
 
-    fn to_descendant(&self, nth_child: usize, depth: usize) -> Result<Node> {
-        use Node::{Descendant, Pattern};
-
-        match self {
-            Pattern(edge, next) => Ok(Descendant {
-                edge: edge.clone(),
-                next: Rc::clone(next),
-                nth_child,
-                depth,
-            }),
-            _ => err_at!(Fatal, msg: format!("invalid node"))?,
+        if ok {
+            Ok((Some(next.to_open_node(token)?), drop))
+        } else {
+            Ok((None, drop))
         }
     }
 
     fn as_mut_edge(&mut self) -> &mut Edge {
-        use Node::{Child, Descendant, End, Pattern, Select, Sibling, Twin};
+        use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
 
         match self {
             Pattern(edge, _) => edge,
-            Select { edge, .. } => edge,
             Twin { edge, .. } => edge,
             Sibling { edge, .. } => edge,
             Child { edge, .. } => edge,
@@ -410,11 +485,10 @@ impl Node {
     }
 
     fn pos_to_text(&mut self, text: &str) -> Result<()> {
-        use Node::{Child, Descendant, End, Pattern, Select, Sibling, Twin};
+        use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
 
         match self {
             Pattern(edge, _) => edge.pos_to_text(text),
-            Select { edge, .. } => edge.pos_to_text(text),
             Twin { edge, .. } => edge.pos_to_text(text),
             Sibling { edge, .. } => edge.pos_to_text(text),
             Child { edge, .. } => edge.pos_to_text(text),
