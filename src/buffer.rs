@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 #[allow(unused_imports)]
 use log::trace;
 use regex::Regex;
-use ropey::{self, Rope, RopeSlice};
+use ropey::{self, Rope};
 
 use std::{
     borrow::Borrow,
@@ -20,6 +20,7 @@ use std::{
 use crate::{
     event::{Event, Mto, DP},
     location::Location,
+    window::Text,
     {err_at, Error, Result},
 };
 
@@ -245,14 +246,6 @@ impl Buffer {
     pub fn to_location(&self) -> Location {
         self.location.clone()
     }
-
-    /// Return whether the last character in buffer is NEWLINE.
-    pub fn is_trailing_newline(&self) -> bool {
-        match self.n_chars() {
-            0 => false,
-            n => self.char(n - 1) == NL,
-        }
-    }
 }
 
 impl Buffer {
@@ -267,13 +260,6 @@ impl Buffer {
     #[inline]
     pub fn to_cursor(&self) -> usize {
         self.to_change().to_cursor()
-    }
-
-    /// Return the cursor position, as (col, row) starting from (0,), within
-    /// this buffer.
-    #[inline]
-    pub fn to_xy_cursor(&self) -> Cursor {
-        self.to_change().to_xy_cursor()
     }
 
     /// Like `to_xy_cursor` method, but return only the column offset for the
@@ -297,48 +283,6 @@ impl Buffer {
         change.buf.line(line_idx).len_chars()
     }
 
-    /// Return an iterator starting from line_idx. `dp` can either be
-    /// [DP::Right] or [DP::Left] for either forward iteration or reverse
-    /// iteration. In the forward direction, iteration will start from
-    /// the cursor's current line. In reverse direction, iteration will start
-    /// from the one before cursor's current line. Note that,
-    /// `0 <= line_idx < n_lines`.
-    #[inline]
-    pub fn lines_at<'a>(
-        &'a self,
-        line_idx: usize,
-        dp: DP,
-    ) -> Result<Box<dyn Iterator<Item = RopeSlice> + 'a>> {
-        let change = self.to_change();
-        let iter = unsafe {
-            let cref: &Change = change.borrow();
-            (cref as *const Change)
-                .as_ref()
-                .unwrap()
-                .buf
-                .lines_at(line_idx)
-        };
-
-        match dp {
-            DP::Right => Ok(Box::new(Iter {
-                _change: change,
-                iter,
-            })),
-            DP::Left => Ok(Box::new(ReverseIter {
-                _change: Some(change),
-                iter,
-            })),
-            _ => err_at!(Fatal, msg: format!("unreachable")),
-        }
-    }
-
-    /// Return the character offset of first character for the requested
-    /// `line_idx`. Note that, `0 <= line_idx < n_lines`.
-    #[inline]
-    pub fn line_to_char(&self, line_idx: usize) -> usize {
-        self.to_change().buf.line_to_char(line_idx)
-    }
-
     /// Similar to `line_to_char` but for the current cursor line.
     #[inline]
     pub fn line_home(&self) -> usize {
@@ -348,9 +292,6 @@ impl Buffer {
             .line_to_char(change.buf.char_to_line(self.to_cursor()))
     }
 
-    /// Return the line offset for requested `char_idx`, which must be a valid
-    /// character offset within the buffer. [Buffer::to_cursor] is a `char_idx`.
-    /// Note that, `0 <= char_idx < n_chars`.
     #[inline]
     pub fn char_to_line(&self, char_idx: usize) -> usize {
         self.to_change().buf.char_to_line(char_idx)
@@ -364,18 +305,50 @@ impl Buffer {
         self.to_change().buf.char_to_byte(char_idx)
     }
 
-    /// Return an iterator starting from char_idx. `dp` can either be
-    /// [DP::Right] or [DP::Left] for either forward iteration or reverse
-    /// iteration. In the forward direction, iteration will start from
-    /// the cursor position. In reverse direction, iteration will start
-    /// from the one before cursor position. Note that,
-    /// `0 <= char_idx < n_chars`.
-    pub fn chars_at<'a>(
-        //
-        &'a self,
-        char_idx: usize,
-        dp: DP,
-    ) -> Result<Box<dyn Iterator<Item = char> + 'a>> {
+    /// Return the character under the requested offset `char_idx`.
+    /// Note that `0 <= char_idx < n_chars`.
+    #[inline]
+    pub fn char(&self, char_idx: usize) -> char {
+        let change = self.to_change();
+        change.buf.char(char_idx)
+    }
+}
+
+impl<'a> Text<'a> for Buffer {
+    type IterLine = IterLine<'a>;
+    type IterChar = IterChar<'a>;
+
+    fn to_xy_cursor(&self) -> Cursor {
+        self.to_change().to_xy_cursor()
+    }
+
+    fn lines_at(&'a self, line_idx: usize, dp: DP) -> Result<Self::IterLine> {
+        let change = self.to_change();
+        let iter = unsafe {
+            let cref: &Change = change.borrow();
+            (cref as *const Change)
+                .as_ref()
+                .unwrap()
+                .buf
+                .lines_at(line_idx)
+        };
+
+        match dp {
+            DP::Right => Ok(IterLine {
+                _change: change,
+                iter,
+                reverse: false,
+            }),
+            DP::Left => Ok(IterLine {
+                _change: change,
+                iter,
+                reverse: true,
+            }),
+            _ => err_at!(Fatal, msg: format!("unreachable")),
+        }
+    }
+
+    fn chars_at(&'a self, char_idx: usize, dp: DP) -> Result<Self::IterChar> {
         let change = self.to_change();
         let iter = unsafe {
             let cref: &Change = change.borrow();
@@ -387,31 +360,38 @@ impl Buffer {
         };
 
         match dp {
-            DP::Right => Ok(Box::new(Iter {
-                _change: change,
-                iter,
-            })),
-            DP::Left => Ok(Box::new(ReverseIter {
+            DP::Right => Ok(IterChar {
                 _change: Some(change),
                 iter,
-            })),
+                reverse: false,
+            }),
+            DP::Left => Ok(IterChar {
+                _change: Some(change),
+                iter,
+                reverse: true,
+            }),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
-    /// Return the number of characters in the buffer.
-    #[inline]
-    pub fn n_chars(&self) -> usize {
-        let change = self.to_change();
+    fn line_to_char(&self, line_idx: usize) -> usize {
+        self.to_change().buf.line_to_char(line_idx)
+    }
+
+    fn char_to_line(&self, char_idx: usize) -> usize {
+        self.to_change().buf.char_to_line(char_idx)
+    }
+
+    fn n_chars(&self) -> usize {
+        let change = &self.to_change();
         change.buf.len_chars()
     }
 
-    /// Return the character under the requested offset `char_idx`.
-    /// Note that `0 <= char_idx < n_chars`.
-    #[inline]
-    pub fn char(&self, char_idx: usize) -> char {
-        let change = self.to_change();
-        change.buf.char(char_idx)
+    fn is_trailing_newline(&self) -> bool {
+        match self.n_chars() {
+            0 => false,
+            n => self.char(n - 1) == NL,
+        }
     }
 }
 
@@ -981,9 +961,10 @@ impl Change {
     fn iter<'a>(&'a self, dp: DP) -> Box<dyn Iterator<Item = char> + 'a> {
         let chars = self.buf.chars_at(self.cursor);
         match dp {
-            DP::Left => Box::new(ReverseIter {
+            DP::Left => Box::new(IterChar {
                 _change: None,
                 iter: chars,
+                reverse: true,
             }),
             DP::Right => Box::new(chars),
             _ => unreachable!(),
@@ -1484,51 +1465,39 @@ pub fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-struct Iter<'a, I, T>
-where
-    I: Iterator<Item = T>,
-{
+pub struct IterLine<'a> {
     _change: cell::Ref<'a, Change>, // holding a reference.
-    iter: I,
+    iter: ropey::iter::Lines<'a>,
+    reverse: bool,
 }
 
-impl<'a> Iterator for Iter<'a, ropey::iter::Chars<'a>, char> {
-    type Item = char;
+impl<'a> Iterator for IterLine<'a> {
+    type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+        if self.reverse {
+            self.iter.prev().map(|l| l.as_str().unwrap_or(""))
+        } else {
+            self.iter.next().map(|l| l.as_str().unwrap_or(""))
+        }
     }
 }
 
-impl<'a> Iterator for Iter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
-    type Item = RopeSlice<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-struct ReverseIter<'a, I, T>
-where
-    I: Iterator<Item = T>,
-{
+pub struct IterChar<'a> {
     _change: Option<cell::Ref<'a, Change>>, // holding a reference.
-    iter: I,
+    iter: ropey::iter::Chars<'a>,
+    reverse: bool,
 }
 
-impl<'a> Iterator for ReverseIter<'a, ropey::iter::Chars<'a>, char> {
+impl<'a> Iterator for IterChar<'a> {
     type Item = char;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.prev()
-    }
-}
-
-impl<'a> Iterator for ReverseIter<'a, ropey::iter::Lines<'a>, RopeSlice<'a>> {
-    type Item = RopeSlice<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.prev()
+        if self.reverse {
+            self.iter.prev()
+        } else {
+            self.iter.next()
+        }
     }
 }
 

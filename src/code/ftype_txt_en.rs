@@ -19,37 +19,24 @@ pub struct Text {
 
 impl Default for Text {
     fn default() -> Text {
-        let parser = Text::new_parser().unwrap();
+        let parser = new_parser().unwrap();
         Text { parser, tree: None }
     }
 }
 
 impl Clone for Text {
     fn clone(&self) -> Text {
-        let parser = Text::new_parser().unwrap();
+        let parser = new_parser().unwrap();
         Text { parser, tree: None }
     }
 }
 
 impl Text {
-    fn new_parser() -> Result<ts::Parser> {
-        let mut p = ts::Parser::new();
-        let language = unsafe { tree_sitter_txt_en() };
-        err_at!(FailParse, p.set_language(language))?;
-        Ok(p)
-    }
-
     pub fn to_type_name(&self) -> String {
         "txt".to_string()
     }
 
-    pub fn on_event(
-        //
-        &mut self,
-        app: &mut App,
-        buf: &mut Buffer,
-        evnt: Event,
-    ) -> Result<Event> {
+    pub fn on_event(&mut self, app: &mut App, buf: &mut Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
             "insert" => self.on_i_event(app, buf, evnt),
             "normal" => self.on_n_event(app, buf, evnt),
@@ -59,13 +46,7 @@ impl Text {
 }
 
 impl Text {
-    fn on_n_event(
-        //
-        &mut self,
-        app: &mut App,
-        buf: &mut Buffer,
-        evnt: Event,
-    ) -> Result<Event> {
+    fn on_n_event(&mut self, app: &mut App, buf: &mut Buffer, evnt: Event) -> Result<Event> {
         use crate::event::Code::StatusCursor;
 
         self.tree = match self.tree.take() {
@@ -82,13 +63,7 @@ impl Text {
         Ok(evnt)
     }
 
-    fn on_i_event(
-        //
-        &mut self,
-        _app: &mut App,
-        _buf: &mut Buffer,
-        evnt: Event,
-    ) -> Result<Event> {
+    fn on_i_event(&mut self, _app: &mut App, _buf: &mut Buffer, evnt: Event) -> Result<Event> {
         Ok(evnt)
     }
 
@@ -118,4 +93,11 @@ impl Text {
             }
         }
     }
+}
+
+fn new_parser() -> Result<ts::Parser> {
+    let mut p = ts::Parser::new();
+    let language = unsafe { tree_sitter_txt_en() };
+    err_at!(FailParse, p.set_language(language))?;
+    Ok(p)
 }

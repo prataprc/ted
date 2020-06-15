@@ -7,7 +7,7 @@ use unicode_width::UnicodeWidthChar;
 
 use std::{fmt, iter::FromIterator, ops::Add, result};
 
-use crate::{color_scheme::Style, Error, Result};
+use crate::{buffer, color_scheme::Style, event::DP, Error, Result};
 
 #[macro_export]
 macro_rules! cursor {
@@ -57,6 +57,46 @@ macro_rules! span {
         let span: Span = format!($($s),*).into();
         span
     }};
+}
+
+pub trait Text<'a> {
+    type IterLine: Iterator<Item = &'a str>;
+    type IterChar: Iterator<Item = char>;
+
+    /// Return the cursor position, as (col, row) starting from (0,), within
+    /// this buffer.
+    fn to_xy_cursor(&self) -> buffer::Cursor;
+
+    /// Return an iterator starting from line_idx. `dp` can either be
+    /// [DP::Right] or [DP::Left] for either forward iteration or reverse
+    /// iteration. In the forward direction, iteration will start from
+    /// the cursor's current line. In reverse direction, iteration will start
+    /// from the one before cursor's current line. Note that,
+    /// `0 <= line_idx < n_lines`.
+    fn lines_at(&'a self, line_idx: usize, dp: DP) -> Result<Self::IterLine>;
+
+    /// Return an iterator starting from char_idx. `dp` can either be
+    /// [DP::Right] or [DP::Left] for either forward iteration or reverse
+    /// iteration. In the forward direction, iteration will start from
+    /// the cursor position. In reverse direction, iteration will start
+    /// from the one before cursor position. Note that,
+    /// `0 <= char_idx < n_chars`.
+    fn chars_at(&'a self, char_idx: usize, dp: DP) -> Result<Self::IterChar>;
+
+    /// Return the character offset of first character for the requested
+    /// `line_idx`. Note that, `0 <= line_idx < n_lines`.
+    fn line_to_char(&self, line_idx: usize) -> usize;
+
+    /// Return the line offset for requested `char_idx`, which must be a valid
+    /// character offset within the buffer. [Buffer::to_cursor] is a `char_idx`.
+    /// Note that, `0 <= char_idx < n_chars`.
+    fn char_to_line(&self, char_idx: usize) -> usize;
+
+    /// Return the number of characters in the buffer.
+    fn n_chars(&self) -> usize;
+
+    /// Return whether the last character in buffer is NEWLINE.
+    fn is_trailing_newline(&self) -> bool;
 }
 
 #[derive(Clone)]

@@ -10,11 +10,11 @@ use std::{
 };
 
 use crate::{
-    buffer::{self, Buffer},
+    buffer,
     code::col_nu::{ColKind, ColNu},
     color_scheme::{ColorScheme, Highlight},
     event::DP,
-    window::{Coord, Cursor, Span},
+    window::{Coord, Cursor, Span, Text},
     Error, Result,
 };
 
@@ -70,7 +70,10 @@ impl Wrap {
         self
     }
 
-    pub fn render(mut self, buf: &Buffer, cs: &ColorScheme) -> Result<Cursor> {
+    pub fn render<'a, B>(mut self, buf: &'a B, cs: &ColorScheme) -> Result<Cursor>
+    where
+        B: Text<'a>,
+    {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
         self = self.shift_cursor(buf)?;
@@ -78,7 +81,10 @@ impl Wrap {
         Ok(self.refresh(buf, cs)?.account_nu(nu_wth))
     }
 
-    fn shift_cursor(&self, buf: &Buffer) -> Result<Self> {
+    fn shift_cursor<'a, B>(&self, buf: &'a B) -> Result<Self>
+    where
+        B: Text<'a>,
+    {
         let view = {
             let mut view = WrapView::new(self.coord, self.cursor, self.obc_xy);
             view.set_scroll_off(self.scroll_off)
@@ -99,7 +105,10 @@ impl Wrap {
         })
     }
 
-    fn refresh(self, buf: &Buffer, scheme: &ColorScheme) -> Result<Cursor> {
+    fn refresh<'a, B>(self, buf: &'a B, scheme: &ColorScheme) -> Result<Cursor>
+    where
+        B: Text<'a>,
+    {
         use crate::event::DP::Right;
         use std::iter::repeat;
 
@@ -206,7 +215,10 @@ impl NoWrap {
         self
     }
 
-    pub fn render(mut self, buf: &Buffer, cs: &ColorScheme) -> Result<Cursor> {
+    pub fn render<'a, B>(mut self, buf: &'a B, cs: &ColorScheme) -> Result<Cursor>
+    where
+        B: Text<'a>,
+    {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
         self = self.shift_cursor(buf)?;
@@ -214,7 +226,10 @@ impl NoWrap {
         Ok(self.refresh(buf, cs)?.account_nu(nu_wth))
     }
 
-    fn shift_cursor(self, buf: &Buffer) -> Result<Self> {
+    fn shift_cursor<'a, B>(self, buf: &B) -> Result<Self>
+    where
+        B: Text<'a>,
+    {
         let scroll_off = self.scroll_off; // accounting for scroll-offset.
 
         let (r_min, r_max) = if self.coord.hgt < (scroll_off * 2) {
@@ -271,7 +286,10 @@ impl NoWrap {
         })
     }
 
-    fn refresh(self, buf: &Buffer, scheme: &ColorScheme) -> Result<Cursor> {
+    fn refresh<'a, B>(self, buf: &'a B, scheme: &ColorScheme) -> Result<Cursor>
+    where
+        B: Text<'a>,
+    {
         use std::iter::repeat;
 
         let nbc_xy = buf.to_xy_cursor();
@@ -285,8 +303,11 @@ impl NoWrap {
         let (hgt, wth) = self.coord.to_size();
         let nu_wth = self.nu.to_width();
 
-        let do_padding = |line: ropey::RopeSlice| -> Vec<char> {
-            line.chars_at(nbc_xy.col.saturating_sub(self.cursor.col as usize))
+        let do_padding = |line: &str| -> Vec<char> {
+            let chars: Vec<char> = line.chars().collect();
+            chars
+                .into_iter()
+                .skip(nbc_xy.col.saturating_sub(self.cursor.col as usize))
                 .chain(repeat(' '))
                 .take((wth - nu_wth) as usize)
                 .collect()
@@ -364,14 +385,10 @@ fn empty_lines(
     Ok(())
 }
 
-fn tail_line(
-    //
-    col: u16,
-    row: u16,
-    max_row: u16,
-    nu: &ColNu,
-    buf: &Buffer,
-) -> Result<u16> {
+fn tail_line<'a, B>(col: u16, row: u16, max_row: u16, nu: &ColNu, buf: &B) -> Result<u16>
+where
+    B: Text<'a>,
+{
     let n = buf.n_chars();
     let ok1 = n == 0;
     let ok2 = (row <= max_row) && buf.is_trailing_newline();
@@ -429,7 +446,10 @@ impl WrapView {
         self
     }
 
-    fn into_new_view(mut self, buf: &Buffer) -> Result<Self> {
+    fn into_new_view<'a, B>(mut self, buf: &'a B) -> Result<Self>
+    where
+        B: Text<'a>,
+    {
         let nbc_xy = buf.to_xy_cursor();
 
         match self.to_cursor(buf, self.to_view_rows(buf)?)? {
@@ -471,7 +491,10 @@ impl WrapView {
 
 impl WrapView {
     // return (ColKind, buffer_cursor, len)
-    fn to_view_rows(&self, buf: &Buffer) -> Result<Vec<(ColKind, usize, u16)>> {
+    fn to_view_rows<'a, B>(&self, buf: &'a B) -> Result<Vec<(ColKind, usize, u16)>>
+    where
+        B: Text<'a>,
+    {
         use crate::event::DP::Right;
         use std::iter::repeat;
 
@@ -489,8 +512,9 @@ impl WrapView {
                 (line_idx..).zip(iter)
             };
             for (bc_row, line) in iter {
+                let chars: Vec<char> = line.chars().collect();
                 let bc = buf.line_to_char(bc_row);
-                let ns: Vec<u16> = wrap_lines(line.len_chars(), wth)?;
+                let ns: Vec<u16> = wrap_lines(chars.len(), wth)?;
                 let bcs: Vec<usize> = {
                     let iter = (0..ns.len()).map(|j| bc + (j * (wth as usize)));
                     iter.collect()
@@ -516,8 +540,9 @@ impl WrapView {
                 (bc_xy.row..).zip(iter)
             };
             for (bc_row, line) in iter {
+                let chars: Vec<char> = line.chars().collect();
                 let bc = buf.line_to_char(bc_row);
-                let ns: Vec<u16> = wrap_lines(line.len_chars(), wth)?;
+                let ns: Vec<u16> = wrap_lines(chars.len(), wth)?;
                 let bcs: Vec<usize> = {
                     let iter = (0..ns.len()).map(|j| bc + (j * (wth as usize)));
                     iter.collect()
@@ -550,11 +575,14 @@ impl WrapView {
         Ok(rows)
     }
 
-    fn to_cursor(
+    fn to_cursor<'a, B>(
         &self,
-        buf: &Buffer,
+        buf: &B,
         mut rows: Vec<(ColKind, usize, u16)>, // (ColKind, bc, n)
-    ) -> Result<Option<Cursor>> {
+    ) -> Result<Option<Cursor>>
+    where
+        B: Text<'a>,
+    {
         let rows = {
             // crop the rows for scroll offset.
             let so = self.scroll_off as usize;

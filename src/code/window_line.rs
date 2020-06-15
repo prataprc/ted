@@ -15,7 +15,7 @@ use crate::{
     color_scheme::Highlight,
     event::Event,
     location::Location,
-    window::{Coord, Cursor, Span},
+    window::{Coord, Cursor, Span, Text},
     Error, Result,
 };
 
@@ -117,6 +117,8 @@ impl WindowLine {
     }
 
     pub fn on_event(&mut self, _app: &mut App, evnt: Event) -> Result<Event> {
+        use crate::event::Code;
+
         match &mut self.inner {
             Inner::Cmd { buffer, keymap, .. } => match evnt {
                 Event::Esc => Ok(Event::Esc),
@@ -125,8 +127,14 @@ impl WindowLine {
                     let parts: Vec<&str> = s.splitn(2, ' ').collect();
                     Ok(match parts.as_slice() {
                         [nm] if nm.len() == 0 => Event::Noop,
-                        [nm] => Event::Cmd(nm.to_string(), "".to_string()),
-                        [nm, ars] => Event::Cmd(nm.to_string(), ars.to_string()),
+                        [nm] => {
+                            let cevnt = Code::Cmd(nm.to_string(), "".to_string());
+                            Event::Code(cevnt)
+                        }
+                        [nm, ars] => {
+                            let cevnt = Code::Cmd(nm.to_string(), ars.to_string());
+                            Event::Code(cevnt)
+                        }
                         _ => unreachable!(),
                     })
                 }

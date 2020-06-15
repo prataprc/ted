@@ -12,13 +12,7 @@ impl Default for FType {
 }
 
 impl FType {
-    pub fn on_event(
-        //
-        &mut self,
-        app: &mut App,
-        buf: &mut Buffer,
-        evnt: Event,
-    ) -> Result<Event> {
+    pub fn on_event(&mut self, app: &mut App, buf: &mut Buffer, evnt: Event) -> Result<Event> {
         match self {
             FType::Text(t) => t.on_event(app, buf, evnt),
         }

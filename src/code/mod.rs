@@ -16,6 +16,7 @@ mod keymap_prompt;
 mod view;
 mod window_edit;
 mod window_file;
+mod window_less;
 mod window_line;
 mod window_prompt;
 
@@ -34,10 +35,11 @@ use crate::{
     buffer::Buffer,
     code::cmd::Command,
     code::config::Config,
+    code::window_less::WindowLess,
     code::window_prompt::WindowPrompt,
     code::{window_file::WindowFile, window_line::WindowLine},
     color_scheme::{ColorScheme, Highlight},
-    event::Event,
+    event::{Code, Event},
     location::Location,
     pubsub::PubSub,
     state::Opt,
@@ -67,6 +69,9 @@ enum Inner {
     },
     Command {
         cmdline: WindowLine,
+    },
+    Less {
+        less: WindowLess,
     },
     None,
 }
@@ -248,8 +253,8 @@ impl App {
         Ok(())
     }
 
-    fn open_cmd_files(&mut self, files: Vec<String>) -> Result<Vec<WindowPrompt>> {
-        let locs: Vec<Location> = files
+    fn open_cmd_files(&mut self, fls: Vec<String>) -> Result<Vec<WindowPrompt>> {
+        let locs: Vec<Location> = fls
             .into_iter()
             .map(|f| {
                 let f: ffi::OsString = f.into();
@@ -326,22 +331,32 @@ impl App {
             Inner::Edit { .. } => self.wfile.to_cursor(),
             Inner::AnyKey { prompts, .. } => prompts[0].to_cursor(),
             Inner::Command { cmdline } => cmdline.to_cursor(),
+            Inner::Less { less } => less.to_cursor(),
             Inner::None => Default::default(),
         }
     }
 
     pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
         let inner = mem::replace(&mut self.inner, Default::default());
-        let (inner, evnt) = inner.on_event(self, evnt)?;
+        let (inner, mut evnt) = inner.on_event(self, evnt)?;
         self.inner = inner;
 
-        match evnt {
-            Event::Cmd(name, args) => {
-                let mut cmd: Command = (name, args).into();
-                cmd.on_command(self)?;
-                Ok(Event::Noop)
+        loop {
+            match evnt {
+                Event::Code(Code::Cmd(name, args)) => {
+                    let mut cmd: Command = (name, args).into();
+                    evnt = cmd.on_command(self)?;
+                }
+                Event::Code(Code::Less(ref content)) => {
+                    let less = WindowLess::new(self.coord, content);
+                    self.inner = Inner::Less { less };
+                }
+                Event::Code(Code::Edit) => {
+                    let stsline = App::new_stsline(self.coord);
+                    self.inner = Inner::Edit { stsline };
+                }
+                evnt => break Ok(evnt),
             }
-            evnt => Ok(evnt),
         }
     }
 
@@ -363,25 +378,27 @@ impl App {
 
 impl Inner {
     fn on_event(self, app: &mut App, evnt: Event) -> Result<(Inner, Event)> {
-        match (self, evnt) {
-            (Inner::Edit { .. }, Event::Char(':', m)) if m.is_empty() => {
-                let mut cmdline = App::new_cmdline(app.coord);
-                cmdline.on_event(app, Event::Char(':', m))?;
-                Ok((Inner::Command { cmdline }, Event::Noop))
-            }
-            (Inner::Edit { stsline }, evnt) => {
-                let mut wfile = mem::replace(&mut app.wfile, Default::default());
-                let evnt = wfile.on_event(app, evnt)?;
-                app.wfile = wfile;
-                Ok((Inner::Edit { stsline }, evnt))
-            }
-            (
-                Inner::AnyKey {
-                    mut prompts,
-                    stsline,
-                },
-                evnt,
-            ) => {
+        match self {
+            Inner::Edit { stsline } => match evnt {
+                Event::Char(':', m) if m.is_empty() => {
+                    let mut cmdline = App::new_cmdline(app.coord);
+                    cmdline.on_event(app, Event::Char(':', m))?;
+                    Ok((Inner::Command { cmdline }, Event::Noop))
+                }
+                evnt => {
+                    let mut wfile = {
+                        let def_wfile: WindowFile = Default::default();
+                        mem::replace(&mut app.wfile, def_wfile)
+                    };
+                    let evnt = wfile.on_event(app, evnt)?;
+                    app.wfile = wfile;
+                    Ok((Inner::Edit { stsline }, evnt))
+                }
+            },
+            Inner::AnyKey {
+                mut prompts,
+                stsline,
+            } => {
                 let evnt = prompts[0].on_event(app, evnt)?;
                 if prompts[0].prompt_match().is_some() {
                     prompts.remove(0);
@@ -391,14 +408,14 @@ impl Inner {
                     _ => (Inner::Edit { stsline }, evnt),
                 })
             }
-            (Inner::Command { mut cmdline }, evnt) => {
+            Inner::Command { mut cmdline } => {
                 let evnt = cmdline.on_event(app, evnt)?;
                 let (inner, evnt) = match evnt {
                     Event::Esc => {
                         let stsline = App::new_stsline(app.coord);
                         (Inner::Edit { stsline }, Event::Noop)
                     }
-                    evnt @ Event::Cmd(_, _) => {
+                    evnt @ Event::Code(Code::Cmd(_, _)) => {
                         let stsline = App::new_stsline(app.coord);
                         (Inner::Edit { stsline }, evnt)
                     }
@@ -406,7 +423,11 @@ impl Inner {
                 };
                 Ok((inner, evnt))
             }
-            (Inner::None, evnt) => Ok((Inner::None, evnt)),
+            Inner::Less { mut less } => {
+                let evnt = less.on_event(app, evnt)?;
+                Ok((Inner::Less { less }, evnt))
+            }
+            Inner::None => Ok((Inner::None, evnt)),
         }
     }
 
@@ -418,6 +439,7 @@ impl Inner {
                 stsline.on_refresh(app)?;
             }
             Inner::Command { cmdline } => cmdline.on_refresh(app)?,
+            Inner::Less { less } => less.on_refresh(app)?,
             Inner::None => (),
         }
         Ok(self)

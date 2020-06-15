@@ -3,6 +3,7 @@ use log::trace;
 
 use crate::{
     code::{cmd_set::Set, App},
+    event::Event,
     Result,
 };
 
@@ -28,27 +29,27 @@ impl From<(String, String)> for Command {
 }
 
 impl Command {
-    fn to_choices(prefix: &str, cmds: &[Command]) -> Vec<String> {
+    fn to_cmd_names(prefix: &str, cmds: &[Command]) -> Vec<String> {
         let iter = cmds.iter().filter_map(|o| {
             let name = o.to_name();
             if_else!(name.starts_with(prefix), Some(name), None)
         });
         iter.collect()
     }
+}
 
+impl Command {
     fn to_name(&self) -> String {
         match self {
             Command::Set(_) => "set".to_string(),
             Command::None => "invalid-command".to_string(),
         }
     }
-}
 
-impl Command {
-    pub fn on_command(&mut self, app: &mut App) -> Result<()> {
+    pub fn on_command(&mut self, app: &mut App) -> Result<Event> {
         match self {
             Command::Set(val) => val.on_command(app),
-            Command::None => Ok(()),
+            Command::None => Ok(Event::Noop),
         }
     }
 
@@ -58,7 +59,7 @@ impl Command {
     //    match self {
     //        Command::Initial { cmds } => {
     //            let tabc = {
-    //                let choices = Self::to_choices(&span, &cmds);
+    //                let choices = Self::to_cmd_names(&span, &cmds);
     //                TabComplete::new(span, choices)
     //            };
     //            let cmds: Vec<Command> = cmds.drain(..).collect();
@@ -67,7 +68,7 @@ impl Command {
     //        Command::TabComp { tabc, .. } if tabc.is_same(&span) => (),
     //        Command::TabComp { tabc: _, cmds } => {
     //            let tabc = {
-    //                let choices = Self::to_choices(&span, cmds);
+    //                let choices = Self::to_cmd_names(&span, cmds);
     //                TabComplete::new(span, choices)
     //            };
     //            let cmds: Vec<Command> = cmds.drain(..).collect();

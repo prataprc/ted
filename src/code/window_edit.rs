@@ -6,7 +6,7 @@ use crate::{
     buffer::{self, Buffer},
     code::{config::Config, ftype::FType, keymap::Keymap, App},
     event::Event,
-    window::{Coord, Cursor},
+    window::{Coord, Cursor, Text},
     Result,
 };
 
@@ -69,15 +69,12 @@ impl WindowEdit {
     pub fn to_file_type(&self) -> String {
         self.ftype.to_type_name()
     }
+}
 
+impl WindowEdit {
     #[inline]
     pub fn to_cursor(&self) -> Cursor {
         self.coord.to_top_left() + self.cursor
-    }
-
-    #[inline]
-    pub fn set_buffer(&mut self, buf: &Buffer) {
-        self.buffer_id = buf.to_id();
     }
 
     pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {

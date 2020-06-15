@@ -2,6 +2,7 @@ use log::{error, trace};
 
 use crate::{
     code::{config::Config, App},
+    event::Event,
     Result,
 };
 
@@ -17,7 +18,7 @@ impl Set {
 }
 
 impl Set {
-    pub fn on_command(&mut self, app: &mut App) -> Result<()> {
+    pub fn on_command(&mut self, app: &mut App) -> Result<Event> {
         let config: &mut Config = app.as_mut();
         match self.param.as_str() {
             "wrap" => {
@@ -41,6 +42,6 @@ impl Set {
             }
         }
 
-        Ok(())
+        Ok(Event::Noop)
     }
 }

@@ -1,11 +1,11 @@
 use crossterm::queue;
 #[allow(unused_imports)]
 use log::trace;
-use regex::Regex;
 use unicode_width::UnicodeWidthChar;
 
 use std::{
-    cmp, fmt,
+    convert::TryInto,
+    fmt,
     io::{self, Write},
     mem, result,
 };
@@ -14,19 +14,17 @@ use crate::{
     buffer::Buffer,
     code::{keymap::Keymap, App},
     event::Event,
-    window::{Coord, Cursor, Span, Spanline},
+    location::Location,
+    window::{Coord, Cursor, Span},
     Error, Result,
 };
 
 #[derive(Clone)]
-pub struct WindowLess<I>
-where
-    I: Iterator<Item = Spanline>,
-{
+pub struct WindowLess {
     coord: Coord,
+    status_line: String,
     keymap: Keymap,
     buffer: Buffer,
-    options: Vec<Regex>,
 }
 
 impl fmt::Display for WindowLess {
@@ -37,54 +35,29 @@ impl fmt::Display for WindowLess {
 
 impl WindowLess {
     #[inline]
-    pub fn new(coord: Coord, lines: Vec<Spanline>) -> WindowLess {
+    pub fn new(coord: Coord, content: &str) -> WindowLess {
+        let loc = Location::new_ted("win-less");
         let mut w = WindowLess {
             coord,
-            span_lines: lines,
+            status_line: Default::default(),
             keymap: Default::default(),
-            buffer: Buffer::empty(),
-            options: Default::default(),
+            buffer: Buffer::from_reader(content.as_bytes(), loc).unwrap(),
         };
-        w.buffer.mode_insert();
+        w.buffer.mode_normal();
         w
-    }
-
-    pub fn set_options(&mut self, options: Vec<Regex>) {
-        self.options.extend(options.into_iter());
     }
 }
 
 impl WindowLess {
     #[inline]
     pub fn to_cursor(&self) -> Cursor {
-        let n = match self.span_lines.last() {
-            Some(line) => line.to_width(),
-            None => 0,
-        };
-        let m: usize = {
-            let s = self.buffer.to_string();
-            s.chars().filter_map(|ch| ch.width()).sum()
-        };
-        let (hgt, wth) = self.coord.to_size();
-        let col = {
-            let (col, _) = self.coord.to_origin_cursor();
-            let good_col = (col as usize) + n + m;
-            cmp::min(good_col, wth.saturating_sub(1) as usize) as u16
-        };
-        Cursor::new(col, hgt - 1)
-    }
-
-    pub fn prompt_match(&self) -> Option<String> {
-        let s = self.buffer.to_string();
-        if s.len() > 0 && self.options.len() == 0 {
-            return Some(s);
-        }
-        for re in self.options.iter() {
-            if re.is_match(s.as_str()) {
-                return Some(s);
-            }
-        }
-        None
+        let (hgt, _) = self.coord.to_size();
+        let col: usize = self
+            .status_line
+            .chars()
+            .map(|ch| ch.width().unwrap_or(0))
+            .sum();
+        Cursor::new(col.try_into().unwrap(), hgt - 1)
     }
 
     pub fn on_event(&mut self, _: &mut App, evnt: Event) -> Result<Event> {
@@ -101,19 +74,19 @@ impl WindowLess {
     }
 
     pub fn on_refresh(&mut self, _: &mut App) -> Result<()> {
-        let mut stdout = io::stdout();
+        //let mut stdout = io::stdout();
 
-        let (col, row_iter) = {
-            let (col, _) = self.coord.to_origin_cursor();
-            let (hgt, _) = self.coord.to_size();
-            let start = hgt.saturating_sub(self.span_lines.len() as u16);
-            (col, start..hgt)
-        };
-        for (row, line) in row_iter.zip(self.span_lines.iter_mut()) {
-            line.set_cursor(Cursor { col, row });
-            err_at!(Fatal, queue!(stdout, line))?;
-        }
-        err_at!(Fatal, queue!(stdout, span!(st: self.buffer.to_string())))?;
+        //let (col, row_iter) = {
+        //    let (col, _) = self.coord.to_origin_cursor();
+        //    let (hgt, _) = self.coord.to_size();
+        //    let start = hgt.saturating_sub(self.span_lines.len() as u16);
+        //    (col, start..hgt)
+        //};
+        //for (row, line) in row_iter.zip(self.span_lines.iter_mut()) {
+        //    line.set_cursor(Cursor { col, row });
+        //    err_at!(Fatal, queue!(stdout, line))?;
+        //}
+        //err_at!(Fatal, queue!(stdout, span!(st: self.buffer.to_string())))?;
         Ok(())
     }
 }

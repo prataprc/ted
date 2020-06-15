@@ -183,15 +183,25 @@ impl Mto {
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum Code {
+    Edit,
+    Cmd(String, String), // (command-name, arguments)
+    Less(String),
+    Prompt(String),
     StatusFile,
     StatusCursor,
 }
 
 impl fmt::Display for Code {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        use Code::{Cmd, Edit, Less, Prompt, StatusCursor, StatusFile};
+
         match self {
-            Code::StatusFile => write!(f, "status_file"),
-            Code::StatusCursor => write!(f, "status_cursor"),
+            Edit => write!(f, "edit"),
+            Cmd(_, _) => write!(f, "cmd"),
+            Less(_) => write!(f, "less"),
+            Prompt(_) => write!(f, "prompt"),
+            StatusFile => write!(f, "status_file"),
+            StatusCursor => write!(f, "status_cursor"),
         }
     }
 }
@@ -219,8 +229,6 @@ pub enum Event {
     // other events
     List(Vec<Event>),
     Code(Code),
-    Cmd(String, String), // (command-name, arguments)
-    Prompt(String),
     Noop,
 }
 
@@ -307,7 +315,7 @@ impl Extend<Event> for Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Event::{BackTab, Cmd, Code, FKey, List, Md, Mt, Noop, Op, Prompt};
+        use Event::{BackTab, Code, FKey, List, Md, Mt, Noop, Op};
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
 
         match self {
@@ -327,10 +335,8 @@ impl fmt::Display for Event {
             Mt(mt) => write!(f, "mt({})", mt),
             Code(cd) => write!(f, "Code({})", cd),
             List(es) => write!(f, "list({})", es.len()),
-            Cmd(name, _) => write!(f, "cmd({})", name),
             FKey(ch, _) => write!(f, "fkey({})", ch),
             BackTab => write!(f, "backtab"),
-            Prompt(s) => write!(f, "prompt({})", s),
             Noop => write!(f, "noop"),
         }
     }
