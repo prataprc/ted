@@ -128,6 +128,7 @@ impl Wrap {
         let iter = (row..full_coord.hgt).zip(view_rows.into_iter());
         let s_canvas = scheme.to_style(Highlight::Canvas);
         for (row, (col_kind, bc_caret, n)) in iter {
+            // trace!("    text {} ({}, {}, {})", row, col_kind, bc_caret, n);
             let nu_span = {
                 let mut nu_span = self.nu.to_span(col_kind);
                 nu_span.set_cursor(Cursor { col, row });
@@ -141,7 +142,6 @@ impl Wrap {
                 let span = span!(st: String::from_iter(chars));
                 span.using(s_canvas.clone())
             };
-            // trace!("    text {:?}", line_span.to_content());
             err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
         }
 

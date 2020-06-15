@@ -52,7 +52,7 @@ impl TryFrom<toml::Value> for ColorScheme {
                         (h as u32) as usize
                     };
                     hs[off] = Style::from_toml(&value, &canvas)?;
-                    trace!("convert {} {} {:?}", hl, off, hs[off]);
+                    // trace!("convert {} {} {:?}", hl, off, hs[off]);
                 }
             }
         }
