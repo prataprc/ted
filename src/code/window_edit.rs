@@ -4,7 +4,7 @@ use std::{fmt, result};
 
 use crate::{
     buffer::{self, Buffer},
-    code::{config::Config, ftype::FType, keymap::Keymap, App},
+    code::{config::Config, keymap::Keymap, App},
     event::Event,
     window::{Coord, Cursor, Text},
     Result,
@@ -17,7 +17,6 @@ pub struct WindowEdit {
     obc_xy: buffer::Cursor,
     buffer_id: String,
     keymap: Keymap,
-    ftype: FType,
 }
 
 impl fmt::Display for WindowEdit {
@@ -46,16 +45,10 @@ impl WindowEdit {
             obc_xy: (0, 0).into(),
             buffer_id: buf.to_id(),
             keymap: Keymap::new_edit(),
-            ftype: Default::default(),
         };
 
         trace!("{}", we);
         we
-    }
-
-    pub fn set_ftype(&mut self, ftype: FType) -> &mut Self {
-        self.ftype = ftype;
-        self
     }
 }
 
@@ -67,7 +60,8 @@ impl WindowEdit {
 
     #[inline]
     pub fn to_file_type(&self) -> String {
-        self.ftype.to_type_name()
+        // self.ftype.to_type_name()
+        todo!(),
     }
 }
 
@@ -78,17 +72,25 @@ impl WindowEdit {
     }
 
     pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
-        match app.take_buffer(&self.buffer_id) {
+        use crate::event::{Event::Notify};
+        use crate::window::Notify;
+
+        let evnt = match app.take_buffer(&self.buffer_id) {
             Some(mut buf) => {
-                let evnt = self.keymap.fold(&mut buf, evnt)?;
-                let evnt = match self.ftype.on_event(app, &mut buf, evnt)? {
-                    Event::Noop => Event::Noop,
-                    evnt => buf.on_event(evnt)?,
-                };
+                let mut evnt = self.keymap.fold(&mut buf, evnt)?;
+                evnt = buf.on_event(app, evnt)?,
                 app.add_buffer(buf);
                 Ok(evnt)
             }
             None => Ok(evnt),
+        }?;
+
+        match evnt {
+            Notify(msg @ Notify::Status(_)) => {
+                app.notify("code", msg)?;
+                Ok(Event::Noop)
+            }
+            evnt => Ok(evnt)
         }
     }
 

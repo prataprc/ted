@@ -8,6 +8,8 @@ pub mod util;
 #[macro_use]
 pub mod config;
 pub mod color_scheme;
+pub mod ftype;
+pub mod ftype_plain_txt;
 pub mod location;
 mod tabc;
 pub mod tss;

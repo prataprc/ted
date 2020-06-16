@@ -6,7 +6,6 @@ mod cmd_set;
 
 mod col_nu;
 mod config;
-mod ftype;
 mod ftype_txt_en;
 mod keymap;
 mod keymap_cmd;

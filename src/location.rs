@@ -41,7 +41,9 @@ impl Location {
     pub fn new_ted(name: &str) -> Location {
         Location::Ted(name.to_string())
     }
+}
 
+impl Location {
     pub fn to_rw_file(&self) -> Option<fs::File> {
         match self {
             Location::Memory(_) => None,

@@ -19,6 +19,8 @@ use std::{
 
 use crate::{
     event::{Event, Mto, DP},
+    ftype::FileType,
+    ftype_plain_txt::PlainText,
     location::Location,
     window::Text,
     {err_at, Error, Result},
@@ -100,24 +102,26 @@ impl Ord for Cursor {
 
 // all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
-pub struct Buffer {
+pub struct Buffer<F> {
     /// Source for this buffer, typically a file from local disk.
     pub location: Location,
     /// Mark this buffer read-only, in which case insert ops are not allowed.
     pub read_only: bool,
 
-    /// Globally counting buffer number.
+    // Globally counting buffer number.
     num: usize, // buffer number
-    /// Buffer states
+    // Buffer states
     inner: Inner,
+    // File-type
+    ftype: F,
 
-    /// Last search command applied on this buffer.
+    // Last search command applied on this buffer.
     mto_pattern: Mto,
-    /// Last find character (within the line) command  applied on this buffer.
+    // Last find character (within the line) command  applied on this buffer.
     mto_find_char: Mto,
-    /// Number of times to repeat an insert operation.
+    // Number of times to repeat an insert operation.
     insert_repeat: usize,
-    /// Collection of events applied during the last insert session.
+    // Collection of events applied during the last insert session.
     last_inserts: Vec<Event>,
 }
 
@@ -143,15 +147,17 @@ impl Buffer {
         let mut num = BUFFER_NUM.lock().unwrap();
         *num = *num + 1;
         let b = Buffer {
-            num: *num,
             location: loc,
             read_only: false,
+
+            num: *num,
+            inner: Inner::Normal(NormalBuffer::new(buf)),
+            ftype: PlainText,
+
+            mto_pattern: Default::default(),
+            mto_find_char: Default::default(),
             insert_repeat: Default::default(),
             last_inserts: Default::default(),
-            mto_find_char: Default::default(),
-            mto_pattern: Default::default(),
-
-            inner: Inner::Normal(NormalBuffer::new(buf)),
         };
 
         Ok(b)
@@ -181,6 +187,11 @@ impl Buffer {
 
     pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
         self.read_only = read_only;
+        self
+    }
+
+    pub fn set_ftype(&mut self, ftype: F) -> &mut Self {
+        self.ftype = ftype;
         self
     }
 }
@@ -446,12 +457,21 @@ impl Buffer {
 }
 
 impl Buffer {
-    pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
-        let evnt = match self.to_mode() {
+    pub fn on_event<A>(&mut self, app: &mut A, evnt: Event) -> Result<Event> {
+        let mut evnt = match self.to_mode() {
             "insert" => self.handle_i_event(evnt),
             "normal" => self.handle_n_event(evnt),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }?;
+
+        // after handling the event for buffer, handle for its file-type.
+        evnt = {
+            let ftype = mem::replace(&mut self.ftype, Default::default());
+            let evnt = ftype.on_event(self, evnt)?;
+            self.ftype = ftype;
+            evnt
+        };
+
         Ok(evnt)
     }
 

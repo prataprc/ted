@@ -4,6 +4,7 @@ use crate::{
     buffer::Buffer,
     code::App,
     event::Event,
+    ftype::{self, FileType},
     window::{Notify, Span},
     Error, Result,
 };
@@ -12,92 +13,77 @@ extern "C" {
     fn tree_sitter_txt_en() -> ts::Language;
 }
 
-pub struct Text {
+pub struct TextEn {
     parser: ts::Parser,
-    tree: Option<ts::Tree>,
+    tree: ts::Tree,
 }
 
-impl Default for Text {
-    fn default() -> Text {
-        let parser = new_parser().unwrap();
-        Text { parser, tree: None }
+impl Default for TextEn {
+    fn default() -> TextEn {
+        TextEn::new("").unwrap()
     }
 }
 
-impl Clone for Text {
-    fn clone(&self) -> Text {
-        let parser = new_parser().unwrap();
-        Text { parser, tree: None }
+impl TextEn {
+    fn new(content: &str) -> Result<TextEn> {
+        let (parser, tree) = ftype::new_parser(content, tree_sitter_txt_en())?;
+        Ok(TextEn { parser, tree })
     }
 }
 
-impl Text {
-    pub fn to_type_name(&self) -> String {
-        "txt".to_string()
+impl FileType for TextEn {
+    pub fn to_file_type_name(&self) -> String {
+        "txt-en".to_string()
     }
 
-    pub fn on_event(&mut self, app: &mut App, buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    pub fn to_language(&self) -> Option<ts::Language> {
+        Some(unsafe { tree_sitter_txt_en() })
+    }
+
+    pub fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
-            "insert" => self.on_i_event(app, buf, evnt),
-            "normal" => self.on_n_event(app, buf, evnt),
+            "insert" => self.on_i_event(buf, evnt),
+            "normal" => self.on_n_event(buf, evnt),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 }
 
-impl Text {
-    fn on_n_event(&mut self, app: &mut App, buf: &mut Buffer, evnt: Event) -> Result<Event> {
-        use crate::event::Code::StatusCursor;
-
-        self.tree = match self.tree.take() {
-            tree @ Some(_) => tree,
-            None => self.parser.parse(&buf.to_string(), None),
-        };
+impl TextEn {
+    fn on_n_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
+        use crate::event::Code;
 
         let evnt = match evnt {
             Event::Noop => Event::Noop,
-            Event::Code(StatusCursor) => self.to_status_cursor(app, evnt)?,
+            Event::Code(Code::StatusCursor) => self.to_status_cursor(evnt)?,
             evnt => evnt,
         };
 
         Ok(evnt)
     }
 
-    fn on_i_event(&mut self, _app: &mut App, _buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    fn on_i_event(&mut self, _buf: &mut Buffer, evnt: Event) -> Result<Event> {
         Ok(evnt)
     }
 
-    fn to_status_cursor(&mut self, app: &mut App, _: Event) -> Result<Event> {
-        match &self.tree {
-            None => Ok(Event::Noop),
-            Some(tree) => {
-                let (mut ws, mut ss, mut ls, mut ps) = (0, 0, 0, 0);
-                let mut prev_kind: Option<&str> = None;
-                let mut tc = tree.walk();
-                for node in tree.root_node().children(&mut tc) {
-                    match (prev_kind, node.kind()) {
-                        (_, "word") | (_, "wword") => ws += 1,
-                        (_, "dot") => ss += 1,
-                        (Some("nl"), "nl") => {
-                            ls += 1;
-                            ps += 1;
-                        }
-                        (_, "nl") => ls += 1,
-                        _ => err_at!(Fatal, msg: format!("unreachable"))?,
-                    }
-                    prev_kind = Some(node.kind());
+    fn to_status_cursor(&mut self) -> Result<Event> {
+        let (mut ws, mut ss, mut ls, mut ps) = (0, 0, 0, 0);
+        let mut prev_kind: Option<&str> = None;
+        let mut tc = tree.walk();
+        for node in tree.root_node().children(&mut tc) {
+            match (prev_kind, node.kind()) {
+                (_, "word") | (_, "wword") => ws += 1,
+                (_, "dot") => ss += 1,
+                (Some("nl"), "nl") => {
+                    ls += 1;
+                    ps += 1;
                 }
-                let span: Span = format!("{} {} {} {}", ws, ls, ss, ps).into();
-                app.notify("code", Notify::Status(vec![span]))?;
-                Ok(Event::Noop)
+                (_, "nl") => ls += 1,
+                _ => err_at!(Fatal, msg: format!("unreachable"))?,
             }
+            prev_kind = Some(node.kind());
         }
+        let span: Span = format!("{} {} {} {}", ws, ls, ss, ps).into();
+        Ok(Event::Notify(Notify::Status(vec![span])))
     }
-}
-
-fn new_parser() -> Result<ts::Parser> {
-    let mut p = ts::Parser::new();
-    let language = unsafe { tree_sitter_txt_en() };
-    err_at!(FailParse, p.set_language(language))?;
-    Ok(p)
 }

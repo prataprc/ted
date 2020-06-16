@@ -2,7 +2,7 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 
 use std::{fmt, mem, result};
 
-use crate::{Error, Result};
+use crate::{window::Notify, Error, Result};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DP {
@@ -228,6 +228,7 @@ pub enum Event {
     Mt(Mto),        // (n, motion-event)
     // other events
     List(Vec<Event>),
+    Notify(Notify),
     Code(Code),
     Noop,
 }
@@ -315,16 +316,20 @@ impl Extend<Event> for Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Event::{BackTab, Code, FKey, List, Md, Mt, Noop, Op};
+        use Event::{BackTab, Code, FKey, List, Md, Mt, Noop, Notify, Op};
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
 
         match self {
+            // insert events
             Backspace => write!(f, "backspace"),
             Enter => write!(f, "enter"),
             Tab => write!(f, "tab"),
             Delete => write!(f, "delete"),
             Esc => write!(f, "esc"),
             Char(ch, _) => write!(f, "char({:?})", ch),
+            FKey(ch, _) => write!(f, "fkey({})", ch),
+            BackTab => write!(f, "backtab"),
+            // folded events for buffer management
             B(n, dp) => write!(f, "b({},{})", n, dp),
             G(n) => write!(f, "g({})", n),
             F(n, dp) => write!(f, "f({},{})", n, dp),
@@ -333,10 +338,10 @@ impl fmt::Display for Event {
             Op(n, opr) => write!(f, "op({},{})", n, opr),
             Md(md) => write!(f, "md({})", md),
             Mt(mt) => write!(f, "mt({})", mt),
-            Code(cd) => write!(f, "Code({})", cd),
+            // other events
             List(es) => write!(f, "list({})", es.len()),
-            FKey(ch, _) => write!(f, "fkey({})", ch),
-            BackTab => write!(f, "backtab"),
+            Notify(notf) => write!(f, "notify({})", notf),
+            Code(cd) => write!(f, "Code({})", cd),
             Noop => write!(f, "noop"),
         }
     }

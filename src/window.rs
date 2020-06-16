@@ -105,6 +105,15 @@ pub enum Notify {
     None,
 }
 
+impl fmt::Display for Notify {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Notify::Status(_) => write!(f, "status"),
+            Notify::None => write!(f, "none"),
+        }
+    }
+}
+
 // Terminal coordinates, describes the four corners of a window.
 // Origin is at (1, 1).
 #[derive(Clone, Copy, Debug)]
