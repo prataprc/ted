@@ -61,7 +61,7 @@ impl WindowEdit {
     #[inline]
     pub fn to_file_type(&self) -> String {
         // self.ftype.to_type_name()
-        todo!(),
+        todo!()
     }
 }
 
@@ -72,13 +72,12 @@ impl WindowEdit {
     }
 
     pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
-        use crate::event::{Event::Notify};
         use crate::window::Notify;
 
         let evnt = match app.take_buffer(&self.buffer_id) {
             Some(mut buf) => {
                 let mut evnt = self.keymap.fold(&mut buf, evnt)?;
-                evnt = buf.on_event(app, evnt)?,
+                evnt = buf.on_event(evnt)?;
                 app.add_buffer(buf);
                 Ok(evnt)
             }
@@ -86,11 +85,11 @@ impl WindowEdit {
         }?;
 
         match evnt {
-            Notify(msg @ Notify::Status(_)) => {
+            Event::Notify(msg @ Notify::Status(_)) => {
                 app.notify("code", msg)?;
                 Ok(Event::Noop)
             }
-            evnt => Ok(evnt)
+            evnt => Ok(evnt),
         }
     }
 

@@ -1,25 +1,18 @@
-use crossterm::queue;
 #[allow(unused_imports)]
 use log::trace;
 use unicode_width::UnicodeWidthChar;
 
-use std::{
-    convert::TryInto,
-    fmt,
-    io::{self, Write},
-    mem, result,
-};
+use std::{convert::TryInto, fmt, mem, result};
 
 use crate::{
     buffer::Buffer,
     code::{keymap::Keymap, App},
     event::Event,
     location::Location,
-    window::{Coord, Cursor, Span},
-    Error, Result,
+    window::{Coord, Cursor},
+    Result,
 };
 
-#[derive(Clone)]
 pub struct WindowLess {
     coord: Coord,
     status_line: String,
@@ -74,6 +67,10 @@ impl WindowLess {
     }
 
     pub fn on_refresh(&mut self, _: &mut App) -> Result<()> {
+        //use crate::Error;
+        //use crossterm::queue;
+        //use std::io::{self, Write};
+
         //let mut stdout = io::stdout();
 
         //let (col, row_iter) = {

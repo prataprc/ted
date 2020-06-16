@@ -28,6 +28,8 @@ pub struct Token {
     field: Option<String>,
     sibling: usize,
     depth: usize,
+    a: usize, // charactor position, inclusive
+    z: usize, // charactor position, exclusive
 }
 
 impl fmt::Display for Token {

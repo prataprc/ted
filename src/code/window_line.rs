@@ -19,14 +19,12 @@ use crate::{
     Error, Result,
 };
 
-#[derive(Clone)]
 pub struct WindowLine {
     name: String,
     coord: Coord,
     inner: Inner,
 }
 
-#[derive(Clone)]
 enum Inner {
     Cmd {
         cursor: Cursor,

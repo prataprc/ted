@@ -101,8 +101,7 @@ impl Ord for Cursor {
 }
 
 // all bits and pieces of content is managed by buffer.
-#[derive(Clone)]
-pub struct Buffer<F> {
+pub struct Buffer {
     /// Source for this buffer, typically a file from local disk.
     pub location: Location,
     /// Mark this buffer read-only, in which case insert ops are not allowed.
@@ -113,7 +112,7 @@ pub struct Buffer<F> {
     // Buffer states
     inner: Inner,
     // File-type
-    ftype: F,
+    ftype: Box<dyn FileType>,
 
     // Last search command applied on this buffer.
     mto_pattern: Mto,
@@ -152,7 +151,7 @@ impl Buffer {
 
             num: *num,
             inner: Inner::Normal(NormalBuffer::new(buf)),
-            ftype: PlainText,
+            ftype: Box::new(PlainText),
 
             mto_pattern: Default::default(),
             mto_find_char: Default::default(),
@@ -190,7 +189,7 @@ impl Buffer {
         self
     }
 
-    pub fn set_ftype(&mut self, ftype: F) -> &mut Self {
+    pub fn set_ftype(&mut self, ftype: Box<dyn FileType>) -> &mut Self {
         self.ftype = ftype;
         self
     }
@@ -457,7 +456,7 @@ impl Buffer {
 }
 
 impl Buffer {
-    pub fn on_event<A>(&mut self, app: &mut A, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
         let mut evnt = match self.to_mode() {
             "insert" => self.handle_i_event(evnt),
             "normal" => self.handle_n_event(evnt),
@@ -466,7 +465,7 @@ impl Buffer {
 
         // after handling the event for buffer, handle for its file-type.
         evnt = {
-            let ftype = mem::replace(&mut self.ftype, Default::default());
+            let mut ftype = mem::replace(&mut self.ftype, Box::new(PlainText));
             let evnt = ftype.on_event(self, evnt)?;
             self.ftype = ftype;
             evnt

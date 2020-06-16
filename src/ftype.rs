@@ -1,4 +1,6 @@
-use crate::{buffer::Buffer, event::Event, Result};
+use tree_sitter as ts;
+
+use crate::{buffer::Buffer, event::Event, Error, Result};
 
 pub trait FileType {
     fn to_language(&self) -> Option<ts::Language>;
@@ -8,12 +10,12 @@ pub trait FileType {
     fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event>;
 }
 
-pub fn new_parser(cont: &str, lang: ts::Language) -> Result<(ts::Parser, ts::Tree)> {
+pub fn new_parser(content: &str, lang: ts::Language) -> Result<(ts::Parser, ts::Tree)> {
     let mut parser = {
-        let mut p = ts::Parser::new();
-        err_at!(FailParse, p.set_language(lang))?;
-        Some(p)
+        let mut parser = ts::Parser::new();
+        err_at!(FailParse, parser.set_language(lang))?;
+        parser
     };
-    let tree = parser.parse(content, None);
+    let tree = parser.parse(content, None).unwrap();
     Ok((parser, tree))
 }

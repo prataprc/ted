@@ -18,7 +18,6 @@ use crate::{
     Error, Result,
 };
 
-#[derive(Clone)]
 pub struct WindowPrompt {
     coord: Coord,
     span_lines: Vec<Spanline>,

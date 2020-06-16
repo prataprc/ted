@@ -2,7 +2,6 @@ use tree_sitter as ts;
 
 use crate::{
     buffer::Buffer,
-    code::App,
     event::Event,
     ftype::{self, FileType},
     window::{Notify, Span},
@@ -26,21 +25,22 @@ impl Default for TextEn {
 
 impl TextEn {
     fn new(content: &str) -> Result<TextEn> {
-        let (parser, tree) = ftype::new_parser(content, tree_sitter_txt_en())?;
+        let lang = unsafe { tree_sitter_txt_en() };
+        let (parser, tree) = ftype::new_parser(content, lang)?;
         Ok(TextEn { parser, tree })
     }
 }
 
 impl FileType for TextEn {
-    pub fn to_file_type_name(&self) -> String {
+    fn to_file_type_name(&self) -> String {
         "txt-en".to_string()
     }
 
-    pub fn to_language(&self) -> Option<ts::Language> {
+    fn to_language(&self) -> Option<ts::Language> {
         Some(unsafe { tree_sitter_txt_en() })
     }
 
-    pub fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
             "insert" => self.on_i_event(buf, evnt),
             "normal" => self.on_n_event(buf, evnt),
@@ -50,16 +50,14 @@ impl FileType for TextEn {
 }
 
 impl TextEn {
-    fn on_n_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    fn on_n_event(&mut self, _: &mut Buffer, evnt: Event) -> Result<Event> {
         use crate::event::Code;
 
-        let evnt = match evnt {
+        Ok(match evnt {
             Event::Noop => Event::Noop,
-            Event::Code(Code::StatusCursor) => self.to_status_cursor(evnt)?,
+            Event::Code(Code::StatusCursor) => self.to_status_cursor()?,
             evnt => evnt,
-        };
-
-        Ok(evnt)
+        })
     }
 
     fn on_i_event(&mut self, _buf: &mut Buffer, evnt: Event) -> Result<Event> {
@@ -69,8 +67,8 @@ impl TextEn {
     fn to_status_cursor(&mut self) -> Result<Event> {
         let (mut ws, mut ss, mut ls, mut ps) = (0, 0, 0, 0);
         let mut prev_kind: Option<&str> = None;
-        let mut tc = tree.walk();
-        for node in tree.root_node().children(&mut tc) {
+        let mut tc = self.tree.walk();
+        for node in self.tree.root_node().children(&mut tc) {
             match (prev_kind, node.kind()) {
                 (_, "word") | (_, "wword") => ws += 1,
                 (_, "dot") => ss += 1,

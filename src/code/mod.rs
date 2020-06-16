@@ -403,8 +403,8 @@ impl Inner {
                     prompts.remove(0);
                 }
                 Ok(match prompts.len() {
-                    0 => (Inner::AnyKey { prompts, stsline }, evnt),
-                    _ => (Inner::Edit { stsline }, evnt),
+                    0 => (Inner::Edit { stsline }, evnt),
+                    _ => (Inner::AnyKey { prompts, stsline }, evnt),
                 })
             }
             Inner::Command { mut cmdline } => {
