@@ -11,11 +11,11 @@ use std::{
 
 use crate::{
     buffer::{self, Buffer},
-    code::{keymap::Keymap, App},
+    code::{keymap::Keymap, Code},
     color_scheme::Highlight,
     event::Event,
     location::Location,
-    window::{Coord, Cursor, Span, Text},
+    window::{Coord, Cursor, Span, Text, Window},
     Error, Result,
 };
 
@@ -104,9 +104,11 @@ impl WindowLine {
     }
 }
 
-impl WindowLine {
+impl Window for WindowLine {
+    type App = Code;
+
     #[inline]
-    pub fn to_cursor(&self) -> Cursor {
+    fn to_cursor(&self) -> Cursor {
         match self.inner {
             Inner::Cmd { cursor, .. } => self.coord.to_top_left() + cursor,
             Inner::Status { .. } => unreachable!(),
@@ -114,7 +116,7 @@ impl WindowLine {
         }
     }
 
-    pub fn on_event(&mut self, _app: &mut App, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, _app: &mut Code, evnt: Event) -> Result<Event> {
         use crate::event::Code;
 
         match &mut self.inner {
@@ -146,7 +148,7 @@ impl WindowLine {
         }
     }
 
-    pub fn on_refresh(&mut self, app: &mut App) -> Result<()> {
+    fn on_refresh(&mut self, app: &mut Code) -> Result<()> {
         use crate::code::view::NoWrap;
         use std::iter::repeat;
 

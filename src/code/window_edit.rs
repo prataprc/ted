@@ -3,10 +3,11 @@ use log::trace;
 use std::{fmt, result};
 
 use crate::{
+    app::Application,
     buffer::{self, Buffer},
-    code::{config::Config, keymap::Keymap, App},
+    code::{config::Config, keymap::Keymap, Code},
     event::Event,
-    window::{Coord, Cursor, Text},
+    window::{Coord, Cursor, Text, Window},
     Result,
 };
 
@@ -65,13 +66,15 @@ impl WindowEdit {
     }
 }
 
-impl WindowEdit {
+impl Window for WindowEdit {
+    type App = Code;
+
     #[inline]
-    pub fn to_cursor(&self) -> Cursor {
+    fn to_cursor(&self) -> Cursor {
         self.coord.to_top_left() + self.cursor
     }
 
-    pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, app: &mut Code, evnt: Event) -> Result<Event> {
         use crate::window::Notify;
 
         let evnt = match app.take_buffer(&self.buffer_id) {
@@ -93,7 +96,7 @@ impl WindowEdit {
         }
     }
 
-    pub fn on_refresh(&mut self, app: &mut App) -> Result<()> {
+    fn on_refresh(&mut self, app: &mut Code) -> Result<()> {
         use crate::code::view::{NoWrap, Wrap};
 
         self.cursor = if app.as_ref().wrap {

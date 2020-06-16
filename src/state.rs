@@ -18,6 +18,7 @@ use std::{
 };
 
 use crate::{
+    app::Application,
     code,
     event::Event,
     pubsub::PubSub,
@@ -104,7 +105,7 @@ impl Drop for Terminal {
 // Application state
 pub struct State {
     pub tm: Terminal,
-    pub app: code::App,
+    pub app: code::Code,
     pub subscribers: PubSub,
 }
 
@@ -136,7 +137,7 @@ impl State {
         let app = match opts.app.as_str() {
             "code" => {
                 let coord = Coord::new(1, 1, tm.rows, tm.cols);
-                let mut app = code::App::new(app_config, coord, opts.clone())?;
+                let mut app = code::Code::new(app_config, coord, opts.clone())?;
                 for (topic, tx) in subscribers.to_subscribers().into_iter() {
                     app.subscribe(&topic, tx)
                 }

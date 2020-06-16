@@ -6,10 +6,10 @@ use std::{convert::TryInto, fmt, mem, result};
 
 use crate::{
     buffer::Buffer,
-    code::{keymap::Keymap, App},
+    code::{keymap::Keymap, Code},
     event::Event,
     location::Location,
-    window::{Coord, Cursor},
+    window::{Coord, Cursor, Window},
     Result,
 };
 
@@ -41,9 +41,11 @@ impl WindowLess {
     }
 }
 
-impl WindowLess {
+impl Window for WindowLess {
+    type App = Code;
+
     #[inline]
-    pub fn to_cursor(&self) -> Cursor {
+    fn to_cursor(&self) -> Cursor {
         let (hgt, _) = self.coord.to_size();
         let col: usize = self
             .status_line
@@ -53,7 +55,7 @@ impl WindowLess {
         Cursor::new(col.try_into().unwrap(), hgt - 1)
     }
 
-    pub fn on_event(&mut self, _: &mut App, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, _: &mut Code, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Noop),
             evnt => {
@@ -66,7 +68,7 @@ impl WindowLess {
         }
     }
 
-    pub fn on_refresh(&mut self, _: &mut App) -> Result<()> {
+    fn on_refresh(&mut self, _: &mut Code) -> Result<()> {
         //use crate::Error;
         //use crossterm::queue;
         //use std::io::{self, Write};

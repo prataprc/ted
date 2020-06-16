@@ -14,6 +14,7 @@ pub mod location;
 mod tabc;
 pub mod tss;
 
+pub mod app;
 pub mod buffer;
 pub mod event;
 pub mod pubsub;

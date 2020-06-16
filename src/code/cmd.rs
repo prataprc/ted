@@ -2,7 +2,7 @@
 use log::trace;
 
 use crate::{
-    code::{cmd_set::Set, App},
+    code::{cmd_set::Set, Code},
     event::Event,
     Result,
 };
@@ -46,7 +46,7 @@ impl Command {
         }
     }
 
-    pub fn on_command(&mut self, app: &mut App) -> Result<Event> {
+    pub fn on_command(&mut self, app: &mut Code) -> Result<Event> {
         match self {
             Command::Set(val) => val.on_command(app),
             Command::None => Ok(Event::Noop),

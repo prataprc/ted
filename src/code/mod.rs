@@ -31,6 +31,7 @@ use std::{
 };
 
 use crate::{
+    app::Application,
     buffer::Buffer,
     code::cmd::Command,
     code::config::Config,
@@ -38,15 +39,15 @@ use crate::{
     code::window_prompt::WindowPrompt,
     code::{window_file::WindowFile, window_line::WindowLine},
     color_scheme::{ColorScheme, Highlight},
-    event::{Code, Event},
+    event::{self, Event},
     location::Location,
     pubsub::PubSub,
     state::Opt,
-    window::{Coord, Cursor, Notify, Span, Spanline},
+    window::{Coord, Cursor, Notify, Span, Spanline, Window},
     Error, Result,
 };
 
-pub struct App {
+pub struct Code {
     coord: Coord,
     config: Config,
     color_scheme: ColorScheme,
@@ -81,20 +82,20 @@ impl Default for Inner {
     }
 }
 
-impl AsRef<Config> for App {
+impl AsRef<Config> for Code {
     fn as_ref(&self) -> &Config {
         &self.config
     }
 }
 
-impl AsMut<Config> for App {
+impl AsMut<Config> for Code {
     fn as_mut(&mut self) -> &mut Config {
         &mut self.config
     }
 }
 
-impl App {
-    pub fn new(config: toml::Value, coord: Coord, opts: Opt) -> Result<App> {
+impl Code {
+    pub fn new(config: toml::Value, coord: Coord, opts: Opt) -> Result<Code> {
         let config = {
             let cnf: Config = Default::default();
             cnf.mixin(config.try_into().unwrap())
@@ -106,7 +107,7 @@ impl App {
             err_at!(FailConvert, toml::to_string(&config))?
         );
 
-        let mut app = App {
+        let mut app = Code {
             coord,
             config,
             color_scheme: Default::default(),
@@ -114,11 +115,11 @@ impl App {
             buffers: Default::default(),
 
             wfile: Default::default(),
-            tbcline: App::new_tbcline(coord),
+            tbcline: Code::new_tbcline(coord),
             inner: Default::default(),
         };
 
-        let stsline = App::new_stsline(coord);
+        let stsline = Code::new_stsline(coord);
         let wps = app.open_cmd_files(opts.files.clone())?;
         app.inner = if wps.len() > 0 {
             Inner::AnyKey {
@@ -129,7 +130,7 @@ impl App {
             Inner::Edit { stsline }
         };
 
-        App::draw_screen(app.coord, &app.color_scheme)?;
+        Code::draw_screen(app.coord, &app.color_scheme)?;
 
         app.wfile = {
             let wf_coord = {
@@ -171,15 +172,7 @@ impl App {
     }
 }
 
-impl App {
-    pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
-        self.subscribers.subscribe(topic, tx);
-    }
-
-    pub fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
-        self.subscribers.notify(topic, msg)
-    }
-
+impl Code {
     pub fn add_buffer(&mut self, buffer: Buffer) {
         self.buffers.insert(0, buffer)
     }
@@ -200,9 +193,18 @@ impl App {
             None => None,
         }
     }
+
+    #[inline]
+    pub fn post(&mut self, _msg: Notify) -> Result<()> {
+        //match msg {
+        //    Notify::Status(sl)) -> self.stsline.set(sl),
+        //    Notify::TabComplete(sl) -> self.tbcline.set(sl),
+        //}
+        Ok(())
+    }
 }
 
-impl App {
+impl Code {
     pub fn as_buffer(&self, id: &str) -> &Buffer {
         for b in self.buffers.iter() {
             if b.to_id() == id {
@@ -226,7 +228,7 @@ impl App {
     }
 }
 
-impl App {
+impl Code {
     fn draw_screen(coord: Coord, scheme: &ColorScheme) -> Result<()> {
         use crossterm::style::{SetBackgroundColor, SetForegroundColor};
         use std::iter::{repeat, FromIterator};
@@ -315,17 +317,16 @@ impl App {
     }
 }
 
-impl App {
-    #[inline]
-    pub fn post(&mut self, _msg: Notify) -> Result<()> {
-        //match msg {
-        //    Notify::Status(sl)) -> self.stsline.set(sl),
-        //    Notify::TabComplete(sl) -> self.tbcline.set(sl),
-        //}
-        Ok(())
+impl Application for Code {
+    fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
+        self.subscribers.subscribe(topic, tx);
     }
 
-    pub fn to_cursor(&self) -> Cursor {
+    fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
+        self.subscribers.notify(topic, msg)
+    }
+
+    fn to_cursor(&self) -> Cursor {
         match &self.inner {
             Inner::Edit { .. } => self.wfile.to_cursor(),
             Inner::AnyKey { prompts, .. } => prompts[0].to_cursor(),
@@ -335,23 +336,23 @@ impl App {
         }
     }
 
-    pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, evnt: Event) -> Result<Event> {
         let inner = mem::replace(&mut self.inner, Default::default());
         let (inner, mut evnt) = inner.on_event(self, evnt)?;
         self.inner = inner;
 
         loop {
             match evnt {
-                Event::Code(Code::Cmd(name, args)) => {
+                Event::Code(event::Code::Cmd(name, args)) => {
                     let mut cmd: Command = (name, args).into();
                     evnt = cmd.on_command(self)?;
                 }
-                Event::Code(Code::Less(ref content)) => {
+                Event::Code(event::Code::Less(ref content)) => {
                     let less = WindowLess::new(self.coord, content);
                     self.inner = Inner::Less { less };
                 }
-                Event::Code(Code::Edit) => {
-                    let stsline = App::new_stsline(self.coord);
+                Event::Code(event::Code::Edit) => {
+                    let stsline = Code::new_stsline(self.coord);
                     self.inner = Inner::Edit { stsline };
                 }
                 evnt => break Ok(evnt),
@@ -359,7 +360,7 @@ impl App {
         }
     }
 
-    pub fn on_refresh(&mut self) -> Result<()> {
+    fn on_refresh(&mut self) -> Result<()> {
         let mut wfile = mem::replace(&mut self.wfile, Default::default());
         wfile.on_refresh(self)?;
         self.wfile = wfile;
@@ -376,11 +377,11 @@ impl App {
 }
 
 impl Inner {
-    fn on_event(self, app: &mut App, evnt: Event) -> Result<(Inner, Event)> {
+    fn on_event(self, app: &mut Code, evnt: Event) -> Result<(Inner, Event)> {
         match self {
             Inner::Edit { stsline } => match evnt {
                 Event::Char(':', m) if m.is_empty() => {
-                    let mut cmdline = App::new_cmdline(app.coord);
+                    let mut cmdline = Code::new_cmdline(app.coord);
                     cmdline.on_event(app, Event::Char(':', m))?;
                     Ok((Inner::Command { cmdline }, Event::Noop))
                 }
@@ -411,11 +412,11 @@ impl Inner {
                 let evnt = cmdline.on_event(app, evnt)?;
                 let (inner, evnt) = match evnt {
                     Event::Esc => {
-                        let stsline = App::new_stsline(app.coord);
+                        let stsline = Code::new_stsline(app.coord);
                         (Inner::Edit { stsline }, Event::Noop)
                     }
-                    evnt @ Event::Code(Code::Cmd(_, _)) => {
-                        let stsline = App::new_stsline(app.coord);
+                    evnt @ Event::Code(event::Code::Cmd(_, _)) => {
+                        let stsline = Code::new_stsline(app.coord);
                         (Inner::Edit { stsline }, evnt)
                     }
                     evnt => (Inner::Command { cmdline }, evnt),
@@ -430,7 +431,7 @@ impl Inner {
         }
     }
 
-    fn on_refresh(mut self, app: &mut App) -> Result<Inner> {
+    fn on_refresh(mut self, app: &mut Code) -> Result<Inner> {
         match &mut self {
             Inner::Edit { stsline } => stsline.on_refresh(app)?,
             Inner::AnyKey { prompts, stsline } => {

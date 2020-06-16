@@ -8,11 +8,12 @@ use std::{
 };
 
 use crate::{
+    app::Application,
     buffer::Buffer,
     code::window_edit::WindowEdit,
-    code::{config::Config, App},
+    code::{config::Config, Code},
     event::Event,
-    window::{Coord, Cursor, Notify, Span},
+    window::{Coord, Cursor, Notify, Span, Window},
     Error, Result,
 };
 
@@ -69,7 +70,7 @@ impl WindowFile {
         self.coord.to_origin()
     }
 
-    fn status_file(&self, app: &App) -> Result<Span> {
+    fn status_file(&self, app: &Code) -> Result<Span> {
         let alt: ffi::OsString = "--display-error--".into();
         let (hgt, wth) = self.coord.to_size();
         let b = app.as_buffer(&self.we.to_buffer_id());
@@ -106,7 +107,7 @@ impl WindowFile {
         ))
     }
 
-    fn do_refresh(&mut self, app: &App) -> Result<()> {
+    fn do_refresh(&mut self, app: &Code) -> Result<()> {
         use std::iter::repeat;
 
         let Cursor { col, row } = self.coord.to_top_left();
@@ -133,17 +134,19 @@ impl WindowFile {
     }
 }
 
-impl WindowFile {
+impl Window for WindowFile {
+    type App = Code;
+
     #[inline]
-    pub fn to_cursor(&self) -> Cursor {
+    fn to_cursor(&self) -> Cursor {
         self.we.to_cursor()
     }
 
-    pub fn on_event(&mut self, app: &mut App, evnt: Event) -> Result<Event> {
-        use crate::event::{Code::StatusFile, Event::Code};
+    fn on_event(&mut self, app: &mut Code, evnt: Event) -> Result<Event> {
+        use crate::event::Code::StatusFile;
 
         match self.we.on_event(app, evnt)? {
-            Code(StatusFile { .. }) => {
+            Event::Code(StatusFile { .. }) => {
                 let span = self.status_file(app)?;
                 app.notify("code", Notify::Status(vec![span]))?;
                 Ok(Event::Noop)
@@ -152,7 +155,7 @@ impl WindowFile {
         }
     }
 
-    pub fn on_refresh(&mut self, app: &mut App) -> Result<()> {
+    fn on_refresh(&mut self, app: &mut Code) -> Result<()> {
         self.do_refresh(app)?;
         self.we.on_refresh(app)
     }

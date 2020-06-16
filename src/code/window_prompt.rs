@@ -12,9 +12,9 @@ use std::{
 
 use crate::{
     buffer::Buffer,
-    code::{keymap::Keymap, App},
+    code::{keymap::Keymap, Code},
     event::Event,
-    window::{Coord, Cursor, Span, Spanline},
+    window::{Coord, Cursor, Span, Spanline, Window},
     Error, Result,
 };
 
@@ -52,8 +52,25 @@ impl WindowPrompt {
 }
 
 impl WindowPrompt {
+    pub fn prompt_match(&self) -> Option<String> {
+        let s = self.buffer.to_string();
+        if s.len() > 0 && self.options.len() == 0 {
+            return Some(s);
+        }
+        for re in self.options.iter() {
+            if re.is_match(s.as_str()) {
+                return Some(s);
+            }
+        }
+        None
+    }
+}
+
+impl Window for WindowPrompt {
+    type App = Code;
+
     #[inline]
-    pub fn to_cursor(&self) -> Cursor {
+    fn to_cursor(&self) -> Cursor {
         let n = match self.span_lines.last() {
             Some(line) => line.to_width(),
             None => 0,
@@ -71,20 +88,7 @@ impl WindowPrompt {
         Cursor::new(col, hgt - 1)
     }
 
-    pub fn prompt_match(&self) -> Option<String> {
-        let s = self.buffer.to_string();
-        if s.len() > 0 && self.options.len() == 0 {
-            return Some(s);
-        }
-        for re in self.options.iter() {
-            if re.is_match(s.as_str()) {
-                return Some(s);
-            }
-        }
-        None
-    }
-
-    pub fn on_event(&mut self, _: &mut App, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, _: &mut Code, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Noop),
             evnt => {
@@ -97,7 +101,7 @@ impl WindowPrompt {
         }
     }
 
-    pub fn on_refresh(&mut self, _: &mut App) -> Result<()> {
+    fn on_refresh(&mut self, _: &mut Code) -> Result<()> {
         let mut stdout = io::stdout();
 
         let (col, row_iter) = {

@@ -7,7 +7,7 @@ use unicode_width::UnicodeWidthChar;
 
 use std::{fmt, iter::FromIterator, ops::Add, result};
 
-use crate::{buffer, color_scheme::Style, event::DP, Error, Result};
+use crate::{buffer, color_scheme::Style, event::Event, event::DP, Error, Result};
 
 #[macro_export]
 macro_rules! cursor {
@@ -57,6 +57,16 @@ macro_rules! span {
         let span: Span = format!($($s),*).into();
         span
     }};
+}
+
+pub trait Window {
+    type App;
+
+    fn to_cursor(&self) -> Cursor;
+
+    fn on_event(&mut self, app: &mut Self::App, evnt: Event) -> Result<Event>;
+
+    fn on_refresh(&mut self, app: &mut Self::App) -> Result<()>;
 }
 
 pub trait Text<'a> {

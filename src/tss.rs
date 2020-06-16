@@ -159,7 +159,7 @@ impl Automata {
 impl fmt::Display for Automata {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         for node in self.patterns.iter() {
-            write!(f, "{}\n", node);
+            write!(f, "{}\n", node)?;
         }
         Ok(())
     }
@@ -193,7 +193,7 @@ impl Automata {
         for (off, node) in ops.into_iter() {
             match node {
                 Some(node) => {
-                    mem::replace(&mut self.open_nodes[off], node);
+                    let _ = mem::replace(&mut self.open_nodes[off], node);
                 }
                 None => {
                     self.open_nodes.remove(off);
