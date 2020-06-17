@@ -5,16 +5,16 @@ use crate::{buffer::Buffer, color_scheme::ColorScheme, tss::Automata};
 struct Syntax<'a, 'b, 'c, 'd> {
     buf: &'a Buffer,
     tree: &'b ts::Tree;
-    atm: &'c mut Automata,
+    atmt: &'c mut Automata,
     scheme: &'d ColorScheme,
 }
 
 impl Syntax {
-    fn new(buf: &Buffer, tree: &ts::Tree, atm: &mut Automata, scheme: &ColorScheme) -> Syntax {
+    fn new(buf: &Buffer, tree: &ts::Tree, atmt: &mut Automata, scheme: &ColorScheme) -> Syntax {
         Syntax {
             buf,
             tree,
-            atm,
+            atmt,
             scheme,
         }
     }
@@ -28,7 +28,7 @@ impl Syntax {
 
         let mut syns = {
             let tok = Token::from_node(self.buf, &root, depth, sibling);
-            match self.atm.shift_in(tok)? {
+            match self.atmt.shift_in(tok)? {
                 Some(style) => vec![SyntSpan{
                     depth: tok.depth, a: tok.a, z: tok.z, style
                 }],
@@ -42,7 +42,7 @@ impl Syntax {
         let mut hl_spans = HlSpans::new(self.scheme.to_style("canvas"));
         syns.into_iter().for_each(|syn| hl_spans.push(syn));
 
-        hl_spans.into_span_line()
+        hl_spans.into_span_line(self.buf)
     }
 
     fn do_highlight(
@@ -59,7 +59,7 @@ impl Syntax {
         for (sibling, child) in node.children(tc).enumerate() {
             let tok = Token::from_node(self.buf, &child, depth, sibling);
             if range.contains(tok.a) || range.contains(tok.z) {
-                match self.atm.shift_in(tok)? {
+                match self.atmt.shift_in(tok)? {
                     Some(style) => syns.push(SyntSpan{
                         depth: tok.depth, a: tok.a, z: tok.z, style
                     }),
@@ -117,13 +117,13 @@ impl SyntSpan {
             let iter = buf.chars_at(self.a).take(self.z - self.a);
             String::from_iter(iter).into()
         };
-        span.using(self.style)
+        span.using(self.style.clone())
         span
     }
 }
 
 struct HlSpans {
-    canvas: Style,
+    canvas: Style, // default style
     syns: Vec<SyntSpan>
 }
 
@@ -132,12 +132,13 @@ impl HlSpans {
         HlSpans { canvas, syns: Default::default() }
     }
 
-    fn push(&mut self, syn: SyntSpan) {
+    fn push(&mut self, mut syn: SyntSpan) {
         match self.syns.len(), {
-            (0, => self.syns.push(syn),
-            _, => {
+            0 => self.syns.push(syn),
+            _ => {
                 SyntSpan { depth, a, z, style } = self.syns.pop().unwrap();
                 assert!(a <= syn.a);
+
                 if z < syn.a {
                     self.spans.push(SyntSpan { depth,  a, z, style });
                     self.spans.push(SyntSpan {
@@ -145,18 +146,23 @@ impl HlSpans {
                     });
                     self.spans.push(syn);
                 } else if z == syn.a {
+                    self.spans.push(SyntSpan { depth, a, z, style });
                     self.spans.push(syn)
                 } else syn.depth >= depth {
                     self.spans.push(SyntSpan { depth, a, z: syn.a, style });
                     self.spans.push(syn);
+                } else {
+                    syn.a = z;
+                    self.spans.push(SyntSpan { depth, a, z, style });
+                    self.spans.push(syn)
                 }
             }
         }
     }
 
-    fn into_span_line(&self) -> Spanline {
+    fn into_span_line(&self, buf: &Buffer) -> Spanline {
         let spans: Vec<Span> = {
-            let iter = self.syns.iter().map(|syn| syn.into_span());
+            let iter = self.syns.iter().map(|syn| syn.into_span(buf));
             iter.collect()
         };
         spans.into()

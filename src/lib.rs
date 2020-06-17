@@ -17,6 +17,7 @@ pub mod buffer;
 pub mod event;
 pub mod pubsub;
 pub mod state;
+pub mod syntax;
 #[macro_use]
 pub mod window;
 
