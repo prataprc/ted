@@ -2,9 +2,11 @@ use tree_sitter as ts;
 
 use crate::{
     buffer::Buffer,
+    color_scheme::ColorScheme,
     event::Event,
-    ftypes::{self, FileType},
-    window::{Notify, Span},
+    ftypes,
+    syntax::{Page, Syntax},
+    tss::Automata,
     Error, Result,
 };
 
@@ -15,20 +17,19 @@ extern "C" {
 pub struct Toml {
     parser: ts::Parser,
     tree: ts::Tree,
-    atm: Automata,
-}
-
-impl Default for Toml {
-    fn default() -> Toml {
-        Toml::new("").unwrap()
-    }
+    atmt: Automata,
 }
 
 impl Toml {
-    fn new(content: &str) -> Result<Toml> {
+    fn new(content: &str, scheme: &ColorScheme) -> Result<Toml> {
         let lang = unsafe { tree_sitter_toml() };
         let (parser, tree) = ftypes::new_parser(content, lang)?;
-        Ok(Toml { parser, tree })
+        let atmt = {
+            let tss = include_str!("../../ts/toml.tss");
+            Automata::from_str(tss, scheme)?
+        };
+
+        Ok(Toml { parser, tree, atmt })
     }
 
     fn set_style(&mut self, scheme: &ColorScheme) -> &mut Self {
@@ -36,13 +37,13 @@ impl Toml {
     }
 }
 
-impl FileType for Toml {
-    fn to_file_type_name(&self) -> String {
-        "toml".to_string()
-    }
-
+impl Page for Toml {
     fn to_language(&self) -> Option<ts::Language> {
         Some(unsafe { tree_sitter_toml() })
+    }
+
+    fn to_name(&self) -> String {
+        "toml".to_string()
     }
 
     fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
@@ -51,6 +52,15 @@ impl FileType for Toml {
             "normal" => self.on_n_event(buf, evnt),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
+    }
+
+    fn to_syntax<'a>(&'a self, buf: &'a Buffer, scheme: &'a ColorScheme) -> Result<Option<Syntax>> {
+        Ok(Some(Syntax::new(
+            buf,
+            &self.tree,
+            self.atmt.clone(),
+            scheme,
+        )))
     }
 }
 

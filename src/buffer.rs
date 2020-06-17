@@ -10,7 +10,9 @@ use ropey::{self, Rope};
 use std::{
     borrow::Borrow,
     cell::{self, RefCell},
-    cmp, fmt, io, mem,
+    cmp, fmt, io,
+    iter::FromIterator,
+    mem,
     ops::Bound,
     rc::{self, Rc},
     result,
@@ -18,10 +20,12 @@ use std::{
 };
 
 use crate::{
+    color_scheme::{ColorScheme, Highlight},
     event::{Event, Mto, DP},
-    ftypes::{FileType, PlainText},
+    ftypes::PlainText,
     location::Location,
-    window::WinBuffer,
+    syntax::Page,
+    window::{Span, Spanline, WinBuffer},
     {err_at, Error, Result},
 };
 
@@ -111,7 +115,7 @@ pub struct Buffer {
     // Buffer states
     inner: Inner,
     // File-type
-    ftype: Box<dyn FileType>,
+    page_type: Box<dyn Page>,
 
     // Last search command applied on this buffer.
     mto_pattern: Mto,
@@ -150,7 +154,7 @@ impl Buffer {
 
             num: *num,
             inner: Inner::Normal(NormalBuffer::new(buf)),
-            ftype: Box::new(PlainText),
+            page_type: Box::new(PlainText),
 
             mto_pattern: Default::default(),
             mto_find_char: Default::default(),
@@ -188,8 +192,8 @@ impl Buffer {
         self
     }
 
-    pub fn set_ftype(&mut self, ftype: Box<dyn FileType>) -> &mut Self {
-        self.ftype = ftype;
+    pub fn set_page_type(&mut self, page_type: Box<dyn Page>) -> &mut Self {
+        self.page_type = page_type;
         self
     }
 }
@@ -406,6 +410,14 @@ impl<'a> WinBuffer<'a> for Buffer {
             n => self.char(n - 1) == NL,
         }
     }
+
+    fn to_span_line(&self, from: usize, to: usize, scheme: &ColorScheme) -> Result<Spanline> {
+        let span: Span = {
+            let iter = self.chars_at(from, DP::Right)?.take(to - from);
+            String::from_iter(iter).into()
+        };
+        Ok(span.using(scheme.to_style(Highlight::Canvas)).into())
+    }
 }
 
 impl Buffer {
@@ -468,9 +480,9 @@ impl Buffer {
 
         // after handling the event for buffer, handle for its file-type.
         evnt = {
-            let mut ftype = mem::replace(&mut self.ftype, Box::new(PlainText));
-            let evnt = ftype.on_event(self, evnt)?;
-            self.ftype = ftype;
+            let mut ptype = mem::replace(&mut self.page_type, Box::new(PlainText));
+            let evnt = ptype.on_event(self, evnt)?;
+            self.page_type = ptype;
             evnt
         };
 

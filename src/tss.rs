@@ -106,7 +106,7 @@ impl Span {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Automata {
     patterns: Vec<Rc<Node>>,
     open_nodes: Vec<Node>,

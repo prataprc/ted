@@ -3,27 +3,42 @@ use tree_sitter as ts;
 use std::{cmp, iter::FromIterator};
 
 use crate::{
-    buffer::Buffer,
+    buffer::{self, Buffer},
     color_scheme::{ColorScheme, Highlight, Style},
+    event::{Event, DP},
     tss::{Automata, Token},
     window::{Span, Spanline, WinBuffer},
     Result,
 };
 
-struct Syntax<'a, 'b, 'c, 'd> {
-    buf: &'a Buffer,
-    tree: &'b ts::Tree,
-    atmt: &'c mut Automata,
-    scheme: &'d ColorScheme,
+pub trait Page {
+    fn to_language(&self) -> Option<ts::Language>;
+
+    fn to_name(&self) -> String;
+
+    fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event>;
+
+    fn to_syntax<'a>(
+        &'a self,
+        buf: &'a Buffer,
+        scheme: &'a ColorScheme,
+    ) -> Result<Option<Syntax<'a>>>;
 }
 
-impl<'a, 'b, 'c, 'd> Syntax<'a, 'b, 'c, 'd> {
-    fn new(
+pub struct Syntax<'a> {
+    buf: &'a Buffer,
+    tree: &'a ts::Tree,
+    atmt: Automata,
+    scheme: &'a ColorScheme,
+}
+
+impl<'a> Syntax<'a> {
+    pub fn new(
         buf: &'a Buffer,
-        tree: &'b ts::Tree,
-        atmt: &'c mut Automata,
-        scheme: &'d ColorScheme,
-    ) -> Syntax<'a, 'b, 'c, 'd> {
+        tree: &'a ts::Tree,
+        atmt: Automata,
+        scheme: &'a ColorScheme,
+    ) -> Syntax<'a> {
         Syntax {
             buf,
             tree,
@@ -33,8 +48,46 @@ impl<'a, 'b, 'c, 'd> Syntax<'a, 'b, 'c, 'd> {
     }
 }
 
-impl<'a, 'b, 'c, 'd> Syntax<'a, 'b, 'c, 'd> {
+impl<'a> WinBuffer<'a> for Syntax<'a> {
+    type IterLine = buffer::IterLine<'a>;
+    type IterChar = buffer::IterChar<'a>;
+
+    fn to_xy_cursor(&self) -> buffer::Cursor {
+        self.buf.to_xy_cursor()
+    }
+
+    fn lines_at(&'a self, line_idx: usize, dp: DP) -> Result<Self::IterLine> {
+        self.buf.lines_at(line_idx, dp)
+    }
+
+    fn chars_at(&'a self, char_idx: usize, dp: DP) -> Result<Self::IterChar> {
+        self.buf.chars_at(char_idx, dp)
+    }
+
+    fn line_to_char(&self, line_idx: usize) -> usize {
+        self.buf.line_to_char(line_idx)
+    }
+
+    fn char_to_line(&self, char_idx: usize) -> usize {
+        self.char_to_line(char_idx)
+    }
+
+    fn n_chars(&self) -> usize {
+        self.buf.n_chars()
+    }
+
+    fn is_trailing_newline(&self) -> bool {
+        self.is_trailing_newline()
+    }
+
+    fn to_span_line(&self, from: usize, to: usize, scheme: &ColorScheme) -> Result<Spanline> {
+        todo!()
+    }
+}
+
+impl<'a> Syntax<'a> {
     pub fn highlight(&mut self, from: usize, to: usize) -> Result<Spanline> {
+        let canvas = self.scheme.to_style(Highlight::Canvas);
         let root = self.tree.root_node();
         let mut syns = {
             let (depth, sibling) = (0, 0);
@@ -53,7 +106,7 @@ impl<'a, 'b, 'c, 'd> Syntax<'a, 'b, 'c, 'd> {
         syns.extend(self.do_highlight(root, 1 /*depth*/, from, to)?);
         syns.sort();
 
-        let mut hl_spans = HlSpans::new(self.scheme.to_style(Highlight::Canvas));
+        let mut hl_spans = HlSpans::new(canvas);
         syns.into_iter().for_each(|syn| hl_spans.push(syn));
 
         hl_spans.into_span_line(self.buf)
@@ -130,8 +183,6 @@ impl Ord for SyntSpan {
 
 impl SyntSpan {
     fn into_span(&self, buf: &Buffer) -> Result<Span> {
-        use crate::event::DP;
-
         let span: Span = {
             let iter = buf.chars_at(self.a, DP::Right)?.take(self.z - self.a);
             String::from_iter(iter).into()

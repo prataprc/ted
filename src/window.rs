@@ -7,7 +7,13 @@ use unicode_width::UnicodeWidthChar;
 
 use std::{fmt, iter::FromIterator, ops::Add, result};
 
-use crate::{buffer, color_scheme::Style, event::Event, event::DP, Error, Result};
+use crate::{
+    buffer,
+    color_scheme::{ColorScheme, Style},
+    event::Event,
+    event::DP,
+    Error, Result,
+};
 
 #[macro_export]
 macro_rules! cursor {
@@ -107,6 +113,8 @@ pub trait WinBuffer<'a> {
 
     /// Return whether the last character in buffer is NEWLINE.
     fn is_trailing_newline(&self) -> bool;
+
+    fn to_span_line(&self, from: usize, to: usize, scheme: &ColorScheme) -> Result<Spanline>;
 }
 
 #[derive(Clone)]

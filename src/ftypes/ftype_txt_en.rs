@@ -2,8 +2,10 @@ use tree_sitter as ts;
 
 use crate::{
     buffer::Buffer,
+    color_scheme::ColorScheme,
     event::Event,
-    ftypes::{self, FileType},
+    ftypes,
+    syntax::{Page, Syntax},
     window::{Notify, Span},
     Error, Result,
 };
@@ -31,13 +33,13 @@ impl TextEn {
     }
 }
 
-impl FileType for TextEn {
-    fn to_file_type_name(&self) -> String {
-        "txt-en".to_string()
-    }
-
+impl Page for TextEn {
     fn to_language(&self) -> Option<ts::Language> {
         Some(unsafe { tree_sitter_txt_en() })
+    }
+
+    fn to_name(&self) -> String {
+        "txt-en".to_string()
     }
 
     fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
@@ -46,6 +48,10 @@ impl FileType for TextEn {
             "normal" => self.on_n_event(buf, evnt),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
+    }
+
+    fn to_syntax<'a>(&'a self, buf: &'a Buffer, scheme: &'a ColorScheme) -> Result<Option<Syntax>> {
+        Ok(None)
     }
 }
 
