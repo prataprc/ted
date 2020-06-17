@@ -23,11 +23,11 @@ macro_rules! wrap_edge {
 }
 
 pub struct Token {
-    kind: String,
-    depth: usize,
-    sibling: usize,
-    a: usize, // charactor position, inclusive
-    z: usize, // charactor position, exclusive
+    pub kind: String,
+    pub depth: usize,
+    pub sibling: usize,
+    pub a: usize, // charactor position, inclusive
+    pub z: usize, // charactor position, exclusive
 }
 
 impl fmt::Display for Token {
@@ -37,7 +37,7 @@ impl fmt::Display for Token {
 }
 
 impl Token {
-    fn from_node(buf: &Buffer, node: &ts::Node, depth: usize, sibling: usize) -> Token {
+    pub fn from_node(buf: &Buffer, node: &ts::Node, depth: usize, sibling: usize) -> Token {
         let kind = node.kind().to_string();
         let a = buf.byte_to_char(node.start_byte());
         let z = buf.byte_to_char(node.start_byte());
