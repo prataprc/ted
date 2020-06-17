@@ -21,7 +21,7 @@ use crate::{
     event::{Event, Mto, DP},
     ftypes::{FileType, PlainText},
     location::Location,
-    window::Render,
+    window::WinBuffer,
     {err_at, Error, Result},
 };
 
@@ -327,7 +327,7 @@ impl Buffer {
     }
 }
 
-impl<'a> Render<'a> for Buffer {
+impl<'a> WinBuffer<'a> for Buffer {
     type IterLine = IterLine<'a>;
     type IterChar = IterChar<'a>;
 

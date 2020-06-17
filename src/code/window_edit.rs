@@ -7,7 +7,7 @@ use crate::{
     buffer::{self, Buffer},
     code::{config::Config, keymap::Keymap, Code},
     event::Event,
-    window::{Coord, Cursor, Render, Window},
+    window::{Coord, Cursor, WinBuffer, Window},
     Result,
 };
 

@@ -6,7 +6,7 @@ use crate::{
     buffer::Buffer,
     color_scheme::{ColorScheme, Highlight, Style},
     tss::{Automata, Token},
-    window::{Render, Span, Spanline},
+    window::{Span, Spanline, WinBuffer},
     Result,
 };
 
