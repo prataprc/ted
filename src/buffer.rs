@@ -19,10 +19,9 @@ use std::{
 
 use crate::{
     event::{Event, Mto, DP},
-    ftype::FileType,
-    ftype_plain_txt::PlainText,
+    ftypes::{FileType, PlainText},
     location::Location,
-    window::Text,
+    window::Render,
     {err_at, Error, Result},
 };
 
@@ -324,7 +323,7 @@ impl Buffer {
     }
 }
 
-impl<'a> Text<'a> for Buffer {
+impl<'a> Render<'a> for Buffer {
     type IterLine = IterLine<'a>;
     type IterChar = IterChar<'a>;
 

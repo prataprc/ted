@@ -15,7 +15,7 @@ use crate::{
     color_scheme::Highlight,
     event::Event,
     location::Location,
-    window::{Coord, Cursor, Span, Text, Window},
+    window::{Coord, Cursor, Render, Span, Window},
     Error, Result,
 };
 

@@ -69,7 +69,7 @@ pub trait Window {
     fn on_refresh(&mut self, app: &mut Self::App) -> Result<()>;
 }
 
-pub trait Text<'a> {
+pub trait Render<'a> {
     type IterLine: Iterator<Item = &'a str>;
     type IterChar: Iterator<Item = char>;
 

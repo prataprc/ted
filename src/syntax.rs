@@ -25,7 +25,3 @@ impl Syntax {
         self
     }
 }
-
-impl Syntax {
-    fn 
-}

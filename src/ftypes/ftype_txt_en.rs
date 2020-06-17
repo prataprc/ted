@@ -3,7 +3,7 @@ use tree_sitter as ts;
 use crate::{
     buffer::Buffer,
     event::Event,
-    ftype::{self, FileType},
+    ftypes::{self, FileType},
     window::{Notify, Span},
     Error, Result,
 };
@@ -26,7 +26,7 @@ impl Default for TextEn {
 impl TextEn {
     fn new(content: &str) -> Result<TextEn> {
         let lang = unsafe { tree_sitter_txt_en() };
-        let (parser, tree) = ftype::new_parser(content, lang)?;
+        let (parser, tree) = ftypes::new_parser(content, lang)?;
         Ok(TextEn { parser, tree })
     }
 }

@@ -1,6 +1,6 @@
 use tree_sitter as ts;
 
-use crate::{buffer::Buffer, event::Event, ftype::FileType, Result};
+use crate::{buffer::Buffer, event::Event, ftypes::FileType, Result};
 
 #[derive(Default)]
 pub struct PlainText;
