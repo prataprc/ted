@@ -3,6 +3,7 @@ use tree_sitter as ts;
 use std::{borrow::Borrow, convert::TryFrom, fmt, mem, rc::Rc, result};
 
 use crate::{
+    buffer::Buffer,
     color_scheme::{ColorScheme, Highlight, Style},
     Error, Result,
 };
@@ -15,8 +16,6 @@ macro_rules! wrap_edge {
     ($edge:expr, $varn:ident) => {{
         *$edge = match mem::replace($edge, Default::default()) {
             e @ Edge::Kind(_) => Edge::$varn(Box::new(e.clone())),
-            e @ Edge::Field(_) => Edge::$varn(Box::new(e.clone())),
-            e @ Edge::KindField(_, _) => Edge::$varn(Box::new(e.clone())),
             _ => err_at!(Fatal, msg: format!("unexpected wrap_edge"))?,
         };
         Ok(())
@@ -25,23 +24,30 @@ macro_rules! wrap_edge {
 
 pub struct Token {
     kind: String,
-    field: Option<String>,
-    sibling: usize,
     depth: usize,
+    sibling: usize,
     a: usize, // charactor position, inclusive
     z: usize, // charactor position, exclusive
 }
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(
-            f,
-            "Token<{},{},{}.{}>",
-            self.depth,
-            self.sibling,
-            self.kind,
-            self.field.as_ref().map(String::as_str).unwrap_or("")
-        )
+        write!(f, "Token<{},{},{}>", self.kind, self.depth, self.sibling)
+    }
+}
+
+impl Token {
+    fn from_node(buf: &Buffer, node: &ts::Node, depth: usize, sibling: usize) -> Token {
+        let kind = node.kind().to_string();
+        let a = buf.byte_to_char(node.start_byte());
+        let z = buf.byte_to_char(node.start_byte());
+        Token {
+            kind,
+            depth,
+            sibling,
+            a,
+            z,
+        }
     }
 }
 
@@ -75,10 +81,10 @@ impl Span {
 }
 
 impl Span {
-    fn pos_to_text(&mut self, text: &str) -> Result<()> {
+    fn pos_to_text(&mut self, tss: &str) -> Result<()> {
         match self {
             Span::Pos(a, z) => {
-                *self = Span::Text(text[*a..*z].to_string());
+                *self = Span::Text(tss[*a..*z].to_string());
                 Ok(())
             }
             Span::Text(_) => err_at!(Fatal, msg: format!("unexpected span")),
@@ -107,12 +113,12 @@ pub struct Automata {
 }
 
 impl Automata {
-    pub fn from_str(text: &str, scheme: &ColorScheme) -> Result<Automata> {
+    pub fn from_str(tss: &str, scheme: &ColorScheme) -> Result<Automata> {
         let tree = {
             let mut p = ts::Parser::new();
             let language = unsafe { tree_sitter_tss() };
             err_at!(FailParse, p.set_language(language))?;
-            match p.parse(text, None) {
+            match p.parse(tss, None) {
                 Some(tree) => Ok(tree),
                 None => err_at!(Fatal, msg: format!("invalid ted style sheet")),
             }?
@@ -133,7 +139,7 @@ impl Automata {
 
             let style = {
                 let ts_node = child.child_by_field_name("style").unwrap();
-                Node::compile_style(ts_node, text, &mut tc, scheme)?
+                Node::compile_style(ts_node, tss, &mut tc, scheme)?
             };
             let n_selectors: Vec<ts::Node> = {
                 let xs = child.child_by_field_name("selectors").unwrap();
@@ -237,8 +243,6 @@ impl Automata {
 #[derive(Clone)]
 enum Edge {
     Kind(Span),
-    Field(Span),
-    KindField(Span, Span),
     Twin(Box<Edge>),
     Sibling(Box<Edge>),
     Child(Box<Edge>),
@@ -253,12 +257,10 @@ impl Default for Edge {
 
 impl fmt::Display for Edge {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Edge::{Child, Descendant, Field, Kind, KindField, Sibling, Twin};
+        use Edge::{Child, Descendant, Kind, Sibling, Twin};
 
         match self {
             Kind(_) => write!(f, "e-kind"),
-            Field(_) => write!(f, "e-field"),
-            KindField(_, _) => write!(f, "e-kindf"),
             Twin(edge) => write!(f, "e-twin<{}>", edge),
             Sibling(edge) => write!(f, "e-sibling<{}>", edge),
             Child(edge) => write!(f, "e-child<{}>", edge),
@@ -269,19 +271,10 @@ impl fmt::Display for Edge {
 
 impl Edge {
     fn is_match(&self, token: &Token) -> Result<bool> {
-        use Edge::{Child, Descendant, Field, Kind, KindField, Sibling, Twin};
+        use Edge::{Child, Descendant, Kind, Sibling, Twin};
 
         match self {
             Kind(k) => Ok(token.kind == k.as_text()?),
-            Field(f) => Ok(token.kind == f.as_text()?),
-            KindField(k, fl) => {
-                let ok1 = token.kind == k.as_text()?;
-                let ok2 = {
-                    let fl = fl.as_text()?;
-                    token.field.clone().map(|f| f == fl).unwrap_or(false)
-                };
-                Ok(ok1 && ok2)
-            }
             Twin(_) => err_at!(Fatal, msg: format!("unreachable")),
             Sibling(_) => err_at!(Fatal, msg: format!("unreachable")),
             Child(_) => err_at!(Fatal, msg: format!("unreachable")),
@@ -289,20 +282,15 @@ impl Edge {
         }
     }
 
-    fn pos_to_text(&mut self, text: &str) -> Result<()> {
-        use Edge::{Child, Descendant, Field, Kind, KindField, Sibling, Twin};
+    fn pos_to_text(&mut self, tss: &str) -> Result<()> {
+        use Edge::{Child, Descendant, Kind, Sibling, Twin};
 
         match self {
-            Kind(cnt) => cnt.pos_to_text(text)?,
-            Field(cnt) => cnt.pos_to_text(text)?,
-            KindField(x, y) => {
-                x.pos_to_text(text)?;
-                y.pos_to_text(text)?;
-            }
-            Twin(edge) => edge.as_mut().pos_to_text(text)?,
-            Sibling(edge) => edge.as_mut().pos_to_text(text)?,
-            Child(edge) => edge.as_mut().pos_to_text(text)?,
-            Descendant(edge) => edge.as_mut().pos_to_text(text)?,
+            Kind(cnt) => cnt.pos_to_text(tss)?,
+            Twin(edge) => edge.as_mut().pos_to_text(tss)?,
+            Sibling(edge) => edge.as_mut().pos_to_text(tss)?,
+            Child(edge) => edge.as_mut().pos_to_text(tss)?,
+            Descendant(edge) => edge.as_mut().pos_to_text(tss)?,
         }
         Ok(())
     }
@@ -383,13 +371,11 @@ impl fmt::Display for Node {
 
 impl Node {
     fn to_open_node(&self, token: &Token) -> Result<Node> {
-        use Edge::{Child, Descendant, Field, Kind, KindField, Sibling, Twin};
+        use Edge::{Child, Descendant, Kind, Sibling, Twin};
 
         match self {
             Node::Pattern(edge, next) => match edge {
                 Kind(_) => err_at!(Fatal, msg: format!("unreachable")),
-                Field(_) => err_at!(Fatal, msg: format!("unreachable")),
-                KindField(_, _) => err_at!(Fatal, msg: format!("unreachable")),
                 Twin(ne) => Ok(Node::Twin {
                     edge: ne.as_ref().clone(),
                     next: Rc::clone(next),
@@ -487,15 +473,15 @@ impl Node {
         }
     }
 
-    fn pos_to_text(&mut self, text: &str) -> Result<()> {
+    fn pos_to_text(&mut self, tss: &str) -> Result<()> {
         use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
 
         match self {
-            Pattern(edge, _) => edge.pos_to_text(text),
-            Twin { edge, .. } => edge.pos_to_text(text),
-            Sibling { edge, .. } => edge.pos_to_text(text),
-            Child { edge, .. } => edge.pos_to_text(text),
-            Descendant { edge, .. } => edge.pos_to_text(text),
+            Pattern(edge, _) => edge.pos_to_text(tss),
+            Twin { edge, .. } => edge.pos_to_text(tss),
+            Sibling { edge, .. } => edge.pos_to_text(tss),
+            Child { edge, .. } => edge.pos_to_text(tss),
+            Descendant { edge, .. } => edge.pos_to_text(tss),
             End(_) => Ok(()),
         }
     }
@@ -504,7 +490,7 @@ impl Node {
 impl Node {
     fn compile_style<'a>(
         ts_node: ts::Node<'a>,
-        text: &str,
+        tss: &str,
         tc: &mut ts::TreeCursor<'a>,
         scheme: &ColorScheme,
     ) -> Result<Node> {
@@ -512,7 +498,7 @@ impl Node {
         let style = match ts_node.kind() {
             "highlight" => {
                 let mut cont = Span::from_node(&ts_node.child(0).unwrap());
-                cont.pos_to_text(text)?;
+                cont.pos_to_text(tss)?;
                 match cont {
                     Span::Text(hl) => {
                         let hl: Highlight = TryFrom::try_from(hl.as_str())?;
@@ -526,7 +512,7 @@ impl Node {
                 for nprop in ts_node.child(1).unwrap().children(tc) {
                     let nprop = nprop.child_by_field_name("property").unwrap();
                     let mut cont = Span::from_node(&nprop.child(2).unwrap());
-                    cont.pos_to_text(text)?;
+                    cont.pos_to_text(tss)?;
                     match nprop.kind() {
                         "fg" => {
                             style.fg = match &cont {
@@ -596,18 +582,6 @@ impl Node {
         match chd.kind() {
             "sel_kind" => {
                 let edge = Edge::Kind(Span::from_node(&chd));
-                Ok(Node::Pattern(edge, Rc::new(next)))
-            }
-            "sel_field" => {
-                let edge = Edge::Field(Span::from_node(&chd.child(1).unwrap()));
-                Ok(Node::Pattern(edge, Rc::new(next)))
-            }
-            "sel_symbol_field" => {
-                let edge = {
-                    let ck = Span::from_node(&chd.child(0).unwrap());
-                    let cf = Span::from_node(&chd.child(2).unwrap());
-                    Edge::KindField(ck, cf)
-                };
                 Ok(Node::Pattern(edge, Rc::new(next)))
             }
             "sel_twins" => {

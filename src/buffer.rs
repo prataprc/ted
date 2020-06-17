@@ -321,6 +321,10 @@ impl Buffer {
         let change = self.to_change();
         change.buf.char(char_idx)
     }
+
+    pub fn byte_to_char(&self, byte_idx: usize) -> usize {
+        self.to_change().buf.byte_to_char(byte_idx)
+    }
 }
 
 impl<'a> Render<'a> for Buffer {
