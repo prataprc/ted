@@ -154,7 +154,9 @@ impl State {
             subscribers: Default::default(),
         })
     }
+}
 
+impl State {
     pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
         self.subscribers.subscribe(topic, tx.clone());
         self.app.subscribe(topic, tx);
