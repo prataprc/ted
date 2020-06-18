@@ -2,6 +2,7 @@ use crossterm::queue;
 use log::trace;
 
 use std::{
+    cmp,
     convert::TryInto,
     fmt,
     io::{self, Write},
@@ -10,11 +11,10 @@ use std::{
 };
 
 use crate::{
-    buffer,
+    buffer::{self, Buffer},
     code::col_nu::{ColKind, ColNu},
     color_scheme::{ColorScheme, Highlight},
-    event::DP,
-    window::{Coord, Cursor, Span, WinBuffer},
+    window::{Coord, Cursor, Render, Span, WinBuffer},
     Error, Result,
 };
 
@@ -70,21 +70,18 @@ impl Wrap {
         self
     }
 
-    pub fn render<'a, B>(mut self, buf: &'a B, cs: &ColorScheme) -> Result<Cursor>
+    pub fn render<R>(mut self, buf: &Buffer, r: &R, cs: &ColorScheme) -> Result<Cursor>
     where
-        B: WinBuffer<'a>,
+        R: Render,
     {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
         self = self.shift_cursor(buf)?;
         self.nu.set_color_scheme(cs);
-        Ok(self.refresh(buf, cs)?.account_nu(nu_wth))
+        Ok(self.refresh(buf, r, cs)?.account_nu(nu_wth))
     }
 
-    fn shift_cursor<'a, B>(&self, buf: &'a B) -> Result<Self>
-    where
-        B: WinBuffer<'a>,
-    {
+    fn shift_cursor(&self, buf: &Buffer) -> Result<Self> {
         let view = {
             let mut view = WrapView::new(self.coord, self.cursor, self.obc_xy);
             view.set_scroll_off(self.scroll_off)
@@ -105,13 +102,10 @@ impl Wrap {
         })
     }
 
-    fn refresh<'a, B>(self, buf: &'a B, scheme: &ColorScheme) -> Result<Cursor>
+    fn refresh<R>(self, buf: &Buffer, r: &R, scheme: &ColorScheme) -> Result<Cursor>
     where
-        B: WinBuffer<'a>,
+        R: Render,
     {
-        use crate::event::DP::Right;
-        use std::iter::repeat;
-
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         trace!("REFRESH {} nbc_xy:{} line_idx:{}", self, nbc_xy, line_idx);
@@ -134,14 +128,15 @@ impl Wrap {
                 nu_span.set_cursor(Cursor { col, row });
                 nu_span
             };
-            let chars = {
-                let iter = buf.chars_at(bc_caret, Right)?.chain(repeat(' '));
-                iter.take(n as usize)
+            let mut line_span = {
+                let to = bc_caret + (n as usize);
+                r.to_span_line(buf, bc_caret, to)?
             };
-            let line_span = {
-                let span = span!(st: String::from_iter(chars));
-                span.using(s_canvas.clone())
-            };
+            line_span.right_padding(
+                //
+                self.coord.wth.saturating_sub(n),
+                s_canvas.clone(),
+            );
             err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
         }
 
@@ -215,21 +210,18 @@ impl NoWrap {
         self
     }
 
-    pub fn render<'a, B>(mut self, buf: &'a B, cs: &ColorScheme) -> Result<Cursor>
+    pub fn render<R>(mut self, buf: &Buffer, r: &R, cs: &ColorScheme) -> Result<Cursor>
     where
-        B: WinBuffer<'a>,
+        R: Render,
     {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
         self = self.shift_cursor(buf)?;
         self.nu.set_color_scheme(cs);
-        Ok(self.refresh(buf, cs)?.account_nu(nu_wth))
+        Ok(self.refresh(buf, r, cs)?.account_nu(nu_wth))
     }
 
-    fn shift_cursor<'a, B>(self, buf: &B) -> Result<Self>
-    where
-        B: WinBuffer<'a>,
-    {
+    fn shift_cursor(self, buf: &Buffer) -> Result<Self> {
         let scroll_off = self.scroll_off; // accounting for scroll-offset.
 
         let (r_min, r_max) = if self.coord.hgt < (scroll_off * 2) {
@@ -286,12 +278,10 @@ impl NoWrap {
         })
     }
 
-    fn refresh<'a, B>(self, buf: &'a B, scheme: &ColorScheme) -> Result<Cursor>
+    fn refresh<R>(self, buf: &Buffer, r: &R, scheme: &ColorScheme) -> Result<Cursor>
     where
-        B: WinBuffer<'a>,
+        R: Render,
     {
-        use std::iter::repeat;
-
         let nbc_xy = buf.to_xy_cursor();
         trace!("REFRESH {} nbc_xy:{}", self, nbc_xy,);
 
@@ -301,30 +291,31 @@ impl NoWrap {
         let (col, mut row) = full_coord.to_origin_cursor();
         let max_row = row + full_coord.hgt;
         let (hgt, wth) = self.coord.to_size();
-        let nu_wth = self.nu.to_width();
-
-        let do_padding = |line: &str| -> Vec<char> {
-            let chars: Vec<char> = line.chars().collect();
-            chars
-                .into_iter()
-                .skip(nbc_xy.col.saturating_sub(self.cursor.col as usize))
-                .chain(repeat(' '))
-                .take((wth - nu_wth) as usize)
-                .collect()
-        };
 
         let from = nbc_xy.row.saturating_sub(self.cursor.row as usize);
-        let lines = buf.lines_at(from, DP::Right)?.map(do_padding);
+        let col_offset = nbc_xy.col.saturating_sub(self.cursor.col as usize);
         let s_canvas = scheme.to_style(Highlight::Canvas);
-        for (i, line) in lines.take(hgt as usize).enumerate() {
+        for i in from..cmp::min(hgt as usize, buf.n_lines() - from) {
             let nu_span = {
                 let mut span = self.nu.to_span(ColKind::Nu(from + i + 1));
                 span.set_cursor(Cursor { col, row });
                 span
             };
             let line_span = {
-                let span = span!(st: String::from_iter(line));
-                span.using(s_canvas.clone())
+                let from = buf.line_to_char(from + i) + col_offset;
+                let to = if (from + i + 1) < buf.n_lines() {
+                    buf.len_line(from + i)
+                } else {
+                    buf.n_chars()
+                };
+                let to = from + cmp::min(to - from, wth as usize);
+                let mut line_span = r.to_span_line(buf, from, to)?;
+                line_span.right_padding(
+                    //
+                    self.coord.wth.saturating_sub((to - from) as u16),
+                    s_canvas.clone(),
+                );
+                line_span
             };
             err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
             row += 1;
@@ -385,10 +376,7 @@ fn empty_lines(
     Ok(())
 }
 
-fn tail_line<'a, B>(col: u16, row: u16, max_row: u16, nu: &ColNu, buf: &B) -> Result<u16>
-where
-    B: WinBuffer<'a>,
-{
+fn tail_line(col: u16, row: u16, max_row: u16, nu: &ColNu, buf: &Buffer) -> Result<u16> {
     let n = buf.n_chars();
     let ok1 = n == 0;
     let ok2 = (row <= max_row) && buf.is_trailing_newline();
@@ -446,10 +434,7 @@ impl WrapView {
         self
     }
 
-    fn into_new_view<'a, B>(mut self, buf: &'a B) -> Result<Self>
-    where
-        B: WinBuffer<'a>,
-    {
+    fn into_new_view(mut self, buf: &Buffer) -> Result<Self> {
         let nbc_xy = buf.to_xy_cursor();
 
         match self.to_cursor(buf, self.to_view_rows(buf)?)? {
@@ -491,10 +476,7 @@ impl WrapView {
 
 impl WrapView {
     // return (ColKind, buffer_cursor, len)
-    fn to_view_rows<'a, B>(&self, buf: &'a B) -> Result<Vec<(ColKind, usize, u16)>>
-    where
-        B: WinBuffer<'a>,
-    {
+    fn to_view_rows(&self, buf: &Buffer) -> Result<Vec<(ColKind, usize, u16)>> {
         use crate::event::DP::Right;
         use std::iter::repeat;
 
@@ -575,14 +557,11 @@ impl WrapView {
         Ok(rows)
     }
 
-    fn to_cursor<'a, B>(
+    fn to_cursor(
         &self,
-        buf: &B,
+        buf: &Buffer,
         mut rows: Vec<(ColKind, usize, u16)>, // (ColKind, bc, n)
-    ) -> Result<Option<Cursor>>
-    where
-        B: WinBuffer<'a>,
-    {
+    ) -> Result<Option<Cursor>> {
         let rows = {
             // crop the rows for scroll offset.
             let so = self.scroll_off as usize;

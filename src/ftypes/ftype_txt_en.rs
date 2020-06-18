@@ -49,13 +49,7 @@ impl Page for TextEn {
         }
     }
 
-    fn to_span_line(
-        &mut self,
-        _: &Buffer,
-        _: &ColorScheme,
-        _: usize,
-        _: usize,
-    ) -> Option<Spanline> {
+    fn to_span_line(&self, _: &Buffer, _: &ColorScheme, _: usize, _: usize) -> Option<Spanline> {
         None
     }
 }

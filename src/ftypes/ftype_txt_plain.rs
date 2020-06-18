@@ -8,7 +8,7 @@ use crate::{
     Result,
 };
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PlainText;
 
 impl Page for PlainText {
@@ -24,13 +24,7 @@ impl Page for PlainText {
         Ok(evnt)
     }
 
-    fn to_span_line(
-        &mut self,
-        _: &Buffer,
-        _: &ColorScheme,
-        _: usize,
-        _: usize,
-    ) -> Option<Spanline> {
+    fn to_span_line(&self, _: &Buffer, _: &ColorScheme, _: usize, _: usize) -> Option<Spanline> {
         None
     }
 }

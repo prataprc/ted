@@ -6,7 +6,7 @@ use std::{
     fmt,
     io::{self, Write},
     iter::FromIterator,
-    result,
+    mem, result,
 };
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
     color_scheme::Highlight,
     event::Event,
     location::Location,
-    window::{Coord, Cursor, Span, WinBuffer, Window},
+    window::{Coord, Cursor, Render, Span, Spanline, WinBuffer, Window},
     Error, Result,
 };
 
@@ -29,8 +29,8 @@ enum Inner {
     Cmd {
         cursor: Cursor,
         obc_xy: buffer::Cursor,
-        keymap: Keymap,
         buffer: Buffer,
+        keymap: Keymap,
     },
     Status {
         spans: Vec<Span>,
@@ -38,6 +38,13 @@ enum Inner {
     Tab {
         spans: Vec<Span>,
     },
+    None,
+}
+
+impl Default for Inner {
+    fn default() -> Inner {
+        Inner::None
+    }
 }
 
 impl fmt::Display for Inner {
@@ -46,6 +53,7 @@ impl fmt::Display for Inner {
             Inner::Cmd { .. } => write!(f, "cmd"),
             Inner::Status { .. } => write!(f, "status"),
             Inner::Tab { .. } => write!(f, "tab"),
+            Inner::None => write!(f, "none"),
         }
     }
 }
@@ -113,6 +121,7 @@ impl Window for WindowLine {
             Inner::Cmd { cursor, .. } => self.coord.to_top_left() + cursor,
             Inner::Status { .. } => unreachable!(),
             Inner::Tab { .. } => unreachable!(),
+            Inner::None => unreachable!(),
         }
     }
 
@@ -145,6 +154,7 @@ impl Window for WindowLine {
             },
             Inner::Status { .. } => Ok(evnt),
             Inner::Tab { .. } => Ok(evnt),
+            Inner::None => Ok(evnt),
         }
     }
 
@@ -156,7 +166,9 @@ impl Window for WindowLine {
 
         let (col, row) = self.coord.to_origin_cursor();
         err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, row)))?;
-        match &mut self.inner {
+
+        let mut inner = mem::replace(&mut self.inner, Default::default());
+        match &mut inner {
             Inner::Cmd {
                 buffer,
                 obc_xy,
@@ -166,7 +178,7 @@ impl Window for WindowLine {
                 let (name, coord) = (&self.name, self.coord);
                 let mut v = NoWrap::new(name, coord, *cursor, *obc_xy);
                 v.set_scroll_off(0).set_line_number(false);
-                *cursor = v.render(buffer, app.as_color_scheme())?;
+                *cursor = v.render(buffer, self, app.as_color_scheme())?;
                 *obc_xy = buffer.to_xy_cursor();
             }
             Inner::Status { spans } => {
@@ -197,8 +209,16 @@ impl Window for WindowLine {
                 };
                 err_at!(Fatal, queue!(stdout, padding))?;
             }
+            Inner::None => (),
         };
+        self.inner = inner;
 
         Ok(())
+    }
+}
+
+impl Render for WindowLine {
+    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+        buffer::to_span_line(buf, a, z)
     }
 }

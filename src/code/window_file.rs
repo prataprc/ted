@@ -26,11 +26,19 @@ use crate::{
 //  |    |
 //  +----+-------------------------
 //
-#[derive(Clone, Default)]
 pub struct WindowFile {
     coord: Coord, // x window coord.
     we: WindowEdit,
     // stsline: Option<WindowLine>, TODO: needed for split windows.
+}
+
+impl Default for WindowFile {
+    fn default() -> WindowFile {
+        WindowFile {
+            coord: Default::default(),
+            we: Default::default(),
+        }
+    }
 }
 
 impl fmt::Display for WindowFile {

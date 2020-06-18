@@ -6,18 +6,35 @@ use crate::{
     app::Application,
     buffer::{self, Buffer},
     code::{config::Config, keymap::Keymap, Code},
+    color_scheme::{ColorScheme, Highlight},
     event::Event,
-    window::{Coord, Cursor, WinBuffer, Window},
+    ftypes::PlainText,
+    window::{Coord, Cursor, Page, Render, Spanline, WinBuffer, Window},
     Result,
 };
 
-#[derive(Clone, Default)]
 pub struct WindowEdit {
     coord: Coord,
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     buffer_id: String,
+    page: Box<dyn Page>,
+    scheme: ColorScheme,
     keymap: Keymap,
+}
+
+impl Default for WindowEdit {
+    fn default() -> WindowEdit {
+        WindowEdit {
+            coord: Default::default(),
+            cursor: Default::default(),
+            obc_xy: (0, 0).into(),
+            buffer_id: Default::default(),
+            page: Box::new(PlainText),
+            scheme: Default::default(),
+            keymap: Default::default(),
+        }
+    }
 }
 
 impl fmt::Display for WindowEdit {
@@ -45,11 +62,23 @@ impl WindowEdit {
             cursor,
             obc_xy: (0, 0).into(),
             buffer_id: buf.to_id(),
+            page: Box::new(PlainText),
+            scheme: Default::default(),
             keymap: Keymap::new_edit(),
         };
 
         trace!("{}", we);
         we
+    }
+
+    pub fn set_page(&mut self, page: Box<dyn Page>) -> &mut Self {
+        self.page = page;
+        self
+    }
+
+    pub fn set_color_scheme(&mut self, scheme: ColorScheme) -> &mut Self {
+        self.scheme = scheme;
+        self
     }
 }
 
@@ -81,6 +110,8 @@ impl Window for WindowEdit {
             Some(mut buf) => {
                 let mut evnt = self.keymap.fold(&mut buf, evnt)?;
                 evnt = buf.on_event(evnt)?;
+                // after handling the event for buffer, handle for its file-type.
+                evnt = self.page.on_event(&mut buf, evnt)?;
                 app.add_buffer(buf);
                 Ok(evnt)
             }
@@ -108,7 +139,7 @@ impl Window for WindowEdit {
                 v
             };
             let buf = app.as_buffer(&self.buffer_id);
-            v.render(buf, app.as_color_scheme())?
+            v.render(buf, self, app.as_color_scheme())?
         } else {
             let v = {
                 let (coord, cursor) = (self.coord, self.cursor);
@@ -118,10 +149,22 @@ impl Window for WindowEdit {
                 v
             };
             let buf = app.as_buffer(&self.buffer_id);
-            v.render(buf, app.as_color_scheme())?
+            v.render(buf, self, app.as_color_scheme())?
         };
         self.obc_xy = app.as_buffer(&self.buffer_id).to_xy_cursor();
 
         Ok(())
+    }
+}
+
+impl Render for WindowEdit {
+    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+        match self.page.to_span_line(buf, &self.scheme, a, z) {
+            Some(spl) => Ok(spl),
+            None => {
+                let spl = buffer::to_span_line(buf, a, z)?;
+                Ok(spl.using(self.scheme.to_style(Highlight::Canvas)))
+            }
+        }
     }
 }

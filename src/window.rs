@@ -1,5 +1,4 @@
 use crossterm::{
-    event::{self as ct_event, Event as TermEvent},
     style::{self, Attribute, Color, StyledContent},
     Command,
 };
@@ -13,7 +12,7 @@ use crate::{
     color_scheme::{ColorScheme, Style},
     event::Event,
     event::DP,
-    Error, Result,
+    Result,
 };
 
 #[macro_export]
@@ -112,10 +111,16 @@ pub trait WinBuffer<'a> {
     /// Return the number of characters in the buffer.
     fn n_chars(&self) -> usize;
 
+    fn n_lines(&self) -> usize;
+
+    fn len_line(&self, line_idx: usize) -> usize;
+
     /// Return whether the last character in buffer is NEWLINE.
     fn is_trailing_newline(&self) -> bool;
+}
 
-    fn to_span_line(&mut self, from: usize, to: usize) -> Result<Spanline>;
+pub trait Render {
+    fn to_span_line(&self, buf: &Buffer, from: usize, to: usize) -> Result<Spanline>;
 }
 
 pub trait Page {
@@ -126,7 +131,7 @@ pub trait Page {
     fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event>;
 
     fn to_span_line(
-        &mut self,
+        &self,
         buf: &Buffer,
         scheme: &ColorScheme,
         from: usize,
@@ -453,6 +458,18 @@ impl Default for Spanline {
 }
 
 impl Spanline {
+    pub fn right_padding(&mut self, n_pad: u16, style: Style) {
+        use std::iter::repeat;
+
+        if n_pad > 0 {
+            let n = n_pad as usize;
+            let span: Span = String::from_iter(repeat(' ').take(n)).into();
+            self.spans.push(span.using(style))
+        }
+    }
+}
+
+impl Spanline {
     #[inline]
     pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
         self.cursor = Some(cursor);
@@ -474,6 +491,14 @@ impl Spanline {
     pub fn to_width(&self) -> usize {
         self.spans.iter().map(|span| span.to_width()).sum()
     }
+
+    pub fn using(mut self, style: Style) -> Self {
+        self.spans = {
+            let iter = self.spans.drain(..);
+            iter.map(|span| span.using(style.clone())).collect()
+        };
+        self
+    }
 }
 
 impl Command for Spanline {
@@ -491,21 +516,4 @@ impl Command for Spanline {
         }
         s
     }
-}
-
-pub fn wait_ch(ch: Option<char>) -> Result<()> {
-    loop {
-        let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
-        match ch {
-            Some(ch) => match tevnt {
-                TermEvent::Key(ct_event::KeyEvent {
-                    code: ct_event::KeyCode::Char(c),
-                    modifiers: _,
-                }) if ch == c => break,
-                _ => (),
-            },
-            None => break,
-        }
-    }
-    Ok(())
 }

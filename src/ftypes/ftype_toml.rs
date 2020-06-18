@@ -10,8 +10,6 @@ use crate::{
     Error, Result,
 };
 
-use std::mem;
-
 extern "C" {
     fn tree_sitter_toml() -> ts::Language;
 }
@@ -53,16 +51,14 @@ impl Page for Toml {
     }
 
     fn to_span_line(
-        &mut self,
+        &self,
         buf: &Buffer,
         scheme: &ColorScheme,
         from: usize,
         to: usize,
     ) -> Option<Spanline> {
-        let mut atmt = mem::replace(&mut self.atmt, Default::default());
-        let res = syntax::highlight(buf, scheme, &self.tree, &mut atmt, from, to);
-        self.atmt = atmt;
-        res
+        let mut atmt = self.atmt.clone();
+        syntax::highlight(buf, scheme, &self.tree, &mut atmt, from, to)
     }
 }
 

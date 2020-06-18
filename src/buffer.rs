@@ -20,11 +20,9 @@ use std::{
 };
 
 use crate::{
-    color_scheme::{ColorScheme, Highlight},
     event::{Event, Mto, DP},
-    ftypes::PlainText,
     location::Location,
-    window::{Page, Span, Spanline, WinBuffer},
+    window::{Span, Spanline, WinBuffer},
     {err_at, Error, Result},
 };
 
@@ -113,10 +111,6 @@ pub struct Buffer {
     num: usize, // buffer number
     // Buffer states
     inner: Inner,
-    // File-type
-    page: Box<dyn Page>,
-    // Color scheme.
-    scheme: ColorScheme,
 
     // Last search command applied on this buffer.
     mto_pattern: Mto,
@@ -155,8 +149,6 @@ impl Buffer {
 
             num: *num,
             inner: Inner::Normal(NormalBuffer::new(buf)),
-            page: Box::new(PlainText),
-            scheme: Default::default(),
 
             mto_pattern: Default::default(),
             mto_find_char: Default::default(),
@@ -191,16 +183,6 @@ impl Buffer {
 
     pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
         self.read_only = read_only;
-        self
-    }
-
-    pub fn set_page(&mut self, page: Box<dyn Page>) -> &mut Self {
-        self.page = page;
-        self
-    }
-
-    pub fn set_color_scheme(&mut self, scheme: ColorScheme) -> &mut Self {
-        self.scheme = scheme;
         self
     }
 }
@@ -411,28 +393,30 @@ impl<'a> WinBuffer<'a> for Buffer {
         change.buf.len_chars()
     }
 
+    fn n_lines(&self) -> usize {
+        let change = &self.to_change();
+        change.buf.len_lines()
+    }
+
+    fn len_line(&self, line_idx: usize) -> usize {
+        let change = &self.to_change();
+        change.buf.line(line_idx).len_chars()
+    }
+
     fn is_trailing_newline(&self) -> bool {
         match self.n_chars() {
             0 => false,
             n => self.char(n - 1) == NL,
         }
     }
+}
 
-    fn to_span_line(&mut self, from: usize, to: usize) -> Result<Spanline> {
-        let mut page = mem::replace(&mut self.page, Box::new(PlainText));
-        let res = match page.to_span_line(self, &self.scheme, from, to) {
-            Some(spl) => Ok(spl),
-            None => {
-                let span: Span = {
-                    let iter = self.chars_at(from, DP::Right)?.take(to - from);
-                    String::from_iter(iter).into()
-                };
-                Ok(span.using(self.scheme.to_style(Highlight::Canvas)).into())
-            }
-        };
-        self.page = page;
-        res
-    }
+pub fn to_span_line(buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+    let span: Span = {
+        let iter = buf.chars_at(a, DP::Right)?.take(z - a);
+        String::from_iter(iter).into()
+    };
+    Ok(span.into())
 }
 
 impl Buffer {
@@ -487,19 +471,11 @@ impl Buffer {
 
 impl Buffer {
     pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
-        let mut evnt = match self.to_mode() {
+        let evnt = match self.to_mode() {
             "insert" => self.handle_i_event(evnt),
             "normal" => self.handle_n_event(evnt),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }?;
-
-        // after handling the event for buffer, handle for its file-type.
-        evnt = {
-            let mut page = mem::replace(&mut self.page, Box::new(PlainText));
-            let evnt = page.on_event(self, evnt)?;
-            self.page = page;
-            evnt
-        };
 
         Ok(evnt)
     }
