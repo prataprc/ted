@@ -1,16 +1,11 @@
-use crossterm::{
-    cursor as term_cursor, event as ct_event,
-    event::{DisableMouseCapture, EnableMouseCapture, Event as TermEvent},
-    execute, queue, style,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use crossterm::{execute, queue};
 use dirs;
 use log::trace;
 use simplelog;
 use structopt::StructOpt;
 
 use std::{
-    ffi, fmt, fs,
+    fmt, fs,
     io::{self, Write},
     path, result,
     sync::mpsc,
@@ -55,50 +50,63 @@ pub struct Opt {
     pub files: Vec<String>,
 }
 
+/// Captures the screen and cleans up on exit.
 pub struct Terminal {
-    stdout: io::Stdout,
+    /// number of colums on the screen
     pub cols: u16,
+    /// number of rows on the screen
     pub rows: u16,
+}
+
+impl From<(u16, u16)> for Terminal {
+    fn from((cols, rows): (u16, u16)) -> Terminal {
+        Terminal { cols, rows }
+    }
 }
 
 impl Terminal {
     fn init() -> Result<Terminal> {
-        let mut stdout = io::stdout();
-        err_at!(Fatal, terminal::enable_raw_mode())?;
+        use crossterm::cursor::Hide;
+        use crossterm::event::EnableMouseCapture;
+        use crossterm::terminal::{enable_raw_mode, size, EnterAlternateScreen};
+
+        let tm: Terminal = err_at!(Fatal, size())?.into();
+
+        err_at!(Fatal, enable_raw_mode())?;
         err_at!(
             Fatal,
-            execute!(
-                stdout,
-                EnterAlternateScreen,
-                EnableMouseCapture,
-                term_cursor::Hide
-            )
+            execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture, Hide)
         )?;
+        trace!(
+            "{} color_count:{}",
+            tm,
+            crossterm::style::available_color_count()
+        );
 
-        let (cols, rows) = err_at!(Fatal, terminal::size())?;
-        let tm = Terminal { stdout, cols, rows };
-
-        trace!("{} color_count:{}", tm, style::available_color_count());
         Ok(tm)
     }
 }
 
 impl fmt::Display for Terminal {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "Terminal<{},{}>", self.rows, self.cols)
+        write!(f, "Terminal<{},{}>", self.cols, self.rows)
     }
 }
 
 impl Drop for Terminal {
     fn drop(&mut self) {
+        use crossterm::cursor::Show;
+        use crossterm::event::DisableMouseCapture;
+        use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
+
         execute!(
-            self.stdout,
+            io::stdout(),
             LeaveAlternateScreen,
             DisableMouseCapture,
-            term_cursor::Show
+            Show
         )
         .unwrap();
-        terminal::disable_raw_mode().unwrap();
+        disable_raw_mode().unwrap();
     }
 }
 
@@ -111,33 +119,25 @@ pub struct State {
 
 impl State {
     pub fn new(opts: Opt) -> Result<State> {
-        use std::str::from_utf8;
+        use crate::config;
 
-        init_logger(&opts)?;
-
-        let config: toml::Value = if opts.toml_file.len() > 0 {
-            let toml_file: ffi::OsString = opts.toml_file.clone().into();
-            let toml_file = {
-                let p = err_at!(IOError, fs::canonicalize(&toml_file))?;
-                p.into_os_string()
-            };
-            let bytes = err_at!(IOError, fs::read(toml_file))?;
-            let s = err_at!(FailConvert, from_utf8(&bytes))?;
-            err_at!(FailConvert, s.parse())?
-        } else {
-            toml::Value::Table(Default::default())
-        };
-
+        // first the terminal
         let tm = Terminal::init()?;
-        let app_config: toml::Value = match config.get(&opts.app) {
-            Some(value) => value.clone(),
-            None => toml::Value::Table(Default::default()),
-        };
+        // then the logger
+        init_logger(&opts)?;
+        // then the configuration
+        let config = config::read_config(&opts.toml_file, None)?;
+        // if there is any ted-level pub-sub to be done, do it here.
         let subscribers: PubSub = Default::default();
+
+        // now we are ready to create the app.
         let app = match opts.app.as_str() {
             "code" => {
-                let coord = Coord::new(1, 1, tm.rows, tm.cols);
-                let mut app = code::Code::new(app_config, coord, opts.clone())?;
+                let mut app = {
+                    let aconfig = config::to_app_config(&config, "code");
+                    let coord = Coord::new(1, 1, tm.rows, tm.cols);
+                    code::Code::new(aconfig, coord, opts.clone())?
+                };
                 for (topic, tx) in subscribers.to_subscribers().into_iter() {
                     app.subscribe(&topic, tx)
                 }
@@ -145,6 +145,9 @@ impl State {
             }
             _ => err_at!(Invalid, msg: format!("invalid app {:?}", &opts.app)),
         }?;
+
+        // a new ted-state is created. make sure to call event_loop() to
+        // launch the application.
         Ok(State {
             tm,
             app,
@@ -168,27 +171,25 @@ impl State {
 
 impl State {
     pub fn event_loop(mut self) -> Result<String> {
+        use crossterm::cursor::{Hide, MoveTo, Show};
+
         let mut stdout = io::stdout();
         let mut stats = Latency::new();
 
         self.app.on_refresh()?;
         let Cursor { col, row } = self.app.to_cursor();
-        err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, row)))?;
-        err_at!(Fatal, queue!(stdout, term_cursor::Show))?;
+        err_at!(Fatal, queue!(stdout, MoveTo(col, row), Show))?;
         err_at!(Fatal, stdout.flush())?;
 
         'a: loop {
             // new event
-            let evnt: Event = {
-                let tevnt: TermEvent = err_at!(Fatal, ct_event::read())?;
-                tevnt.clone().into()
-            };
+            let evnt: Event = err_at!(Fatal, crossterm::event::read())?.into();
             trace!("{} {}", evnt, self.app.to_cursor());
 
             let start = SystemTime::now();
 
             // hide cursor, handle event and refresh window
-            err_at!(Fatal, queue!(stdout, term_cursor::Hide))?;
+            err_at!(Fatal, queue!(stdout, Hide))?;
             for evnt in evnt {
                 // preprocessing
                 let evnt = match evnt {
@@ -211,8 +212,7 @@ impl State {
             }
             // show-cursor
             let Cursor { col, row } = self.app.to_cursor();
-            err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, row)))?;
-            err_at!(Fatal, queue!(stdout, term_cursor::Show))?;
+            err_at!(Fatal, queue!(stdout, MoveTo(col, row), Show))?;
             err_at!(Fatal, stdout.flush())?;
 
             stats.sample(start.elapsed().unwrap());

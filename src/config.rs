@@ -8,15 +8,32 @@ use std::{
 
 use crate::{Error, Result};
 
+/// Single invocation of this macros, accepts an array of configuration params
+/// shall introduce the following artifacts:
+///
+/// a. Define a `Config` type in the invoking module.
+/// b. Derive serde::Serialize for `Config` type.
+/// c. Create a shadow type `ConfigToml` for serde Deserialize and mixins.
+/// d. Implement `Default` trait for `Config` type.
+/// c. Implement `FromStr`, TryFrom<ffi::OsString>, TryFrom<&str>, TryFrom<&[u8]>
+///    TryFrom<toml::Value> traits for `ConfigToml` that make deserialization
+///    of config from common types like - string, file, bytes and toml.
+///
 macro_rules! config {
     ($(($field:ident, $t:ty, $val:expr)),*) => (
         use serde_derive::{Serialize, Deserialize};
 
+        /// Generated using config![] macro. All configuration fields are public
+        /// and macros automatically implements serialization, deserialization,
+        /// default and mixin functionalities. Refer [config] macro for
+        /// more detail.
         #[derive(Clone, Debug, Serialize)]
         pub struct Config {
             $(pub $field: $t,)*
         }
 
+        /// Generated using config![] macro. Shadow type for [Config] type.
+        /// Refer [config] macros for more detail.
         #[derive(Clone, Debug, Deserialize)]
         pub struct ConfigToml {
             $(pub $field: Option<$t>,)*
@@ -100,47 +117,60 @@ impl TryFrom<ConfigFile> for toml::Value {
     }
 }
 
-pub fn load(app: &str, ftype: &str) -> Result<toml::Value> {
-    let files = match dirs::home_dir() {
+pub fn read_config(toml_file: &str, ftype: Option<&str>) -> Result<toml::Value> {
+    let mut files: Vec<path::PathBuf> = vec![];
+    match dirs::home_dir() {
         Some(home) => {
             let home = home.clone().into_os_string();
-            let file1: path::PathBuf = {
+            // ~/.ted.toml
+            files.push({
                 let ted_toml: ConfigFile = ".ted".into();
                 [home.clone(), ted_toml.0].iter().collect()
-            };
-            let file2: path::PathBuf = {
-                let app_toml: ConfigFile = app.into();
-                [home.clone(), ".ted".into(), "apps".into(), app_toml.0]
-                    .iter()
-                    .collect()
-            };
-            let file3: path::PathBuf = {
+            });
+            // ~/.ted/ftype/<ftype>.toml
+            if let Some(ftype) = ftype {
                 let ftype_toml: ConfigFile = ftype.into();
-                [home.clone(), ".ted".into(), "ftype".into(), ftype_toml.0]
-                    .iter()
-                    .collect()
-            };
-            vec![file1, file2, file3]
+                files.push({
+                    [home.clone(), ".ted".into(), "ftype".into(), ftype_toml.0]
+                        .iter()
+                        .collect()
+                });
+            }
         }
-        None => vec![],
-    };
+        None => (),
+    }
+
+    if toml_file.len() > 0 {
+        files.push({
+            let toml_file: ffi::OsString = toml_file.clone().into();
+            err_at!(IOError, fs::canonicalize(&toml_file))?
+        });
+    }
 
     let mut config: toml::map::Map<String, toml::Value> = Default::default();
     for fname in files.into_iter() {
-        if path::Path::new(&fname).exists() {
-            let conf: toml::Value = {
-                let cf = ConfigFile(fname.clone().into_os_string());
-                cf.try_into()?
-            };
-            match conf.as_table() {
-                Some(table) => config.extend(table.clone().into_iter()),
-                None => warn!("config file {:?} not valid", fname),
-            };
-            info!("load configuration file {:?}", fname);
-        } else {
-            warn!("fail reading config file {:?}", fname);
+        if !path::Path::new(&fname).exists() {
+            warn!("fail reading config from {:?}", fname);
+            continue;
         }
+
+        let conf: toml::Value = {
+            let cf = ConfigFile(fname.clone().into_os_string());
+            cf.try_into()?
+        };
+        match conf.as_table() {
+            Some(table) => config.extend(table.clone().into_iter()),
+            None => warn!("config file {:?} not valid", fname),
+        };
+        info!("load configuration from {:?}", fname);
     }
 
     Ok(toml::Value::Table(config))
+}
+
+pub fn to_app_config(config: &toml::Value, app: &str) -> toml::Value {
+    match config.get(app) {
+        Some(value) => value.clone(),
+        None => toml::Value::Table(Default::default()),
+    }
 }
