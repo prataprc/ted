@@ -5,8 +5,7 @@ use crate::{
     color_scheme::ColorScheme,
     event::Event,
     ftypes,
-    syntax::{Page, Syntax},
-    window::{Notify, Span},
+    window::{Notify, Page, Span, Spanline},
     Error, Result,
 };
 
@@ -50,8 +49,14 @@ impl Page for TextEn {
         }
     }
 
-    fn to_syntax<'a>(&'a self, buf: &'a Buffer, scheme: &'a ColorScheme) -> Result<Option<Syntax>> {
-        Ok(None)
+    fn to_span_line(
+        &mut self,
+        _: &Buffer,
+        _: &ColorScheme,
+        _: usize,
+        _: usize,
+    ) -> Option<Spanline> {
+        None
     }
 }
 

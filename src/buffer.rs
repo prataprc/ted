@@ -24,8 +24,7 @@ use crate::{
     event::{Event, Mto, DP},
     ftypes::PlainText,
     location::Location,
-    syntax::Page,
-    window::{Span, Spanline, WinBuffer},
+    window::{Page, Span, Spanline, WinBuffer},
     {err_at, Error, Result},
 };
 
@@ -115,7 +114,9 @@ pub struct Buffer {
     // Buffer states
     inner: Inner,
     // File-type
-    page_type: Box<dyn Page>,
+    page: Box<dyn Page>,
+    // Color scheme.
+    scheme: ColorScheme,
 
     // Last search command applied on this buffer.
     mto_pattern: Mto,
@@ -154,7 +155,8 @@ impl Buffer {
 
             num: *num,
             inner: Inner::Normal(NormalBuffer::new(buf)),
-            page_type: Box::new(PlainText),
+            page: Box::new(PlainText),
+            scheme: Default::default(),
 
             mto_pattern: Default::default(),
             mto_find_char: Default::default(),
@@ -192,8 +194,13 @@ impl Buffer {
         self
     }
 
-    pub fn set_page_type(&mut self, page_type: Box<dyn Page>) -> &mut Self {
-        self.page_type = page_type;
+    pub fn set_page(&mut self, page: Box<dyn Page>) -> &mut Self {
+        self.page = page;
+        self
+    }
+
+    pub fn set_color_scheme(&mut self, scheme: ColorScheme) -> &mut Self {
+        self.scheme = scheme;
         self
     }
 }
@@ -411,12 +418,20 @@ impl<'a> WinBuffer<'a> for Buffer {
         }
     }
 
-    fn to_span_line(&self, from: usize, to: usize, scheme: &ColorScheme) -> Result<Spanline> {
-        let span: Span = {
-            let iter = self.chars_at(from, DP::Right)?.take(to - from);
-            String::from_iter(iter).into()
+    fn to_span_line(&mut self, from: usize, to: usize) -> Result<Spanline> {
+        let mut page = mem::replace(&mut self.page, Box::new(PlainText));
+        let res = match page.to_span_line(self, &self.scheme, from, to) {
+            Some(spl) => Ok(spl),
+            None => {
+                let span: Span = {
+                    let iter = self.chars_at(from, DP::Right)?.take(to - from);
+                    String::from_iter(iter).into()
+                };
+                Ok(span.using(self.scheme.to_style(Highlight::Canvas)).into())
+            }
         };
-        Ok(span.using(scheme.to_style(Highlight::Canvas)).into())
+        self.page = page;
+        res
     }
 }
 
@@ -480,9 +495,9 @@ impl Buffer {
 
         // after handling the event for buffer, handle for its file-type.
         evnt = {
-            let mut ptype = mem::replace(&mut self.page_type, Box::new(PlainText));
-            let evnt = ptype.on_event(self, evnt)?;
-            self.page_type = ptype;
+            let mut page = mem::replace(&mut self.page, Box::new(PlainText));
+            let evnt = page.on_event(self, evnt)?;
+            self.page = page;
             evnt
         };
 

@@ -3,12 +3,13 @@ use crossterm::{
     style::{self, Attribute, Color, StyledContent},
     Command,
 };
+use tree_sitter as ts;
 use unicode_width::UnicodeWidthChar;
 
 use std::{fmt, iter::FromIterator, ops::Add, result};
 
 use crate::{
-    buffer,
+    buffer::{self, Buffer},
     color_scheme::{ColorScheme, Style},
     event::Event,
     event::DP,
@@ -114,7 +115,23 @@ pub trait WinBuffer<'a> {
     /// Return whether the last character in buffer is NEWLINE.
     fn is_trailing_newline(&self) -> bool;
 
-    fn to_span_line(&self, from: usize, to: usize, scheme: &ColorScheme) -> Result<Spanline>;
+    fn to_span_line(&mut self, from: usize, to: usize) -> Result<Spanline>;
+}
+
+pub trait Page {
+    fn to_language(&self) -> Option<ts::Language>;
+
+    fn to_name(&self) -> String;
+
+    fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event>;
+
+    fn to_span_line(
+        &mut self,
+        buf: &Buffer,
+        scheme: &ColorScheme,
+        from: usize,
+        to: usize,
+    ) -> Option<Spanline>;
 }
 
 #[derive(Clone)]

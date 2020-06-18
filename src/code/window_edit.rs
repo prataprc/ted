@@ -108,8 +108,7 @@ impl Window for WindowEdit {
                 v
             };
             let buf = app.as_buffer(&self.buffer_id);
-            buf.to_syntax(v.render(buf, app.as_color_scheme())?)
-            }
+            v.render(buf, app.as_color_scheme())?
         } else {
             let v = {
                 let (coord, cursor) = (self.coord, self.cursor);

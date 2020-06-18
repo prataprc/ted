@@ -4,11 +4,13 @@ use crate::{
     buffer::Buffer,
     color_scheme::ColorScheme,
     event::Event,
-    ftypes,
-    syntax::{Page, Syntax},
+    ftypes, syntax,
     tss::Automata,
+    window::{Page, Spanline},
     Error, Result,
 };
+
+use std::mem;
 
 extern "C" {
     fn tree_sitter_toml() -> ts::Language;
@@ -31,10 +33,6 @@ impl Toml {
 
         Ok(Toml { parser, tree, atmt })
     }
-
-    fn set_style(&mut self, scheme: &ColorScheme) -> &mut Self {
-        self
-    }
 }
 
 impl Page for Toml {
@@ -54,13 +52,17 @@ impl Page for Toml {
         }
     }
 
-    fn to_syntax<'a>(&'a self, buf: &'a Buffer, scheme: &'a ColorScheme) -> Result<Option<Syntax>> {
-        Ok(Some(Syntax::new(
-            buf,
-            &self.tree,
-            self.atmt.clone(),
-            scheme,
-        )))
+    fn to_span_line(
+        &mut self,
+        buf: &Buffer,
+        scheme: &ColorScheme,
+        from: usize,
+        to: usize,
+    ) -> Option<Spanline> {
+        let mut atmt = mem::replace(&mut self.atmt, Default::default());
+        let res = syntax::highlight(buf, scheme, &self.tree, &mut atmt, from, to);
+        self.atmt = atmt;
+        res
     }
 }
 

@@ -4,7 +4,7 @@ use crate::{
     buffer::Buffer,
     color_scheme::ColorScheme,
     event::Event,
-    syntax::{Page, Syntax},
+    window::{Page, Spanline},
     Result,
 };
 
@@ -24,7 +24,13 @@ impl Page for PlainText {
         Ok(evnt)
     }
 
-    fn to_syntax<'a>(&'a self, buf: &'a Buffer, scheme: &'a ColorScheme) -> Result<Option<Syntax>> {
-        Ok(None)
+    fn to_span_line(
+        &mut self,
+        _: &Buffer,
+        _: &ColorScheme,
+        _: usize,
+        _: usize,
+    ) -> Option<Spanline> {
+        None
     }
 }

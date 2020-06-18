@@ -1,153 +1,107 @@
+use log::error;
 use tree_sitter as ts;
 
 use std::{cmp, iter::FromIterator};
 
 use crate::{
-    buffer::{self, Buffer},
+    buffer::Buffer,
     color_scheme::{ColorScheme, Highlight, Style},
-    event::{Event, DP},
+    event::DP,
     tss::{Automata, Token},
     window::{Span, Spanline, WinBuffer},
     Result,
 };
 
-pub trait Page {
-    fn to_language(&self) -> Option<ts::Language>;
+pub fn highlight(
+    buf: &Buffer,
+    scheme: &ColorScheme,
+    tree: &ts::Tree,
+    atmt: &mut Automata,
+    from: usize,
+    to: usize,
+) -> Option<Spanline> {
+    let canvas = scheme.to_style(Highlight::Canvas);
+    let root = tree.root_node();
+    let mut syns = {
+        let (depth, sibling) = (0, 0);
+        let tok = Token::from_node(buf, &root, depth, sibling);
+        match atmt.shift_in(&tok) {
+            Ok(Some(style)) => vec![SyntSpan {
+                depth: tok.depth,
+                a: tok.a,
+                z: tok.z,
+                style,
+            }],
+            Ok(None) => vec![],
+            Err(err) => {
+                error!("highlighting {}", err);
+                return None;
+            }
+        }
+    };
 
-    fn to_name(&self) -> String;
+    let depth = 1;
+    match do_highlight(buf, scheme, tree, atmt, root, depth, from, to) {
+        Ok(ls) => syns.extend(ls),
+        Err(err) => {
+            error!("highlighting {}", err);
+            return None;
+        }
+    }
+    syns.sort();
 
-    fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event>;
+    let mut hl_spans = HlSpans::new(canvas);
+    syns.into_iter().for_each(|syn| hl_spans.push(syn));
 
-    fn to_syntax<'a>(
-        &'a self,
-        buf: &'a Buffer,
-        scheme: &'a ColorScheme,
-    ) -> Result<Option<Syntax<'a>>>;
-}
-
-pub struct Syntax<'a> {
-    buf: &'a Buffer,
-    tree: &'a ts::Tree,
-    atmt: Automata,
-    scheme: &'a ColorScheme,
-}
-
-impl<'a> Syntax<'a> {
-    pub fn new(
-        buf: &'a Buffer,
-        tree: &'a ts::Tree,
-        atmt: Automata,
-        scheme: &'a ColorScheme,
-    ) -> Syntax<'a> {
-        Syntax {
-            buf,
-            tree,
-            atmt,
-            scheme,
+    match hl_spans.into_span_line(buf) {
+        Ok(spl) => Some(spl),
+        Err(err) => {
+            error!("highlighting {}", err);
+            None
         }
     }
 }
 
-impl<'a> WinBuffer<'a> for Syntax<'a> {
-    type IterLine = buffer::IterLine<'a>;
-    type IterChar = buffer::IterChar<'a>;
+fn do_highlight(
+    buf: &Buffer,
+    scheme: &ColorScheme,
+    tree: &ts::Tree,
+    atmt: &mut Automata,
+    node: ts::Node,
+    depth: usize, // 0 is root level
+    from: usize,  // character offset to highlight, inclusive
+    to: usize,    // character offset to highlight, exclusive
+) -> Result<Vec<SyntSpan>> {
+    let mut syns = vec![];
+    let range = from..to;
+    let mut tc = node.walk();
 
-    fn to_xy_cursor(&self) -> buffer::Cursor {
-        self.buf.to_xy_cursor()
-    }
-
-    fn lines_at(&'a self, line_idx: usize, dp: DP) -> Result<Self::IterLine> {
-        self.buf.lines_at(line_idx, dp)
-    }
-
-    fn chars_at(&'a self, char_idx: usize, dp: DP) -> Result<Self::IterChar> {
-        self.buf.chars_at(char_idx, dp)
-    }
-
-    fn line_to_char(&self, line_idx: usize) -> usize {
-        self.buf.line_to_char(line_idx)
-    }
-
-    fn char_to_line(&self, char_idx: usize) -> usize {
-        self.char_to_line(char_idx)
-    }
-
-    fn n_chars(&self) -> usize {
-        self.buf.n_chars()
-    }
-
-    fn is_trailing_newline(&self) -> bool {
-        self.is_trailing_newline()
-    }
-
-    fn to_span_line(&self, from: usize, to: usize, scheme: &ColorScheme) -> Result<Spanline> {
-        todo!()
-    }
-}
-
-impl<'a> Syntax<'a> {
-    pub fn highlight(&mut self, from: usize, to: usize) -> Result<Spanline> {
-        let canvas = self.scheme.to_style(Highlight::Canvas);
-        let root = self.tree.root_node();
-        let mut syns = {
-            let (depth, sibling) = (0, 0);
-            let tok = Token::from_node(self.buf, &root, depth, sibling);
-            match self.atmt.shift_in(&tok)? {
-                Some(style) => vec![SyntSpan {
+    for (sibling, child) in node.children(&mut tc).enumerate() {
+        let tok = Token::from_node(buf, &child, depth, sibling);
+        if range.contains(&tok.a) || range.contains(&tok.z) {
+            match atmt.shift_in(&tok)? {
+                Some(style) => syns.push(SyntSpan {
                     depth: tok.depth,
                     a: tok.a,
                     z: tok.z,
                     style,
-                }],
-                None => vec![],
-            }
-        };
-
-        syns.extend(self.do_highlight(root, 1 /*depth*/, from, to)?);
-        syns.sort();
-
-        let mut hl_spans = HlSpans::new(canvas);
-        syns.into_iter().for_each(|syn| hl_spans.push(syn));
-
-        hl_spans.into_span_line(self.buf)
-    }
-
-    fn do_highlight<'x>(
-        &mut self,
-        node: ts::Node<'x>,
-        mut depth: usize, // 0 is root level
-        from: usize,      // character offset to highlight, inclusive
-        to: usize,        // character offset to highlight, exclusive
-    ) -> Result<Vec<SyntSpan>> {
-        let mut syns = vec![];
-        let range = from..to;
-        let mut tc = node.walk();
-
-        for (sibling, child) in node.children(&mut tc).enumerate() {
-            let tok = Token::from_node(self.buf, &child, depth, sibling);
-            if range.contains(&tok.a) || range.contains(&tok.z) {
-                match self.atmt.shift_in(&tok)? {
-                    Some(style) => syns.push(SyntSpan {
-                        depth: tok.depth,
-                        a: tok.a,
-                        z: tok.z,
-                        style,
-                    }),
-                    None => (),
-                }
+                }),
+                None => (),
             }
         }
-
-        depth += 1;
-        for (sibling, child) in node.children(&mut tc).enumerate() {
-            let tok = Token::from_node(self.buf, &child, depth, sibling);
-            if range.contains(&tok.a) || range.contains(&tok.z) {
-                syns.extend(self.do_highlight(child, depth, from, to)?)
-            }
-        }
-
-        Ok(syns)
     }
+
+    for (sibling, child) in node.children(&mut tc).enumerate() {
+        let tok = Token::from_node(buf, &child, depth, sibling);
+        if range.contains(&tok.a) || range.contains(&tok.z) {
+            syns.extend({
+                let depth = depth + 1;
+                do_highlight(buf, scheme, tree, atmt, child, depth, from, to)?
+            });
+        }
+    }
+
+    Ok(syns)
 }
 
 struct SyntSpan {
