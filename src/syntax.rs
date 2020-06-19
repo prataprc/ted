@@ -5,7 +5,7 @@ use std::{cmp, iter::FromIterator};
 
 use crate::{
     buffer::Buffer,
-    color_scheme::{ColorScheme, Highlight},
+    colors::{ColorScheme, Highlight},
     event::DP,
     term::Style,
     term::{Span, Spanline},

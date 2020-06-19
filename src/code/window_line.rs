@@ -12,7 +12,7 @@ use std::{
 use crate::{
     buffer::{self, Buffer},
     code::{keymap::Keymap, Code},
-    color_scheme::Highlight,
+    colors::Highlight,
     event::Event,
     location::Location,
     term::{Span, Spanline},

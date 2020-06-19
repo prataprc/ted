@@ -14,7 +14,7 @@ pub mod state;
 pub mod term;
 
 pub mod buffer;
-pub mod color_scheme;
+pub mod colors;
 pub mod event;
 pub mod location;
 pub mod pubsub;

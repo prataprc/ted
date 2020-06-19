@@ -6,7 +6,7 @@ use crate::{
     app::Application,
     buffer::{self, Buffer},
     code::{config::Config, keymap::Keymap, Code},
-    color_scheme::{ColorScheme, Highlight},
+    colors::{ColorScheme, Highlight},
     event::Event,
     ftypes::PlainText,
     term::Spanline,

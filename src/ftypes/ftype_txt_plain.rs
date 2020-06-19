@@ -1,7 +1,7 @@
 use tree_sitter as ts;
 
 use crate::{
-    buffer::Buffer, color_scheme::ColorScheme, event::Event, term::Spanline, window::Page, Result,
+    buffer::Buffer, colors::ColorScheme, event::Event, term::Spanline, window::Page, Result,
 };
 
 #[derive(Default, Clone)]

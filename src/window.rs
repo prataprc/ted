@@ -4,7 +4,7 @@ use std::{fmt, ops::Add, result};
 
 use crate::{
     buffer::{self, Buffer},
-    color_scheme::ColorScheme,
+    colors::ColorScheme,
     event::Event,
     event::DP,
     term::{Span, Spanline},

@@ -36,7 +36,7 @@ use crate::{
         cmd::Command, config::Config, window_file::WindowFile, window_less::WindowLess,
         window_line::WindowLine, window_prompt::WindowPrompt,
     },
-    color_scheme::{ColorScheme, Highlight},
+    colors::{ColorScheme, Highlight},
     event::{self, Event},
     location::Location,
     pubsub::PubSub,
@@ -49,7 +49,7 @@ use crate::{
 pub struct Code {
     coord: Coord,
     config: Config,
-    color_scheme: ColorScheme,
+    scheme: ColorScheme,
     subscribers: PubSub,
     buffers: Vec<Buffer>,
 
@@ -109,7 +109,7 @@ impl Code {
         let mut app = Code {
             coord,
             config,
-            color_scheme: Default::default(),
+            scheme: Default::default(),
             subscribers: Default::default(),
             buffers: Default::default(),
 
@@ -129,7 +129,7 @@ impl Code {
             Inner::Edit { stsline }
         };
 
-        Code::draw_screen(app.coord, &app.color_scheme)?;
+        Code::draw_screen(app.coord, &app.scheme)?;
 
         app.wfile = {
             let wf_coord = {
@@ -223,7 +223,7 @@ impl Code {
     }
 
     fn as_color_scheme(&self) -> &ColorScheme {
-        &self.color_scheme
+        &self.scheme
     }
 }
 
@@ -308,11 +308,11 @@ impl Code {
         for (loc, err) in efiles.into_iter() {
             let span1 = {
                 let st = format!("{:?} : {}", loc.to_long_string()?, err);
-                span!(st: st).using(self.color_scheme.to_style(Highlight::Error))
+                span!(st: st).using(self.scheme.to_style(Highlight::Error))
             };
             let span2 = {
                 let span = span!(st: format!("-press any key to continue-"));
-                span.using(self.color_scheme.to_style(Highlight::Prompt))
+                span.using(self.scheme.to_style(Highlight::Prompt))
             };
             let span_lines: Vec<Spanline> = vec![span1.into(), span2.into()];
             wps.push(WindowPrompt::new(prompt_coord, span_lines));

@@ -1,7 +1,7 @@
 use std::{cmp, fmt, result};
 
 use crate::{
-    color_scheme::{ColorScheme, Highlight},
+    colors::{ColorScheme, Highlight},
     term::{Span, Style},
 };
 

@@ -2,7 +2,7 @@ use tree_sitter as ts;
 
 use crate::{
     buffer::Buffer,
-    color_scheme::ColorScheme,
+    colors::ColorScheme,
     event::Event,
     ftypes,
     term::{Span, Spanline},

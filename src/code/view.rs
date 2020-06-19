@@ -13,7 +13,7 @@ use std::{
 use crate::{
     buffer::{self, Buffer},
     code::col_nu::{ColKind, ColNu},
-    color_scheme::{ColorScheme, Highlight},
+    colors::{ColorScheme, Highlight},
     term::Span,
     window::{Coord, Cursor, Render, WinBuffer},
     Error, Result,

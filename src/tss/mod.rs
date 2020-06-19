@@ -4,7 +4,7 @@ use std::{borrow::Borrow, convert::TryFrom, fmt, mem, rc::Rc, result};
 
 use crate::{
     buffer::Buffer,
-    color_scheme::{ColorScheme, Highlight},
+    colors::{ColorScheme, Highlight},
     term::Style,
     Error, Result,
 };
