@@ -12,7 +12,7 @@ rules can be provided in ``.tss`` format.
 For adding a new sub-module,
 
 ```
-$ git submodule add https://github.com/prataprc/tree-sitter-toml toml
+$ git submodule add https://github.com/prataprc/tree-sitter-toml src/tss/toml
 $ git commit -am 'ts/toml: add new tree-sitter parser'
 $ git push origin master
 ```

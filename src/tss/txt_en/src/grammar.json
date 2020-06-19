@@ -1,0 +1,56 @@
+{
+  "name": "txt_en",
+  "rules": {
+    "source_file": {
+      "type": "REPEAT",
+      "content": {
+        "type": "CHOICE",
+        "members": [
+          {
+            "type": "SYMBOL",
+            "name": "word"
+          },
+          {
+            "type": "SYMBOL",
+            "name": "wword"
+          },
+          {
+            "type": "SYMBOL",
+            "name": "dot"
+          },
+          {
+            "type": "SYMBOL",
+            "name": "nl"
+          }
+        ]
+      }
+    },
+    "word": {
+      "type": "PATTERN",
+      "value": "\\w+[\\x09\\x0b\\x0c\\x0d\\x20]*"
+    },
+    "wword": {
+      "type": "PATTERN",
+      "value": "[^\\x09\\x0b\\x0c\\x0d\\x20\\x0a\\.]+(\\.[^\\x09\\x0b\\x0c\\x0d\\x20\\x0a\\.]+)*[\\x09\\x0b\\x0c\\x0d\\x20]*"
+    },
+    "dot": {
+      "type": "PATTERN",
+      "value": "\\.[\\x09\\x0b\\x0c\\x0d\\x20]*"
+    },
+    "nl": {
+      "type": "PATTERN",
+      "value": "(\\x0a\\x0d)|(\\x0d\\x0a)|\\x0a[\\x09\\x0b\\x0c\\x0d\\x20]*"
+    }
+  },
+  "extras": [
+    {
+      "type": "PATTERN",
+      "value": "\\s"
+    }
+  ],
+  "conflicts": [],
+  "externals": [],
+  "inline": [],
+  "supertypes": []
+}
+

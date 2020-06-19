@@ -19,10 +19,7 @@ impl Toml {
     fn new(content: &str, scheme: &ColorScheme) -> Result<Toml> {
         let lang = unsafe { tree_sitter_toml() };
         let (parser, tree) = ftypes::new_parser(content, lang)?;
-        let atmt = {
-            let tss = include_str!("../../ts/toml.tss");
-            Automata::from_str(tss, scheme)?
-        };
+        let atmt = Automata::from_str(tss::toml, scheme)?;
 
         Ok(Toml { parser, tree, atmt })
     }

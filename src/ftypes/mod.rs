@@ -3,6 +3,7 @@ use tree_sitter as ts;
 use crate::{Error, Result};
 
 mod ftype_toml;
+mod ftype_tss;
 mod ftype_txt_en;
 mod ftype_txt_plain;
 

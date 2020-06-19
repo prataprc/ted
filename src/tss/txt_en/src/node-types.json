@@ -1,0 +1,45 @@
+[
+  {
+    "type": "source_file",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "dot",
+          "named": true
+        },
+        {
+          "type": "nl",
+          "named": true
+        },
+        {
+          "type": "word",
+          "named": true
+        },
+        {
+          "type": "wword",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "dot",
+    "named": true
+  },
+  {
+    "type": "nl",
+    "named": true
+  },
+  {
+    "type": "word",
+    "named": true
+  },
+  {
+    "type": "wword",
+    "named": true
+  }
+]

@@ -1,3 +1,3 @@
-[submodule "ts/toml"]
-	path = ts/toml
+[submodule "src/tss/toml"]
+	path = src/tss/toml
 	url = https://github.com/prataprc/tree-sitter-toml

@@ -17,6 +17,7 @@ impl fmt::Display for ColorScheme {
         write!(f, "ColorScheme<{}>", self.name)
     }
 }
+
 impl Default for ColorScheme {
     fn default() -> ColorScheme {
         let toml_style: toml::Value = DEFAULT_STYLE.parse().unwrap();
@@ -63,6 +64,12 @@ impl TryFrom<toml::Value> for ColorScheme {
         Ok(ColorScheme { name, hs })
     }
 }
+
+//impl ColorScheme {
+//    fn load_color_schemes() -> Vec<ColorScheme> {
+//        include_str!("../colors")
+//    }
+//}
 
 impl ColorScheme {
     pub fn to_style(&self, hl: Highlight) -> Style {

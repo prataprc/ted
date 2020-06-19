@@ -96,7 +96,7 @@ impl Drop for Terminal {
     }
 }
 
-/// Attribute details for terminal.
+/// Attribute details for terminal text.
 #[derive(Clone)]
 pub enum Attribute {
     Reset,
@@ -131,7 +131,7 @@ impl fmt::Display for Attribute {
     }
 }
 
-/// Color details for terminal.
+/// Color details for terminal text.
 #[derive(Clone)]
 pub enum Color {
     Reset,

@@ -48,23 +48,23 @@ fn main() {
     let parsers = vec![
         Parser {
             name: "txt_en".to_string(),
-            dir: "ts/txt_en".into(),
-            grammar: "ts/txt_en/grammar.js".into(),
-            sources: vec!["ts/txt_en/src/parser.c".into()],
+            dir: "src/ts/txt_en".into(),
+            grammar: "src/ts/txt_en/grammar.js".into(),
+            sources: vec!["src/ts/txt_en/src/parser.c".into()],
         },
         Parser {
             name: "tss".to_string(),
-            dir: "ts/tss".into(),
-            grammar: "ts/tss/grammar.js".into(),
-            sources: vec!["ts/tss/src/parser.c".into()],
+            dir: "src/ts/tss".into(),
+            grammar: "src/ts/tss/grammar.js".into(),
+            sources: vec!["src/ts/tss/src/parser.c".into()],
         },
         Parser {
             name: "toml".to_string(),
-            dir: "ts/toml".into(),
-            grammar: "ts/toml/grammar.js".into(),
+            dir: "src/ts/toml".into(),
+            grammar: "src/ts/toml/grammar.js".into(),
             sources: vec![
-                "ts/toml/src/parser.c".into(),
-                "ts/toml/src/scanner.c".into(),
+                "src/ts/toml/src/parser.c".into(),
+                "src/ts/toml/src/scanner.c".into(),
             ],
         },
     ];
