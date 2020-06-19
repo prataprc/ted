@@ -7,21 +7,24 @@ use std::{fmt, result};
 pub mod util;
 #[macro_use]
 pub mod config;
-pub mod color_scheme;
-pub mod location;
-mod tabc;
-pub mod tss;
-
-pub mod app;
-pub mod buffer;
-pub mod event;
-pub mod pubsub;
-pub mod state;
-pub mod syntax;
 #[macro_use]
 pub mod window;
 
+pub mod state;
+pub mod term;
+
+pub mod buffer;
+pub mod color_scheme;
+pub mod event;
+pub mod location;
+pub mod pubsub;
+pub mod syntax;
+pub mod tabc;
+pub mod tss;
+
+pub mod app;
 mod code;
+
 mod ftypes;
 
 pub type Result<T> = result::Result<T, Error>;

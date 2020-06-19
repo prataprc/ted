@@ -1,13 +1,10 @@
-use crossterm::{execute, queue};
 use dirs;
 use log::trace;
 use simplelog;
 use structopt::StructOpt;
 
 use std::{
-    fmt, fs,
-    io::{self, Write},
-    path, result,
+    fs, path,
     sync::mpsc,
     time::{Duration, SystemTime},
 };
@@ -17,7 +14,8 @@ use crate::{
     code,
     event::Event,
     pubsub::PubSub,
-    window::{Coord, Cursor, Notify},
+    term::{self, Terminal},
+    window::{Coord, Notify},
     Error, Result,
 };
 
@@ -48,66 +46,6 @@ pub struct Opt {
     pub version: bool,
 
     pub files: Vec<String>,
-}
-
-/// Captures the screen and cleans up on exit.
-pub struct Terminal {
-    /// number of colums on the screen
-    pub cols: u16,
-    /// number of rows on the screen
-    pub rows: u16,
-}
-
-impl From<(u16, u16)> for Terminal {
-    fn from((cols, rows): (u16, u16)) -> Terminal {
-        Terminal { cols, rows }
-    }
-}
-
-impl Terminal {
-    fn init() -> Result<Terminal> {
-        use crossterm::cursor::Hide;
-        use crossterm::event::EnableMouseCapture;
-        use crossterm::terminal::{enable_raw_mode, size, EnterAlternateScreen};
-
-        let tm: Terminal = err_at!(Fatal, size())?.into();
-
-        err_at!(Fatal, enable_raw_mode())?;
-        err_at!(
-            Fatal,
-            execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture, Hide)
-        )?;
-        trace!(
-            "{} color_count:{}",
-            tm,
-            crossterm::style::available_color_count()
-        );
-
-        Ok(tm)
-    }
-}
-
-impl fmt::Display for Terminal {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "Terminal<{},{}>", self.cols, self.rows)
-    }
-}
-
-impl Drop for Terminal {
-    fn drop(&mut self) {
-        use crossterm::cursor::Show;
-        use crossterm::event::DisableMouseCapture;
-        use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
-
-        execute!(
-            io::stdout(),
-            LeaveAlternateScreen,
-            DisableMouseCapture,
-            Show
-        )
-        .unwrap();
-        disable_raw_mode().unwrap();
-    }
 }
 
 // Application state
@@ -173,15 +111,11 @@ impl State {
 
 impl State {
     pub fn event_loop(mut self) -> Result<String> {
-        use crossterm::cursor::{Hide, MoveTo, Show};
-
-        let mut stdout = io::stdout();
         let mut stats = Latency::new();
 
+        // initial screen refresh
         self.app.on_refresh()?;
-        let Cursor { col, row } = self.app.to_cursor();
-        err_at!(Fatal, queue!(stdout, MoveTo(col, row), Show))?;
-        err_at!(Fatal, stdout.flush())?;
+        term::flush(self.app.to_cursor())?;
 
         'a: loop {
             // new event
@@ -191,15 +125,15 @@ impl State {
             let start = SystemTime::now();
 
             // hide cursor, handle event and refresh window
-            err_at!(Fatal, queue!(stdout, Hide))?;
-            for evnt in evnt {
+            term::hide_cursor()?;
+            for mut evnt in evnt {
                 // preprocessing
-                let evnt = match evnt {
+                match &evnt {
                     Event::Char('q', _) if evnt.is_control() => break 'a,
-                    _ => evnt,
+                    _ => (),
                 };
                 // dispatch
-                let evnt = {
+                evnt = {
                     let evnt = self.app.on_event(evnt)?;
                     self.app.on_refresh()?;
                     evnt
@@ -212,10 +146,7 @@ impl State {
                     }
                 }
             }
-            // show-cursor
-            let Cursor { col, row } = self.app.to_cursor();
-            err_at!(Fatal, queue!(stdout, MoveTo(col, row), Show))?;
-            err_at!(Fatal, stdout.flush())?;
+            term::flush(self.app.to_cursor())?;
 
             stats.sample(start.elapsed().unwrap());
         }
