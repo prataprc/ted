@@ -1,8 +1,14 @@
 use tree_sitter as ts;
 
 use crate::{
-    buffer::Buffer, color_scheme::ColorScheme, event::Event, ftypes, syntax, term::Spanline,
-    tss::Automata, window::Page, Error, Result,
+    buffer::Buffer,
+    color_scheme::ColorScheme,
+    event::Event,
+    ftypes, syntax,
+    term::Spanline,
+    tss::{self, Automata},
+    window::Page,
+    Error, Result,
 };
 
 extern "C" {
@@ -19,7 +25,7 @@ impl Toml {
     fn new(content: &str, scheme: &ColorScheme) -> Result<Toml> {
         let lang = unsafe { tree_sitter_toml() };
         let (parser, tree) = ftypes::new_parser(content, lang)?;
-        let atmt = Automata::from_str(tss::toml, scheme)?;
+        let atmt = Automata::from_str(tss::TOML, scheme)?;
 
         Ok(Toml { parser, tree, atmt })
     }

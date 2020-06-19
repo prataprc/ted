@@ -10,10 +10,10 @@ use crate::{
 };
 
 /// Ted style sheet for `toml` format.
-pub const toml: &'static str = include_str("toml.tss");
+pub const TOML: &'static str = include_str!("toml.tss");
 
 /// Ted style sheet for `tss` format, tss stands for ted-style-sheet.
-pub const toml: &'static str = include_str("tss.tss");
+pub const TSS: &'static str = include_str!("tss.tss");
 
 macro_rules! wrap_edge {
     ($edge:expr, $varn:ident) => {{
@@ -23,6 +23,10 @@ macro_rules! wrap_edge {
         };
         Ok(())
     }};
+}
+
+extern "C" {
+    fn tree_sitter_tss() -> ts::Language;
 }
 
 pub struct Token {

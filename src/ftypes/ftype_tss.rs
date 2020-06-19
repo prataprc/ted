@@ -4,10 +4,10 @@ use crate::{
     buffer::Buffer,
     color_scheme::ColorScheme,
     event::Event,
-    ftypes,
-    term::{Span, Spanline},
-    tss,
-    window::{Notify, Page},
+    ftypes, syntax,
+    term::Spanline,
+    tss::{self, Automata},
+    window::Page,
     Error, Result,
 };
 
@@ -22,10 +22,10 @@ pub struct Tss {
 }
 
 impl Tss {
-    fn new(content: &str) -> Result<Tss> {
+    fn new(content: &str, scheme: &ColorScheme) -> Result<Tss> {
         let lang = unsafe { tree_sitter_tss() };
         let (parser, tree) = ftypes::new_parser(content, lang)?;
-        let atmt = Automata::from_str(tss::tss, scheme)?;
+        let atmt = Automata::from_str(tss::TSS, scheme)?;
         Ok(Tss { parser, tree, atmt })
     }
 }
@@ -47,7 +47,13 @@ impl Page for Tss {
         }
     }
 
-    fn to_span_line(&self, _: &Buffer, _: &ColorScheme, _: usize, _: usize) -> Option<Spanline> {
+    fn to_span_line(
+        &self,
+        buf: &Buffer,
+        scheme: &ColorScheme,
+        from: usize,
+        to: usize,
+    ) -> Option<Spanline> {
         let mut atmt = self.atmt.clone();
         syntax::highlight(buf, scheme, &self.tree, &mut atmt, from, to)
     }
