@@ -9,7 +9,8 @@ use crate::{
     color_scheme::{ColorScheme, Highlight},
     event::Event,
     ftypes::PlainText,
-    window::{Coord, Cursor, Page, Render, Spanline, WinBuffer, Window},
+    term::Spanline,
+    window::{Coord, Cursor, Page, Render, WinBuffer, Window},
     Result,
 };
 

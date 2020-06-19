@@ -1,15 +1,39 @@
 //! Module manages all things related to terminal.
 
-use crossterm::{execute, queue};
+use crossterm::{self, execute, queue, style::StyledContent, Command};
 use log::trace;
+use unicode_width::UnicodeWidthChar;
 
 use std::{
     fmt,
     io::{self, Write},
+    iter::FromIterator,
     result,
 };
 
 use crate::{window::Cursor, Error, Result};
+
+/// Flush the terminal with cursor position.
+#[inline]
+pub fn flush(cursor: Cursor) -> Result<()> {
+    use crossterm::cursor::{MoveTo, Show};
+
+    let mut stdout = io::stdout();
+    let Cursor { col, row } = cursor;
+    err_at!(Fatal, queue!(stdout, MoveTo(col, row), Show))?;
+    err_at!(Fatal, stdout.flush())?;
+    Ok(())
+}
+
+/// Hide the cursor, subsequently application shall buffer the changes.
+#[inline]
+pub fn hide_cursor() -> Result<()> {
+    use crossterm::cursor::Hide;
+
+    let mut stdout = io::stdout();
+    err_at!(Fatal, queue!(stdout, Hide))?;
+    Ok(())
+}
 
 /// Captures the screen and cleans up on exit.
 pub struct Terminal {
@@ -72,89 +96,43 @@ impl Drop for Terminal {
     }
 }
 
-/// Flush the terminal with cursor position.
-#[inline]
-pub fn flush(cursor: Cursor) -> Result<()> {
-    use crossterm::cursor::{MoveTo, Show};
-
-    let mut stdout = io::stdout();
-    let Cursor { col, row } = cursor;
-    err_at!(Fatal, queue!(stdout, MoveTo(col, row), Show))?;
-    err_at!(Fatal, stdout.flush())?;
-    Ok(())
-}
-
-/// Hide the cursor, subsequently application shall buffer the changes.
-#[inline]
-pub fn hide_cursor() -> Result<()> {
-    use crossterm::cursor::Hide;
-
-    let mut stdout = io::stdout();
-    err_at!(Fatal, queue!(stdout, Hide))?;
-    Ok(())
-}
-
+/// Attribute details for terminal.
+#[derive(Clone)]
 pub enum Attribute {
     Reset,
     Bold,
-    Dim,
     Underlined,
     Reverse,
-    Hidden,
-    NoBold,
-    NormalIntensity,
-    NoUnderline,
-    NoBlink,
-    NoReverse,
-    NoHidden,
 }
 
 impl From<Attribute> for crossterm::style::Attribute {
     fn from(attr: Attribute) -> crossterm::style::Attribute {
-        use Attribute::NormalIntensity;
-        use Attribute::{Bold, Dim, Hidden, Reset, Reverse, Underlined};
-        use Attribute::{NoBlink, NoBold, NoHidden, NoReverse, NoUnderline};
+        use Attribute::{Bold, Reset, Reverse, Underlined};
 
         match attr {
             Reset => crossterm::style::Attribute::Reset,
             Bold => crossterm::style::Attribute::Bold,
-            Dim => crossterm::style::Attribute::Dim,
             Underlined => crossterm::style::Attribute::Underlined,
             Reverse => crossterm::style::Attribute::Reverse,
-            Hidden => crossterm::style::Attribute::Hidden,
-            NoBold => crossterm::style::Attribute::NoBold,
-            NormalIntensity => crossterm::style::Attribute::NormalIntensity,
-            NoUnderline => crossterm::style::Attribute::NoUnderline,
-            NoBlink => crossterm::style::Attribute::NoBlink,
-            NoReverse => crossterm::style::Attribute::NoReverse,
-            NoHidden => crossterm::style::Attribute::NoHidden,
         }
     }
 }
 
 impl fmt::Display for Attribute {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Attribute::NormalIntensity;
-        use Attribute::{Bold, Dim, Hidden, Reset, Reverse, Underlined};
-        use Attribute::{NoBlink, NoBold, NoHidden, NoReverse, NoUnderline};
+        use Attribute::{Bold, Reset, Reverse, Underlined};
 
         match self {
             Reset => write!(f, "reset"),
             Bold => write!(f, "bold"),
-            Dim => write!(f, "dim"),
             Underlined => write!(f, "underlined"),
             Reverse => write!(f, "reverse"),
-            Hidden => write!(f, "hidden"),
-            NormalIntensity => write!(f, "normal-intensity"),
-            NoBold => write!(f, "no-bold"),
-            NoUnderline => write!(f, "no-underline"),
-            NoBlink => write!(f, "no-blink"),
-            NoReverse => write!(f, "no-reverse"),
-            NoHidden => write!(f, "no-hidden"),
         }
     }
 }
 
+/// Color details for terminal.
+#[derive(Clone)]
 pub enum Color {
     Reset,
     Black,
@@ -236,5 +214,357 @@ impl fmt::Display for Color {
             Rgb { r, g, b } => write!(f, "rgb<{},{},{}>", r, g, b),
             AnsiValue(val) => write!(f, "ansi-value<{}>", val),
         }
+    }
+}
+
+/// Style describes the background-color, foreground-color
+/// and display attributes.
+#[derive(Clone)]
+pub struct Style {
+    pub bg: Color,
+    pub fg: Color,
+    pub attrs: Vec<Attribute>,
+}
+
+impl fmt::Display for Style {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        let attrs: Vec<String> = {
+            let iter = self.attrs.iter().map(|a| a.to_string());
+            iter.collect()
+        };
+        write!(f, "fg:{},bg:{},attrs:{}", self.bg, self.fg, attrs.join("|"))
+    }
+}
+
+impl Default for Style {
+    fn default() -> Style {
+        Style {
+            fg: Color::White,
+            bg: Color::Black,
+            attrs: Default::default(),
+        }
+    }
+}
+
+impl Style {
+    /// Create a style description from toml value. Eg: toml format.
+    ///
+    /// { on: <color>, with: <color>, attr: <attr> }
+    ///
+    /// * "on" and "bg" are treated as equivalent.
+    /// * "with" and "fg" are treated as equivalent.
+    /// * "attr" and "attribute" are treated as equivalent.
+    /// * for <color> refer to [to_color] method for details.
+    /// * for <attr> refer to [to_color] method for details.
+    pub fn from_toml(value: &toml::Value, canvas: &Style) -> Result<Style> {
+        use crate::Error::Invalid;
+
+        let table = {
+            let err = Invalid(format!("bad style"));
+            value.as_table().ok_or(err)?
+        };
+
+        let mut style: Style = Default::default();
+        for (key, value) in table.iter() {
+            let value = {
+                let msg = format!("bad style key:{:?} value:{:?}", key, value);
+                value.as_str().ok_or(Invalid(msg))?
+            };
+            match key.as_str() {
+                "on" | "bg" => style.bg = Style::to_color(value, canvas)?,
+                "with" | "fg" => style.fg = Style::to_color(value, canvas)?,
+                "attr" | "attribute" => style.attrs = Style::to_attrs(value)?,
+                _ => (),
+            }
+        }
+
+        Ok(style)
+    }
+
+    /// Can be one of the the following literal.
+    ///
+    /// * reset, black, grey, darkgrey, dark-grey, dark_grey,
+    /// * red, darkred, dark-red, dark_red,
+    /// * green, darkgreen, dark-green, dark_green,
+    /// * yellow, darkyellow, dark-yellow, dark_yellow,
+    /// * blue, darkblue, dark-blue, dark_blue,
+    /// * magenta, darkmagenta, dark-magenta, dark_magenta,
+    /// * cyan, darkcyan, dark-cyan, dark_cyan,
+    /// * white
+    /// * bg-canvas, use the canvas' background color,
+    /// * fg-canvas, use the canvas' foreground color,
+    pub fn to_color(color: &str, canvas: &Style) -> Result<Color> {
+        use std::iter::repeat;
+        let from_str_radix = u8::from_str_radix;
+
+        let n = color.len();
+        let color = match color {
+            "reset" => Color::Reset,
+            "black" => Color::Black,
+            "grey" => Color::Grey,
+            "darkgrey" | "dark-grey" | "dark_grey" => Color::DarkGrey,
+            "red" => Color::Red,
+            "darkred" | "dark-red" | "dark_red" => Color::DarkRed,
+            "green" => Color::Green,
+            "darkgreen" | "dark-green" | "dark_green" => Color::DarkGreen,
+            "yellow" => Color::Yellow,
+            "darkyellow" | "dark-yellow" | "dark_yellow" => Color::DarkYellow,
+            "blue" => Color::Blue,
+            "darkblue" | "dark-blue" | "dark_blue" => Color::DarkBlue,
+            "magenta" => Color::Magenta,
+            "darkmagenta" | "dark-magenta" | "dark_magenta" => Color::DarkMagenta,
+            "cyan" => Color::Cyan,
+            "darkcyan" | "dark-cyan" | "dark_cyan" => Color::DarkCyan,
+            "white" => Color::White,
+            "bg-canvas" => canvas.bg.clone(),
+            "fg-canvas" => canvas.fg.clone(),
+            _ if n == 0 => Color::Rgb { r: 0, g: 0, b: 0 },
+            color => match color.chars().next() {
+                Some('#') if n == 1 => Color::Rgb { r: 0, g: 0, b: 0 },
+                Some('#') => {
+                    let p = {
+                        let iter = repeat('0').take(6_usize.saturating_sub(n));
+                        String::from_iter(iter)
+                    };
+                    let s = p + &color[1..];
+                    let r = err_at!(FailConvert, from_str_radix(&s[0..2], 16))?;
+                    let g = err_at!(FailConvert, from_str_radix(&s[2..4], 16))?;
+                    let b = err_at!(FailConvert, from_str_radix(&s[4..6], 16))?;
+                    Color::Rgb { r, g, b }
+                }
+                Some(_) => match err_at!(FailConvert, from_str_radix(color, 10)) {
+                    Ok(n) => Color::AnsiValue(n),
+                    _ => {
+                        let n = err_at!(FailConvert, from_str_radix(color, 16))?;
+                        Color::AnsiValue(n)
+                    }
+                },
+                None => err_at!(FailConvert, msg: format!("invalid color"))?,
+            },
+        };
+
+        Ok(color)
+    }
+
+    /// Can be comma-separate or pipe-separated literals:
+    ///
+    /// * bold, underlined, underline, reverse.
+    ///
+    /// EG: `bold | underlined` (or) `bold, underlined`.
+    pub fn to_attrs(attr: &str) -> Result<Vec<Attribute>> {
+        let ss: Vec<&str> = if attr.contains(",") {
+            attr.split(",").collect()
+        } else if attr.contains("|") {
+            attr.split("|").collect()
+        } else {
+            vec![attr]
+        };
+
+        let mut attrs: Vec<Attribute> = Default::default();
+        for item in ss.into_iter() {
+            match item {
+                "bold" => attrs.push(Attribute::Bold),
+                "underlined" => attrs.push(Attribute::Underlined),
+                "underline" => attrs.push(Attribute::Underlined),
+                "reverse" => attrs.push(Attribute::Reverse),
+                _ => err_at!(Invalid, msg: format!("invalid attr {:?}", item))?,
+            }
+        }
+        Ok(attrs)
+    }
+}
+
+// Span object to render on screen.
+#[derive(Clone)]
+pub struct Span {
+    pub content: StyledContent<String>,
+    pub cursor: Option<Cursor>,
+}
+
+impl From<StyledContent<String>> for Span {
+    fn from(content: StyledContent<String>) -> Span {
+        Span {
+            content,
+            cursor: None,
+        }
+    }
+}
+
+impl From<String> for Span {
+    fn from(text: String) -> Span {
+        Span {
+            content: crossterm::style::style(text),
+            cursor: None,
+        }
+    }
+}
+
+impl Span {
+    /// Set the cursor position for this span, this is optional.
+    pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
+    /// Set the background-color.
+    pub fn on(mut self, color: Color) -> Self {
+        self.content = self.content.on(color.into());
+        self
+    }
+
+    /// Set the foreground-color.
+    pub fn with(mut self, color: Color) -> Self {
+        self.content = self.content.with(color.into());
+        self
+    }
+
+    /// Set the display attribute.
+    pub fn attribute(mut self, attr: Attribute) -> Self {
+        self.content = self.content.attribute(attr.into());
+        self
+    }
+
+    /// Set style for this span's content.
+    pub fn using(mut self, style: Style) -> Self {
+        let mut content = self
+            .content
+            .clone()
+            .on(style.bg.into())
+            .with(style.fg.into());
+        for attr in style.attrs.iter() {
+            content = content.attribute(attr.clone().into());
+        }
+        self.content = content;
+        self
+    }
+
+    /// return the span's content.
+    #[inline]
+    pub fn to_content(&self) -> String {
+        self.content.content().to_string()
+    }
+
+    /// return the display-width for this span.
+    #[inline]
+    pub fn to_width(&self) -> usize {
+        self.content
+            .content()
+            .chars()
+            .filter_map(|ch| ch.width())
+            .sum()
+    }
+}
+
+impl Command for Span {
+    type AnsiType = String;
+
+    fn ansi_code(&self) -> Self::AnsiType {
+        use crossterm::cursor::MoveTo;
+
+        let mut s = match &self.cursor {
+            Some(Cursor { col, row }) => MoveTo(*col, *row).to_string(),
+            None => Default::default(),
+        };
+        s.push_str(&self.content.to_string());
+        s
+    }
+}
+
+// Spanline object to render on screen.
+#[derive(Clone)]
+pub struct Spanline {
+    spans: Vec<Span>,
+    cursor: Option<Cursor>,
+}
+
+impl From<Span> for Spanline {
+    fn from(span: Span) -> Spanline {
+        Spanline {
+            cursor: None,
+            spans: vec![span],
+        }
+    }
+}
+
+impl FromIterator<Span> for Spanline {
+    fn from_iter<T>(iter: T) -> Spanline
+    where
+        T: IntoIterator<Item = Span>,
+    {
+        let spans: Vec<Span> = iter.into_iter().collect();
+        Spanline {
+            cursor: None,
+            spans,
+        }
+    }
+}
+
+impl Default for Spanline {
+    fn default() -> Spanline {
+        Spanline {
+            spans: Default::default(),
+            cursor: None,
+        }
+    }
+}
+
+impl Spanline {
+    pub fn right_padding(&mut self, n_pad: u16, style: Style) {
+        use std::iter::repeat;
+
+        if n_pad > 0 {
+            let n = n_pad as usize;
+            let span: Span = String::from_iter(repeat(' ').take(n)).into();
+            self.spans.push(span.using(style))
+        }
+    }
+}
+
+impl Spanline {
+    #[inline]
+    pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
+    #[inline]
+    pub fn add_span(&mut self, span: Span) -> &mut Self {
+        self.spans.push(span);
+        self
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.spans.len() == 0
+    }
+
+    #[inline]
+    pub fn to_width(&self) -> usize {
+        self.spans.iter().map(|span| span.to_width()).sum()
+    }
+
+    pub fn using(mut self, style: Style) -> Self {
+        self.spans = {
+            let iter = self.spans.drain(..);
+            iter.map(|span| span.using(style.clone())).collect()
+        };
+        self
+    }
+}
+
+impl Command for Spanline {
+    type AnsiType = String;
+
+    fn ansi_code(&self) -> Self::AnsiType {
+        use crossterm::cursor::MoveTo;
+
+        let mut s = match &self.cursor {
+            Some(Cursor { col, row }) => MoveTo(*col, *row).to_string(),
+            None => Default::default(),
+        };
+        for span in self.spans.clone().into_iter() {
+            s.push_str(&span.ansi_code());
+        }
+        s
     }
 }

@@ -32,17 +32,17 @@ use std::{
 use crate::{
     app::Application,
     buffer::Buffer,
-    code::cmd::Command,
-    code::config::Config,
-    code::window_less::WindowLess,
-    code::window_prompt::WindowPrompt,
-    code::{window_file::WindowFile, window_line::WindowLine},
+    code::{
+        cmd::Command, config::Config, window_file::WindowFile, window_less::WindowLess,
+        window_line::WindowLine, window_prompt::WindowPrompt,
+    },
     color_scheme::{ColorScheme, Highlight},
     event::{self, Event},
     location::Location,
     pubsub::PubSub,
     state::Opt,
-    window::{Coord, Cursor, Notify, Span, Spanline, Window},
+    term::{Span, Spanline},
+    window::{Coord, Cursor, Notify, Window},
     Error, Result,
 };
 
@@ -235,8 +235,14 @@ impl Code {
         let mut stdout = io::stdout();
         {
             let style = scheme.to_style(Highlight::Canvas);
-            err_at!(Fatal, queue!(stdout, SetForegroundColor(style.fg)))?;
-            err_at!(Fatal, queue!(stdout, SetBackgroundColor(style.bg)))?;
+            err_at!(
+                Fatal,
+                queue!(
+                    stdout,
+                    SetForegroundColor(style.fg.clone().into()),
+                    SetBackgroundColor(style.bg.clone().into())
+                )
+            )?;
         }
 
         let (col, row) = coord.to_origin_cursor();

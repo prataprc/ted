@@ -1,19 +1,22 @@
-use crossterm::style::{Attribute, Color};
 #[allow(unused_imports)]
 use log::trace;
 use toml;
 
-use std::{convert::TryFrom, fmt, iter::FromIterator, result};
+use std::{convert::TryFrom, fmt, result};
 
-use crate::{Error, Result};
+use crate::{term::Style, Error, Result};
 
 /// Colorscheme for ted applications.
-#[derive(Debug)]
 pub struct ColorScheme {
     name: String,
     hs: Vec<Style>,
 }
 
+impl fmt::Display for ColorScheme {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(f, "ColorScheme<{}>", self.name)
+    }
+}
 impl Default for ColorScheme {
     fn default() -> ColorScheme {
         let toml_style: toml::Value = DEFAULT_STYLE.parse().unwrap();
@@ -112,142 +115,6 @@ tab-line        = { on = "#272727", with = "#cf7d00"}
 tab-option      = { on = "#272727", with = "#cf7d00"}
 tab-select      = { on = "#272727", with = "#cf7d00"}
 "##;
-
-#[derive(Clone)]
-pub struct Style {
-    pub bg: Color,
-    pub fg: Color,
-    pub attrs: Vec<Attribute>,
-}
-
-impl fmt::Debug for Style {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "Style<{:?},{:?}>", self.bg, self.fg)
-    }
-}
-
-impl fmt::Display for Style {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        let attrs = {
-            let attrs: Vec<String> = self.attrs.iter().map(|a| a.to_string()).collect();
-            attrs.join("|")
-        };
-        write!(f, "fg:{:?},bg:{:?},attrs:{}", self.bg, self.fg, attrs)
-    }
-}
-
-impl Default for Style {
-    fn default() -> Style {
-        Style {
-            fg: Color::White,
-            bg: Color::Black,
-            attrs: Default::default(),
-        }
-    }
-}
-
-impl Style {
-    pub fn from_toml(value: &toml::Value, canvas: &Style) -> Result<Style> {
-        use crate::Error::Invalid;
-
-        let table = {
-            let err = Invalid(format!("bad style"));
-            value.as_table().ok_or(err)?
-        };
-
-        let mut style: Style = Default::default();
-        for (key, value) in table.iter() {
-            let value = {
-                let msg = format!("bad style key:{:?} value:{:?}", key, value);
-                value.as_str().ok_or(Invalid(msg))?
-            };
-            match key.as_str() {
-                "on" | "bg" => style.bg = Style::to_color(value, canvas)?,
-                "with" | "fg" => style.fg = Style::to_color(value, canvas)?,
-                "attr" | "attribute" => style.attrs = Style::to_attrs(value)?,
-                _ => (),
-            }
-        }
-
-        Ok(style)
-    }
-
-    pub fn to_color(color: &str, canvas: &Style) -> Result<Color> {
-        use std::iter::repeat;
-        let from_str_radix = u8::from_str_radix;
-
-        let n = color.len();
-        let color = match color {
-            "reset" => Color::Reset,
-            "black" => Color::Black,
-            "darkgrey" | "dark-grey" | "dark_grey" => Color::DarkGrey,
-            "red" => Color::Red,
-            "darkred" | "dark-red" | "dark_red" => Color::DarkRed,
-            "green" => Color::Green,
-            "darkgreen" | "dark-green" | "dark_green" => Color::DarkGreen,
-            "yellow" => Color::Yellow,
-            "darkyellow" | "dark-yellow" | "dark_yellow" => Color::DarkYellow,
-            "blue" => Color::Blue,
-            "darkblue" | "dark-blue" | "dark_blue" => Color::DarkBlue,
-            "magenta" => Color::Magenta,
-            "darkmagenta" | "dark-magenta" | "dark_magenta" => Color::DarkMagenta,
-            "cyan" => Color::Cyan,
-            "darkcyan" | "dark-cyan" | "dark_cyan" => Color::DarkCyan,
-            "white" => Color::White,
-            "grey" => Color::Grey,
-            "bg-canvas" => canvas.bg,
-            "fg-canvas" => canvas.fg,
-            _ if n == 0 => Color::Rgb { r: 0, g: 0, b: 0 },
-            color => match color.chars().next() {
-                Some('#') if n == 1 => Color::Rgb { r: 0, g: 0, b: 0 },
-                Some('#') => {
-                    let p = {
-                        let iter = repeat('0').take(6_usize.saturating_sub(n));
-                        String::from_iter(iter)
-                    };
-                    let s = p + &color[1..];
-                    let r = err_at!(FailConvert, from_str_radix(&s[0..2], 16))?;
-                    let g = err_at!(FailConvert, from_str_radix(&s[2..4], 16))?;
-                    let b = err_at!(FailConvert, from_str_radix(&s[4..6], 16))?;
-                    Color::Rgb { r, g, b }
-                }
-                Some(_) => match err_at!(FailConvert, from_str_radix(color, 10)) {
-                    Ok(n) => Color::AnsiValue(n),
-                    _ => {
-                        let n = err_at!(FailConvert, from_str_radix(color, 16))?;
-                        Color::AnsiValue(n)
-                    }
-                },
-                None => err_at!(FailConvert, msg: format!("invalid color"))?,
-            },
-        };
-
-        Ok(color)
-    }
-
-    pub fn to_attrs(attr: &str) -> Result<Vec<Attribute>> {
-        let ss: Vec<&str> = if attr.contains(",") {
-            attr.split(",").collect()
-        } else if attr.contains("|") {
-            attr.split("|").collect()
-        } else {
-            vec![attr]
-        };
-
-        let mut attrs: Vec<Attribute> = Default::default();
-        for item in ss.into_iter() {
-            match item {
-                "bold" => attrs.push(Attribute::Bold),
-                "italic" => attrs.push(Attribute::Italic),
-                "underlined" => attrs.push(Attribute::Underlined),
-                "underline" => attrs.push(Attribute::Underlined),
-                "reverse" => attrs.push(Attribute::Reverse),
-                _ => err_at!(Invalid, msg: format!("invalid attr {:?}", item))?,
-            }
-        }
-        Ok(attrs)
-    }
-}
 
 macro_rules! highlight {
     ($(($variant:ident, $s:expr)),*) => (

@@ -1,8 +1,8 @@
 use std::{cmp, fmt, result};
 
 use crate::{
-    color_scheme::{ColorScheme, Highlight, Style},
-    window::Span,
+    color_scheme::{ColorScheme, Highlight},
+    term::{Span, Style},
 };
 
 #[derive(Clone)]
@@ -70,7 +70,7 @@ impl ColNu {
     pub fn set_color_scheme(&mut self, scheme: &ColorScheme) -> &mut Self {
         let mut empty = scheme.to_style(Highlight::Canvas);
         self.style_line_nr = scheme.to_style(Highlight::LineNr);
-        empty.fg = self.style_line_nr.fg;
+        empty.fg = self.style_line_nr.fg.clone();
         self.style_empty = empty;
         self
     }

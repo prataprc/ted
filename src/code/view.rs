@@ -14,7 +14,8 @@ use crate::{
     buffer::{self, Buffer},
     code::col_nu::{ColKind, ColNu},
     color_scheme::{ColorScheme, Highlight},
-    window::{Coord, Cursor, Render, Span, WinBuffer},
+    term::Span,
+    window::{Coord, Cursor, Render, WinBuffer},
     Error, Result,
 };
 

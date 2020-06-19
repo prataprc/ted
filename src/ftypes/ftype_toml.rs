@@ -1,13 +1,8 @@
 use tree_sitter as ts;
 
 use crate::{
-    buffer::Buffer,
-    color_scheme::ColorScheme,
-    event::Event,
-    ftypes, syntax,
-    tss::Automata,
-    window::{Page, Spanline},
-    Error, Result,
+    buffer::Buffer, color_scheme::ColorScheme, event::Event, ftypes, syntax, term::Spanline,
+    tss::Automata, window::Page, Error, Result,
 };
 
 extern "C" {

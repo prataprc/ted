@@ -13,7 +13,8 @@ use crate::{
     code::window_edit::WindowEdit,
     code::{config::Config, Code},
     event::Event,
-    window::{Coord, Cursor, Notify, Span, Window},
+    term::Span,
+    window::{Coord, Cursor, Notify, Window},
     Error, Result,
 };
 

@@ -14,7 +14,8 @@ use crate::{
     buffer::Buffer,
     code::{keymap::Keymap, Code},
     event::Event,
-    window::{Coord, Cursor, Span, Spanline, Window},
+    term::{Span, Spanline},
+    window::{Coord, Cursor, Window},
     Error, Result,
 };
 

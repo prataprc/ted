@@ -5,10 +5,12 @@ use std::{cmp, iter::FromIterator};
 
 use crate::{
     buffer::Buffer,
-    color_scheme::{ColorScheme, Highlight, Style},
+    color_scheme::{ColorScheme, Highlight},
     event::DP,
+    term::Style,
+    term::{Span, Spanline},
     tss::{Automata, Token},
-    window::{Span, Spanline, WinBuffer},
+    window::WinBuffer,
     Result,
 };
 

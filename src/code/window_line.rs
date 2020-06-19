@@ -15,7 +15,8 @@ use crate::{
     color_scheme::Highlight,
     event::Event,
     location::Location,
-    window::{Coord, Cursor, Render, Span, Spanline, WinBuffer, Window},
+    term::{Span, Spanline},
+    window::{Coord, Cursor, Render, WinBuffer, Window},
     Error, Result,
 };
 

@@ -22,7 +22,8 @@ use std::{
 use crate::{
     event::{Event, Mto, DP},
     location::Location,
-    window::{Span, Spanline, WinBuffer},
+    term::{Span, Spanline},
+    window::WinBuffer,
     {err_at, Error, Result},
 };
 

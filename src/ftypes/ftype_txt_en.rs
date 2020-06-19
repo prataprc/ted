@@ -5,7 +5,8 @@ use crate::{
     color_scheme::ColorScheme,
     event::Event,
     ftypes,
-    window::{Notify, Page, Span, Spanline},
+    term::{Span, Spanline},
+    window::{Notify, Page},
     Error, Result,
 };
 
