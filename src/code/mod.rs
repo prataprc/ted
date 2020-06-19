@@ -109,7 +109,7 @@ impl Code {
         let mut app = Code {
             coord,
             config,
-            scheme: Default::default(),
+            scheme: Default::default(), // TODO: pull this from toml
             subscribers: Default::default(),
             buffers: Default::default(),
 

@@ -1,6 +1,9 @@
 //! Package implement editing tool-kit for terminal based apps.
 
 #![feature(box_syntax, box_patterns)]
+
+use lazy_static::lazy_static;
+
 use std::{fmt, result};
 
 #[macro_use]
@@ -26,6 +29,13 @@ pub mod app;
 mod code;
 
 mod ftypes;
+
+lazy_static! {
+    static ref COLORS: Vec<colors::ColorScheme> = {
+        let colors = colors::ColorScheme::load_color_schemes().unwrap();
+        colors
+    };
+}
 
 pub type Result<T> = result::Result<T, Error>;
 

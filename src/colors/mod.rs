@@ -6,6 +6,7 @@ use std::{convert::TryFrom, fmt, result};
 
 use crate::{term::Style, Error, Result};
 
+/// Default color-scheme
 pub const DEFAULT: &'static str = include_str!("./default.toml");
 
 /// Colorscheme for ted applications.
@@ -67,11 +68,17 @@ impl TryFrom<toml::Value> for ColorScheme {
     }
 }
 
-//impl ColorScheme {
-//    fn load_color_schemes() -> Vec<ColorScheme> {
-//        include_str!("../colors")
-//    }
-//}
+impl ColorScheme {
+    pub fn load_color_schemes() -> Result<Vec<ColorScheme>> {
+        let colors = vec![DEFAULT];
+        let mut schemes = vec![];
+        for color in colors.iter() {
+            let toml_style: toml::Value = color.parse().unwrap();
+            schemes.push(TryFrom::try_from(toml_style).unwrap())
+        }
+        Ok(schemes)
+    }
+}
 
 impl ColorScheme {
     pub fn to_style(&self, hl: Highlight) -> Style {
