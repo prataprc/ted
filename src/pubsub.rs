@@ -10,7 +10,7 @@ pub struct PubSub {
 #[derive(Clone)]
 struct Subscriber {
     topic: String,
-    tx: mpsc::Sender<Notify>,
+    chans: Vec<mpsc::Sender<Notify>>,
 }
 
 impl Eq for Subscriber {}
@@ -44,29 +44,34 @@ impl PubSub {
         }
     }
 
-    pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
-        self.topics.push(Subscriber {
-            topic: topic.to_string(),
-            tx,
-        });
+    pub fn subscribe(&mut self, topic: &str, chan: mpsc::Sender<Notify>) {
+        match Self::find_topic(topic, &self.topics) {
+            Some(off) => self.topics[off].chans.push(chan),
+            None => self.topics.push(Subscriber {
+                topic: topic.to_string(),
+                chans: vec![chan],
+            }),
+        };
         self.topics.sort();
     }
 
     pub fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
         match Self::find_topic(&topic, &self.topics) {
-            Some(n) => {
-                assert!(self.topics[n].topic == topic, "assert {}", topic);
-                err_at!(IPC, self.topics[n].tx.send(msg))?;
+            Some(off) => {
+                assert!(self.topics[off].topic == topic, "assert {}", topic);
+                for chan in self.topics[off].chans.iter() {
+                    err_at!(IPC, chan.send(msg.clone()))?;
+                }
                 Ok(())
             }
             None => Err(Error::NoTopic),
         }
     }
 
-    pub fn to_subscribers(&self) -> Vec<(String, mpsc::Sender<Notify>)> {
+    pub fn to_subscribers(&self) -> Vec<(String, Vec<mpsc::Sender<Notify>>)> {
         self.topics
             .iter()
-            .map(|s| (s.topic.clone(), s.tx.clone()))
+            .map(|s| (s.topic.clone(), s.chans.clone()))
             .collect()
     }
 }

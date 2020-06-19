@@ -1,3 +1,7 @@
+//! Ted state management. [State] wraps all applications, manages the terminal
+//! handles the event-loop. Some of the functionalities belong to the main.rs
+//! but handled here, acts as the bridge between main.rs and the ted-library.
+
 use dirs;
 use log::trace;
 use simplelog;
@@ -20,6 +24,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, StructOpt)]
+/// Command line options.
 pub struct Opt {
     #[structopt(long = "app", default_value = "code")]
     pub app: String,
@@ -48,7 +53,7 @@ pub struct Opt {
     pub files: Vec<String>,
 }
 
-// Application state
+/// Application state
 pub struct State {
     pub tm: Terminal,
     pub app: code::Code,
@@ -56,6 +61,7 @@ pub struct State {
 }
 
 impl State {
+    /// Create a new ted-state with command line opts.
     pub fn new(opts: Opt) -> Result<State> {
         use crate::config;
 
@@ -76,8 +82,10 @@ impl State {
                     let coord = Coord::new(1, 1, tm.rows, tm.cols);
                     code::Code::new(aconfig, coord, opts.clone())?
                 };
-                for (topic, tx) in subscribers.to_subscribers().into_iter() {
-                    app.subscribe(&topic, tx)
+                for (topic, chans) in subscribers.to_subscribers().into_iter() {
+                    for chan in chans.into_iter() {
+                        app.subscribe(&topic, chan)
+                    }
                 }
                 Ok(app)
             }
@@ -95,11 +103,14 @@ impl State {
 }
 
 impl State {
+    /// Subscribe a channel for a topic. Refer [pubsub::PubSub] for more detail.
     pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
         self.subscribers.subscribe(topic, tx.clone());
         self.app.subscribe(topic, tx);
     }
 
+    /// Notify all subscribers for `topic` with `msg`. Refer [pubsub::PubSub]
+    /// for more detail.
     pub fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
         match self.subscribers.notify(topic, msg.clone()) {
             Ok(_) => Ok(()),
@@ -110,6 +121,7 @@ impl State {
 }
 
 impl State {
+    /// main event-loop.
     pub fn event_loop(mut self) -> Result<String> {
         let mut stats = Latency::new();
 
