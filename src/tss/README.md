@@ -2,10 +2,13 @@ This directory maintains all things related to syntax parsing and syntax
 highlighting.
 
 Presently `Ted` uses [tree-sitter][tree-sitter] for parsing plain-text to
-syntax tree. For each parser a subdirectory to be created under ``ts/``,
+syntax tree. For each parser a subdirectory to be created under ``src/tss/``,
 it is also allowed to maintain the original parser repo else-where and
 manage it via ``git-submodules``. Similarly, for each parser highlighting
-rules can be provided in ``.tss`` format.
+rules can be provided in ``.tss`` format and placed under ``src/tss/``
+directory. For example, author all ``toml`` related grammars under
+``src/tss/toml/`` directory and author syntax-highlighting rules for
+``toml`` under ``src/tss/toml.tss`` file.
 
 **Managing via git-submodules**:
 
