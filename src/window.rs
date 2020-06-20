@@ -61,6 +61,7 @@ macro_rules! span {
     }};
 }
 
+/// Window trait for all screen areas defined by ted applications.
 pub trait Window {
     type App;
 
@@ -71,6 +72,8 @@ pub trait Window {
     fn on_refresh(&mut self, app: &mut Self::App) -> Result<()>;
 }
 
+/// This is a simple abstraction trait for [buffer::Buffer]. Gives an idea
+/// on window's api dependency with `Buffer`.
 pub trait WinBuffer<'a> {
     type IterLine: Iterator<Item = &'a str>;
     type IterChar: Iterator<Item = char>;
@@ -107,18 +110,23 @@ pub trait WinBuffer<'a> {
     /// Return the number of characters in the buffer.
     fn n_chars(&self) -> usize;
 
+    /// Return the number of lines in the buffer.
     fn n_lines(&self) -> usize;
 
+    /// Return the number of characters in line `line_idx`, starts from ZERO.
     fn len_line(&self, line_idx: usize) -> usize;
 
     /// Return whether the last character in buffer is NEWLINE.
     fn is_trailing_newline(&self) -> bool;
 }
 
+/// Render trait for window objects.
 pub trait Render {
     fn to_span_line(&self, buf: &Buffer, from: usize, to: usize) -> Result<Spanline>;
 }
 
+/// Page trait for document objects. A document is more or less like a
+/// abstract-alias for [buffer::Buffer].
 pub trait Page {
     fn to_language(&self) -> Option<ts::Language>;
 
@@ -157,10 +165,12 @@ impl Default for Coord {
 }
 
 impl Coord {
+    /// Create a new viewport for window.
     pub fn new(col: u16, row: u16, hgt: u16, wth: u16) -> Coord {
         Coord { col, row, hgt, wth }
     }
 
+    /// Move the window viewport by `col_off` and `row_off`.
     #[inline]
     pub fn move_by(mut self, col_off: i16, row_off: i16) -> Self {
         self.col = ((self.col as i16) + col_off) as u16;
@@ -168,6 +178,7 @@ impl Coord {
         self
     }
 
+    /// Resize the window viewport by `height` and `width`.
     #[inline]
     pub fn resize_to(mut self, height: u16, width: u16) -> Self {
         self.hgt = height;
@@ -175,48 +186,32 @@ impl Coord {
         self
     }
 
+    /// Return the origin point, top-left of the viewport. Position starts
+    /// from (1, 1).
     #[inline]
     pub fn to_origin(&self) -> (u16, u16) {
         (self.col, self.row)
     }
 
+    /// Return the origin point in cursor parlance, position starts from
+    /// (0, 0)
     #[inline]
     pub fn to_origin_cursor(&self) -> (u16, u16) {
         (self.col.saturating_sub(1), self.row.saturating_sub(1))
     }
 
+    /// Return the origin point as window [Cursor] object.
     #[inline]
     pub fn to_top_left(&self) -> Cursor {
-        cursor!(self.col - 1, self.row - 1)
+        let (col, row) = self.to_origin_cursor();
+        cursor!(col, row)
     }
 
-    #[inline]
-    pub fn to_trbl(&self, scroll_off: u16) -> (u16, u16, u16, u16) {
-        let t = self.row + scroll_off;
-        let r = self.col + self.wth - 1;
-        let b = self.row + self.hgt - 1 - scroll_off;
-        let l = self.col;
-        (t, r, b, l)
-    }
-
+    /// Return the height and width of the viewport. Height and width counting
+    /// starts from 1, similar to len().
     #[inline]
     pub fn to_size(&self) -> (u16, u16) {
         (self.hgt, self.wth)
-    }
-
-    #[inline]
-    pub fn empty_line(&self) -> Vec<char> {
-        std::iter::repeat(' ').take(self.wth as usize).collect()
-    }
-
-    #[inline]
-    pub fn to_cells(&self, n: usize) -> usize {
-        let n_wth = n as u16;
-        if (n_wth % self.wth) == 0 {
-            n
-        } else {
-            (((n_wth / self.wth) * self.wth) + self.wth) as usize
-        }
     }
 }
 
@@ -230,7 +225,7 @@ impl fmt::Display for Coord {
     }
 }
 
-// Cursor within the Terminal/Window, starts from (0, 0)
+// Cursor within the Window object, starts from (0, 0)
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
 pub struct Cursor {
     pub col: u16,
@@ -260,28 +255,6 @@ impl Add for Cursor {
 impl Cursor {
     pub fn new(col: u16, row: u16) -> Cursor {
         Cursor { col, row }
-    }
-
-    pub fn next_cursors(self, coord: Coord) -> Vec<Cursor> {
-        let mut cursors = Vec::with_capacity((coord.hgt * coord.wth) as usize);
-        for r in 0..coord.hgt {
-            for c in 0..coord.wth {
-                cursors.push(Cursor { col: c, row: r })
-            }
-        }
-        let n = (self.row * coord.hgt) + self.col;
-        cursors.into_iter().skip(n as usize).collect()
-    }
-
-    pub fn prev_cursors(self, coord: Coord) -> Vec<Cursor> {
-        let mut cursors = Vec::with_capacity((coord.hgt * coord.wth) as usize);
-        for r in 0..coord.hgt {
-            for c in 0..coord.wth {
-                cursors.push(Cursor { col: c, row: r })
-            }
-        }
-        let n = (self.row * coord.hgt) + self.col;
-        cursors.into_iter().take(n as usize).rev().collect()
     }
 
     pub fn move_by(mut self, col: i16, row: i16) -> Self {

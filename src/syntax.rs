@@ -14,6 +14,7 @@ use crate::{
     Result,
 };
 
+/// Syntax highlighting using tree-sitter and ted-style-sheet automata.
 pub fn highlight(
     buf: &Buffer,
     scheme: &ColorScheme,

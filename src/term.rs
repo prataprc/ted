@@ -438,13 +438,13 @@ impl Span {
         self
     }
 
-    /// return the span's content.
+    /// Return the span's content.
     #[inline]
     pub fn to_content(&self) -> String {
         self.content.content().to_string()
     }
 
-    /// return the display-width for this span.
+    /// Return the display-width for this span.
     #[inline]
     pub fn to_width(&self) -> usize {
         self.content
@@ -470,7 +470,10 @@ impl Command for Span {
     }
 }
 
-// Spanline object to render on screen.
+/// Spanline object to render on screen. They are always within the single
+/// screen-line and can be padded to the right to cover the entire width of
+/// the window's viewport. A spanline can be composed of one or more Span
+/// values.
 #[derive(Clone)]
 pub struct Spanline {
     spans: Vec<Span>,
@@ -509,6 +512,8 @@ impl Default for Spanline {
 }
 
 impl Spanline {
+    /// Spanline may need to be padded with `n_pad` bytes to cover the width
+    /// of the window's viewport.
     pub fn right_padding(&mut self, n_pad: u16, style: Style) {
         use std::iter::repeat;
 
@@ -521,28 +526,33 @@ impl Spanline {
 }
 
 impl Spanline {
+    /// Set the cursor position for this span-line, this is optional.
     #[inline]
     pub fn set_cursor(&mut self, cursor: Cursor) -> &mut Self {
         self.cursor = Some(cursor);
         self
     }
 
+    /// Add a new span value.
     #[inline]
     pub fn add_span(&mut self, span: Span) -> &mut Self {
         self.spans.push(span);
         self
     }
 
+    /// Return whether the span-line is empty.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.spans.len() == 0
     }
 
+    /// Return the character-wise width of the span-line.
     #[inline]
     pub fn to_width(&self) -> usize {
         self.spans.iter().map(|span| span.to_width()).sum()
     }
 
+    /// Apply `style` to the entire span-line, including all of its span areas.
     pub fn using(mut self, style: Style) -> Self {
         self.spans = {
             let iter = self.spans.drain(..);

@@ -1,9 +1,3 @@
-use dirs;
-
-use std::{ffi, path};
-
-use crate::{Error, Result};
-
 #[macro_export]
 macro_rules! if_else {
     ($pred:expr, $if:expr, $else:expr) => {
@@ -65,18 +59,4 @@ macro_rules! err_at {
             }
         }
     };
-}
-
-pub fn to_file_loc(file_name: &ffi::OsStr) -> Result<ffi::OsString> {
-    let p = path::Path::new(file_name);
-    if p.is_relative() {
-        let home_dir = err_at!(
-            Fatal,
-            dirs::home_dir().ok_or(format!("can't find home-directory"))
-        )?;
-        let f: path::PathBuf = [home_dir, p.to_path_buf()].iter().collect();
-        Ok(f.into_os_string())
-    } else {
-        Ok(file_name.to_os_string())
-    }
 }

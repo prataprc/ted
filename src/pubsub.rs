@@ -46,7 +46,10 @@ impl PubSub {
             m => Self::find_topic(tp, &subs[m / 2..]).map(|n| (m / 2) + n),
         }
     }
+}
 
+impl PubSub {
+    /// Subscribe a sender channel to `topic`.
     pub fn subscribe(&mut self, topic: &str, chan: mpsc::Sender<Notify>) {
         match Self::find_topic(topic, &self.topics) {
             Some(off) => self.topics[off].chans.push(chan),
@@ -58,6 +61,7 @@ impl PubSub {
         self.topics.sort();
     }
 
+    /// Notify all subscribers to `topic` with notification `msg`.
     pub fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
         match Self::find_topic(&topic, &self.topics) {
             Some(off) => {
@@ -71,6 +75,8 @@ impl PubSub {
         }
     }
 
+    /// Return a list of all topics and subscribers, this is useful to
+    /// move around the pub-sub topics within the ted-applications.
     pub fn to_subscribers(&self) -> Vec<(String, Vec<mpsc::Sender<Notify>>)> {
         self.topics
             .iter()
@@ -79,6 +85,7 @@ impl PubSub {
     }
 }
 
+/// Notification messages for `PubSub` topics.
 #[derive(Clone)]
 pub enum Notify {
     Status(Vec<Span>),
