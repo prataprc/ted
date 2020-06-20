@@ -7,7 +7,7 @@ use crate::{
     colors::ColorScheme,
     event::Event,
     event::DP,
-    term::{Span, Spanline},
+    term::Spanline,
     Result,
 };
 
@@ -133,35 +133,6 @@ pub trait Page {
         from: usize,
         to: usize,
     ) -> Option<Spanline>;
-}
-
-#[derive(Clone)]
-pub enum Notify {
-    Status(Vec<Span>),
-    None,
-}
-
-impl Eq for Notify {}
-
-impl PartialEq for Notify {
-    fn eq(&self, other: &Self) -> bool {
-        use Notify::Status;
-
-        match (self, other) {
-            (Status(_), Status(_)) => true,
-            (Notify::None, Notify::None) => true,
-            (_, _) => false,
-        }
-    }
-}
-
-impl fmt::Display for Notify {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        match self {
-            Notify::Status(_) => write!(f, "status"),
-            Notify::None => write!(f, "none"),
-        }
-    }
 }
 
 // Terminal coordinates, describes the four corners of a window.

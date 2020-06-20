@@ -105,7 +105,7 @@ impl Window for WindowEdit {
     }
 
     fn on_event(&mut self, app: &mut Code, evnt: Event) -> Result<Event> {
-        use crate::window::Notify;
+        use crate::pubsub::Notify;
 
         let evnt = match app.take_buffer(&self.buffer_id) {
             Some(mut buf) => {

@@ -6,7 +6,7 @@ use crate::{
     event::Event,
     ftypes,
     term::{Span, Spanline},
-    window::{Notify, Page},
+    window::Page,
     Error, Result,
 };
 
@@ -71,6 +71,8 @@ impl TextEn {
     }
 
     fn to_status_cursor(&mut self) -> Result<Event> {
+        use crate::pubsub::Notify;
+
         let (mut ws, mut ss, mut ls, mut ps) = (0, 0, 0, 0);
         let mut prev_kind: Option<&str> = None;
         let mut tc = self.tree.walk();

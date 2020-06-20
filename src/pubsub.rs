@@ -1,7 +1,10 @@
-use std::{cmp, sync::mpsc};
+use std::{cmp, fmt, result, sync::mpsc};
 
-use crate::{window::Notify, Error, Result};
+use crate::{term::Span, Error, Result};
 
+/// Publisher-Subscriber type. Different applications and components can
+/// subscribe to one or more `topic` with an IPC channel. And communicated with
+/// each other by publishing messages on topics.
 #[derive(Clone, Default)]
 pub struct PubSub {
     topics: Vec<Subscriber>,
@@ -73,5 +76,34 @@ impl PubSub {
             .iter()
             .map(|s| (s.topic.clone(), s.chans.clone()))
             .collect()
+    }
+}
+
+#[derive(Clone)]
+pub enum Notify {
+    Status(Vec<Span>),
+    None,
+}
+
+impl Eq for Notify {}
+
+impl PartialEq for Notify {
+    fn eq(&self, other: &Self) -> bool {
+        use Notify::Status;
+
+        match (self, other) {
+            (Status(_), Status(_)) => true,
+            (Notify::None, Notify::None) => true,
+            (_, _) => false,
+        }
+    }
+}
+
+impl fmt::Display for Notify {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Notify::Status(_) => write!(f, "status"),
+            Notify::None => write!(f, "none"),
+        }
     }
 }

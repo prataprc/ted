@@ -17,9 +17,9 @@ use crate::{
     app::Application,
     code,
     event::Event,
-    pubsub::PubSub,
+    pubsub::{Notify, PubSub},
     term::{self, Terminal},
-    window::{Coord, Notify},
+    window::Coord,
     Error, Result,
 };
 

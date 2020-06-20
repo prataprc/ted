@@ -587,7 +587,7 @@ impl Buffer {
             }
             Mt(Mto::CharR(n, dir)) => {
                 let e = self.mto_find_char.clone();
-                mto_char(self, e.transform(n, dir)?)?
+                mto_char(self, e.reverse(n, dir)?)?
             }
             Mt(e @ Mto::Word(_, _, _)) => mto_words(self, e)?,
             Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
@@ -600,7 +600,7 @@ impl Buffer {
             }
             Mt(Mto::PatternR(n, dir)) => {
                 let e = self.mto_pattern.clone();
-                mto_pattern(self, e.transform(n, dir)?)?
+                mto_pattern(self, e.reverse(n, dir)?)?
             }
             evnt => evnt,
         };

@@ -117,6 +117,13 @@ impl TryFrom<ConfigFile> for toml::Value {
     }
 }
 
+/// Read ted configuration from:
+///
+/// * default configuration.
+/// * ~/.ted.toml
+/// * ~/.ted/<ftype>/<ftype>.toml
+/// * command line argument.
+///
 pub fn read_config(toml_file: &str, ftype: Option<&str>) -> Result<toml::Value> {
     let mut files: Vec<path::PathBuf> = vec![];
     match dirs::home_dir() {
@@ -168,6 +175,7 @@ pub fn read_config(toml_file: &str, ftype: Option<&str>) -> Result<toml::Value> 
     Ok(toml::Value::Table(config))
 }
 
+/// Extract application configuration from `ted.toml`.
 pub fn to_app_config(config: &toml::Value, app: &str) -> toml::Value {
     match config.get(app) {
         Some(value) => value.clone(),

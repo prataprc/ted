@@ -31,14 +31,17 @@ mod code;
 mod ftypes;
 
 lazy_static! {
+    /// Global collection of all pre-packaged color-schemes.
     static ref COLORS: Vec<colors::ColorScheme> = {
         let colors = colors::ColorScheme::load_color_schemes().unwrap();
         colors
     };
 }
 
+/// Result returned by all `Ted` API.
 pub type Result<T> = result::Result<T, Error>;
 
+/// Collection of all `Ted` errors.
 pub enum Error {
     Fatal(String),
     BadPattern(String),

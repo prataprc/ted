@@ -14,7 +14,7 @@ use crate::{
     code::{config::Config, Code},
     event::Event,
     term::Span,
-    window::{Coord, Cursor, Notify, Window},
+    window::{Coord, Cursor, Window},
     Error, Result,
 };
 
@@ -152,7 +152,7 @@ impl Window for WindowFile {
     }
 
     fn on_event(&mut self, app: &mut Code, evnt: Event) -> Result<Event> {
-        use crate::event::Code::StatusFile;
+        use crate::{event::Code::StatusFile, pubsub::Notify};
 
         match self.we.on_event(app, evnt)? {
             Event::Code(StatusFile { .. }) => {

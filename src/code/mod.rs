@@ -39,10 +39,10 @@ use crate::{
     colors::{ColorScheme, Highlight},
     event::{self, Event},
     location::Location,
-    pubsub::PubSub,
+    pubsub::{Notify, PubSub},
     state::Opt,
     term::{Span, Spanline},
-    window::{Coord, Cursor, Notify, Window},
+    window::{Coord, Cursor, Window},
     Error, Result,
 };
 

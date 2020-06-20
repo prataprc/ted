@@ -3,11 +3,7 @@
 
 use std::sync::mpsc;
 
-use crate::{
-    event::Event,
-    window::{Cursor, Notify},
-    Result,
-};
+use crate::{event::Event, pubsub::Notify, window::Cursor, Result};
 
 pub trait Application {
     /// Subscribe a channel for a topic. Any number of components can
