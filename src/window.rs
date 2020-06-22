@@ -1,10 +1,7 @@
-use tree_sitter as ts;
-
 use std::{fmt, ops::Add, result};
 
 use crate::{
     buffer::{self, Buffer},
-    colors::ColorScheme,
     event::Event,
     event::DP,
     term::Spanline,
@@ -123,24 +120,6 @@ pub trait WinBuffer<'a> {
 /// Render trait for window objects.
 pub trait Render {
     fn to_span_line(&self, buf: &Buffer, from: usize, to: usize) -> Result<Spanline>;
-}
-
-/// Page trait for document objects. A document is more or less like a
-/// abstract-alias for [buffer::Buffer].
-pub trait Page {
-    fn to_language(&self) -> Option<ts::Language>;
-
-    fn to_name(&self) -> String;
-
-    fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event>;
-
-    fn to_span_line(
-        &self,
-        buf: &Buffer,
-        scheme: &ColorScheme,
-        from: usize,
-        to: usize,
-    ) -> Option<Spanline>;
 }
 
 // Terminal coordinates, describes the four corners of a window.

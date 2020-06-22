@@ -6,7 +6,6 @@ use crate::{
     event::Event,
     ftypes,
     term::{Span, Spanline},
-    window::Page,
     Error, Result,
 };
 
@@ -19,30 +18,26 @@ pub struct PlainText {
     tree: ts::Tree,
 }
 
-impl Default for PlainText {
-    fn default() -> PlainText {
-        PlainText::new("").unwrap()
+impl PlainText {
+    pub fn new(buf: &Buffer, _: &ColorScheme) -> Result<PlainText> {
+        let lang = unsafe { tree_sitter_txt_plain() };
+        let (parser, tree) = ftypes::new_parser(&buf.to_string(), lang)?;
+        Ok(PlainText { parser, tree })
+    }
+
+    #[inline]
+    pub fn to_name() -> String {
+        "txt-plain".to_string()
     }
 }
 
 impl PlainText {
-    pub fn new(content: &str) -> Result<PlainText> {
-        let lang = unsafe { tree_sitter_txt_plain() };
-        let (parser, tree) = ftypes::new_parser(content, lang)?;
-        Ok(PlainText { parser, tree })
-    }
-}
-
-impl Page for PlainText {
-    fn to_language(&self) -> Option<ts::Language> {
+    #[inline]
+    pub fn to_language(&self) -> Option<ts::Language> {
         Some(unsafe { tree_sitter_txt_plain() })
     }
 
-    fn to_name(&self) -> String {
-        "txt-plain".to_string()
-    }
-
-    fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
             "insert" => self.on_i_event(buf, evnt),
             "normal" => self.on_n_event(buf, evnt),
@@ -50,7 +45,13 @@ impl Page for PlainText {
         }
     }
 
-    fn to_span_line(&self, _: &Buffer, _: &ColorScheme, _: usize, _: usize) -> Option<Spanline> {
+    pub fn to_span_line(
+        &self,
+        _: &Buffer,
+        _: &ColorScheme,
+        _: usize,
+        _: usize,
+    ) -> Option<Spanline> {
         None
     }
 }

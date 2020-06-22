@@ -8,9 +8,9 @@ use crate::{
     code::{config::Config, keymap::Keymap, Code},
     colors::{ColorScheme, Highlight},
     event::Event,
-    ftypes::PlainText,
+    ftypes::{self, Page},
     term::Spanline,
-    window::{Coord, Cursor, Page, Render, WinBuffer, Window},
+    window::{Coord, Cursor, Render, WinBuffer, Window},
     Result,
 };
 
@@ -19,23 +19,9 @@ pub struct WindowEdit {
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     buffer_id: String,
-    page: Box<dyn Page>,
+    page: Page,
     scheme: ColorScheme,
     keymap: Keymap,
-}
-
-impl Default for WindowEdit {
-    fn default() -> WindowEdit {
-        WindowEdit {
-            coord: Default::default(),
-            cursor: Default::default(),
-            obc_xy: (0, 0).into(),
-            buffer_id: Default::default(),
-            page: Box::new(PlainText::new("").unwrap()),
-            scheme: Default::default(),
-            keymap: Default::default(),
-        }
-    }
 }
 
 impl fmt::Display for WindowEdit {
@@ -58,28 +44,21 @@ impl WindowEdit {
         } else {
             NoWrap::initial_cursor(config.line_number)
         };
+
+        let scheme: ColorScheme = Default::default();
+
         let we = WindowEdit {
             coord,
             cursor,
             obc_xy: (0, 0).into(),
             buffer_id: buf.to_id(),
-            page: Box::new(PlainText::new("").unwrap()),
-            scheme: Default::default(),
+            page: ftypes::detect_page(buf, &scheme).unwrap(),
+            scheme,
             keymap: Keymap::new_edit(),
         };
 
         trace!("{}", we);
         we
-    }
-
-    pub fn set_page(&mut self, page: Box<dyn Page>) -> &mut Self {
-        self.page = page;
-        self
-    }
-
-    pub fn set_color_scheme(&mut self, scheme: ColorScheme) -> &mut Self {
-        self.scheme = scheme;
-        self
     }
 }
 
@@ -91,8 +70,7 @@ impl WindowEdit {
 
     #[inline]
     pub fn to_file_type(&self) -> String {
-        // self.ftype.to_type_name()
-        todo!()
+        self.page.to_name()
     }
 }
 

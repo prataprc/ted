@@ -7,7 +7,6 @@ use crate::{
     ftypes, syntax,
     term::Spanline,
     tss::{self, Automata},
-    window::Page,
     Error, Result,
 };
 
@@ -22,24 +21,26 @@ pub struct Tss {
 }
 
 impl Tss {
-    fn new(content: &str, scheme: &ColorScheme) -> Result<Tss> {
+    pub fn new(buf: &Buffer, scheme: &ColorScheme) -> Result<Tss> {
         let lang = unsafe { tree_sitter_tss() };
-        let (parser, tree) = ftypes::new_parser(content, lang)?;
+        let (parser, tree) = ftypes::new_parser(&buf.to_string(), lang)?;
         let atmt = Automata::from_str(tss::TSS, scheme)?;
         Ok(Tss { parser, tree, atmt })
     }
+
+    #[inline]
+    pub fn to_name() -> String {
+        "tss".to_string()
+    }
 }
 
-impl Page for Tss {
-    fn to_language(&self) -> Option<ts::Language> {
+impl Tss {
+    #[inline]
+    pub fn to_language(&self) -> Option<ts::Language> {
         Some(unsafe { tree_sitter_tss() })
     }
 
-    fn to_name(&self) -> String {
-        "tss".to_string()
-    }
-
-    fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
             "insert" => self.on_i_event(buf, evnt),
             "normal" => self.on_n_event(buf, evnt),
@@ -47,7 +48,7 @@ impl Page for Tss {
         }
     }
 
-    fn to_span_line(
+    pub fn to_span_line(
         &self,
         buf: &Buffer,
         scheme: &ColorScheme,

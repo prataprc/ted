@@ -53,7 +53,7 @@ pub struct Code {
     subscribers: PubSub,
     buffers: Vec<Buffer>,
 
-    wfile: WindowFile,
+    wfile: Option<WindowFile>,
     tbcline: WindowLine,
     inner: Inner,
 }
@@ -113,7 +113,7 @@ impl Code {
             subscribers: Default::default(),
             buffers: Default::default(),
 
-            wfile: Default::default(),
+            wfile: None,
             tbcline: Code::new_tbcline(coord),
             inner: Default::default(),
         };
@@ -138,12 +138,12 @@ impl Code {
                 wf_coord
             };
             match app.buffers.last() {
-                Some(buf) => WindowFile::new(wf_coord, buf, app.as_ref()),
+                Some(buf) => Some(WindowFile::new(wf_coord, buf, app.as_ref())),
                 None => {
                     let buf = Buffer::empty();
                     let wfile = WindowFile::new(wf_coord, &buf, app.as_ref());
                     app.add_buffer(buf);
-                    wfile
+                    Some(wfile)
                 }
             }
         };
@@ -333,7 +333,7 @@ impl Application for Code {
 
     fn to_cursor(&self) -> Cursor {
         match &self.inner {
-            Inner::Edit { .. } => self.wfile.to_cursor(),
+            Inner::Edit { .. } => self.wfile.as_ref().unwrap().to_cursor(),
             Inner::AnyKey { prompts, .. } => prompts[0].to_cursor(),
             Inner::Command { cmdline } => cmdline.to_cursor(),
             Inner::Less { less } => less.to_cursor(),
@@ -366,9 +366,13 @@ impl Application for Code {
     }
 
     fn on_refresh(&mut self) -> Result<()> {
-        let mut wfile = mem::replace(&mut self.wfile, Default::default());
-        wfile.on_refresh(self)?;
-        self.wfile = wfile;
+        self.wfile = match self.wfile.take() {
+            Some(mut wfile) => {
+                wfile.on_refresh(self)?;
+                Some(wfile)
+            }
+            None => unreachable!(),
+        };
 
         let inner = mem::replace(&mut self.inner, Default::default());
         self.inner = inner.on_refresh(self)?;
@@ -390,15 +394,14 @@ impl Inner {
                     cmdline.on_event(app, Event::Char(':', m))?;
                     Ok((Inner::Command { cmdline }, Event::Noop))
                 }
-                evnt => {
-                    let mut wfile = {
-                        let def_wfile: WindowFile = Default::default();
-                        mem::replace(&mut app.wfile, def_wfile)
-                    };
-                    let evnt = wfile.on_event(app, evnt)?;
-                    app.wfile = wfile;
-                    Ok((Inner::Edit { stsline }, evnt))
-                }
+                evnt => match app.wfile.take() {
+                    Some(mut wfile) => {
+                        let evnt = wfile.on_event(app, evnt)?;
+                        app.wfile = Some(wfile);
+                        Ok((Inner::Edit { stsline }, evnt))
+                    }
+                    None => unreachable!(),
+                },
             },
             Inner::AnyKey {
                 mut prompts,

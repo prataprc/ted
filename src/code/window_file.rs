@@ -33,15 +33,6 @@ pub struct WindowFile {
     // stsline: Option<WindowLine>, TODO: needed for split windows.
 }
 
-impl Default for WindowFile {
-    fn default() -> WindowFile {
-        WindowFile {
-            coord: Default::default(),
-            we: Default::default(),
-        }
-    }
-}
-
 impl fmt::Display for WindowFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         write!(f, "WindowFile<{}>", self.coord)
