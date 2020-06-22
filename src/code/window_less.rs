@@ -33,7 +33,7 @@ impl WindowLess {
         let mut w = WindowLess {
             coord,
             status_line: Default::default(),
-            keymap: Default::default(),
+            keymap: Keymap::new_less(),
             buffer: Buffer::from_reader(content.as_bytes(), loc).unwrap(),
         };
         w.buffer.mode_normal();

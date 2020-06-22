@@ -31,7 +31,7 @@ impl Default for WindowEdit {
             cursor: Default::default(),
             obc_xy: (0, 0).into(),
             buffer_id: Default::default(),
-            page: Box::new(PlainText),
+            page: Box::new(PlainText::new("").unwrap()),
             scheme: Default::default(),
             keymap: Default::default(),
         }
@@ -63,7 +63,7 @@ impl WindowEdit {
             cursor,
             obc_xy: (0, 0).into(),
             buffer_id: buf.to_id(),
-            page: Box::new(PlainText),
+            page: Box::new(PlainText::new("").unwrap()),
             scheme: Default::default(),
             keymap: Keymap::new_edit(),
         };

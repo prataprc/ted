@@ -47,10 +47,10 @@ fn main() {
 
     let parsers = vec![
         Parser {
-            name: "txt_en".to_string(),
-            dir: "src/tss/txt_en".into(),
-            grammar: "src/tss/txt_en/grammar.js".into(),
-            sources: vec!["src/tss/txt_en/src/parser.c".into()],
+            name: "txt_plain".to_string(),
+            dir: "src/tss/txt_plain".into(),
+            grammar: "src/tss/txt_plain/grammar.js".into(),
+            sources: vec!["src/tss/txt_plain/src/parser.c".into()],
         },
         Parser {
             name: "tss".to_string(),

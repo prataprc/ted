@@ -217,6 +217,22 @@ impl fmt::Display for Code {
     }
 }
 
+/// Event specific to application `code`.
+#[derive(Clone, Eq, PartialEq)]
+pub enum Ted {
+    ShowConfig,
+}
+
+impl fmt::Display for Ted {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        use Ted::ShowConfig;
+
+        match self {
+            ShowConfig => write!(f, "show-config"),
+        }
+    }
+}
+
 /// Events
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
@@ -242,6 +258,7 @@ pub enum Event {
     List(Vec<Event>),
     Notify(Notify),
     Code(Code),
+    Ted(Ted),
     Noop,
 }
 
@@ -336,7 +353,7 @@ impl Extend<Event> for Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Event::{BackTab, Code, FKey, List, Md, Mt, Noop, Notify, Op};
+        use Event::{BackTab, Code, FKey, List, Md, Mt, Noop, Notify, Op, Ted};
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
 
         match self {
@@ -362,6 +379,7 @@ impl fmt::Display for Event {
             List(es) => write!(f, "list({})", es.len()),
             Notify(notf) => write!(f, "notify({})", notf),
             Code(cd) => write!(f, "Code({})", cd),
+            Ted(td) => write!(f, "Ted({})", td),
             Noop => write!(f, "noop"),
         }
     }

@@ -56,6 +56,7 @@ pub struct Opt {
 /// Application state
 pub struct State {
     pub tm: Terminal,
+    pub config: toml::Value,
     pub app: code::Code,
     pub subscribers: PubSub,
 }
@@ -70,7 +71,7 @@ impl State {
         // then the logger
         init_logger(&opts)?;
         // then the configuration
-        let config = config::read_config(&opts.toml_file, None)?;
+        let cnf = config::read_config(&opts.toml_file, None)?;
         // if there is any ted-level pub-sub to be done, do it here.
         let subscribers: PubSub = Default::default();
 
@@ -78,7 +79,7 @@ impl State {
         let app = match opts.app.as_str() {
             "code" => {
                 let mut app = {
-                    let aconfig = config::to_app_config(&config, "code");
+                    let aconfig = config::to_app_config(&cnf, "code");
                     let coord = Coord::new(1, 1, tm.rows, tm.cols);
                     code::Code::new(aconfig, coord, opts.clone())?
                 };
@@ -96,6 +97,7 @@ impl State {
         // launch the application.
         Ok(State {
             tm,
+            config: cnf,
             app,
             subscribers: Default::default(),
         })
@@ -117,6 +119,10 @@ impl State {
             Err(Error::NoTopic) => self.app.notify(topic, msg.clone()),
             Err(err) => Err(err),
         }
+    }
+
+    pub fn as_config(&self) -> &toml::Value {
+        &self.config
     }
 }
 
