@@ -1,3 +1,4 @@
+use log::trace;
 use tree_sitter as ts;
 
 use crate::{
@@ -24,7 +25,9 @@ impl Toml {
     pub fn new(buf: &Buffer, scheme: &ColorScheme) -> Result<Toml> {
         let lang = unsafe { tree_sitter_toml() };
         let (parser, tree) = ftypes::new_parser(&buf.to_string(), lang)?;
-        let atmt = Automata::from_str(tss::TOML, scheme)?;
+        let atmt = Automata::from_str("toml", tss::TOML, scheme)?;
+
+        trace!("{}", atmt);
 
         Ok(Toml { parser, tree, atmt })
     }
@@ -55,7 +58,7 @@ impl Toml {
         scheme: &ColorScheme,
         from: usize,
         to: usize,
-    ) -> Option<Spanline> {
+    ) -> Result<Spanline> {
         let mut atmt = self.atmt.clone();
         syntax::highlight(buf, scheme, &self.tree, &mut atmt, from, to)
     }

@@ -1,6 +1,6 @@
 name            = "default"
 canvas          = { on = "#373737", with = "#b9b9b9"}
-comment         = { on = "#373737", with = "#4e4e4e"}
+comment         = { on = "#373737", with = "#ffffff"}
 constant        = { on = "#373737", with = "#4e4e4e"}
 string          = { on = "#373737", with = "#4e4e4e"}
 char            = { on = "#373737", with = "#4e4e4e"}

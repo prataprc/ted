@@ -6,7 +6,7 @@ use crate::{
     app::Application,
     buffer::{self, Buffer},
     code::{config::Config, keymap::Keymap, Code},
-    colors::{ColorScheme, Highlight},
+    colors::ColorScheme,
     event::Event,
     ftypes::{self, Page},
     term::Spanline,
@@ -36,7 +36,7 @@ impl fmt::Display for WindowEdit {
 
 impl WindowEdit {
     #[inline]
-    pub fn new(coord: Coord, buf: &Buffer, config: &Config) -> WindowEdit {
+    pub fn new(app: &Code, coord: Coord, buf: &Buffer, config: &Config) -> WindowEdit {
         use crate::code::view::{NoWrap, Wrap};
 
         let cursor = if config.wrap {
@@ -45,15 +45,13 @@ impl WindowEdit {
             NoWrap::initial_cursor(config.line_number)
         };
 
-        let scheme: ColorScheme = Default::default();
-
         let we = WindowEdit {
             coord,
             cursor,
             obc_xy: (0, 0).into(),
             buffer_id: buf.to_id(),
-            page: ftypes::detect_page(buf, &scheme).unwrap(),
-            scheme,
+            page: ftypes::detect_page(buf, app.as_color_scheme()).unwrap(),
+            scheme: app.as_color_scheme().clone(),
             keymap: Keymap::new_edit(),
         };
 
@@ -118,7 +116,7 @@ impl Window for WindowEdit {
                 v
             };
             let buf = app.as_buffer(&self.buffer_id);
-            v.render(buf, self, app.as_color_scheme())?
+            v.render(buf, self, &self.scheme)?
         } else {
             let v = {
                 let (coord, cursor) = (self.coord, self.cursor);
@@ -128,7 +126,7 @@ impl Window for WindowEdit {
                 v
             };
             let buf = app.as_buffer(&self.buffer_id);
-            v.render(buf, self, app.as_color_scheme())?
+            v.render(buf, self, &self.scheme)?
         };
         self.obc_xy = app.as_buffer(&self.buffer_id).to_xy_cursor();
 
@@ -138,12 +136,6 @@ impl Window for WindowEdit {
 
 impl Render for WindowEdit {
     fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
-        match self.page.to_span_line(buf, &self.scheme, a, z) {
-            Some(spl) => Ok(spl),
-            None => {
-                let spl = buffer::to_span_line(buf, a, z)?;
-                Ok(spl.using(self.scheme.to_style(Highlight::Canvas)))
-            }
-        }
+        self.page.to_span_line(buf, &self.scheme, a, z)
     }
 }

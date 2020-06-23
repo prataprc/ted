@@ -109,7 +109,12 @@ impl Wrap {
     {
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
-        trace!("REFRESH {} nbc_xy:{} line_idx:{}", self, nbc_xy, line_idx);
+        trace!(
+            "WRAP-REFRESH {} nbc_xy:{} line_idx:{}",
+            self,
+            nbc_xy,
+            line_idx
+        );
 
         let mut stdout = io::stdout();
 
@@ -123,7 +128,7 @@ impl Wrap {
         let iter = (row..full_coord.hgt).zip(view_rows.into_iter());
         let s_canvas = scheme.to_style(Highlight::Canvas);
         for (row, (col_kind, bc_caret, n)) in iter {
-            // trace!("    text {} ({}, {}, {})", row, col_kind, bc_caret, n);
+            // trace!("  text {} ({}, {}, {})", row, col_kind, bc_caret, n);
             let nu_span = {
                 let mut nu_span = self.nu.to_span(col_kind);
                 nu_span.set_cursor(Cursor { col, row });
@@ -133,6 +138,7 @@ impl Wrap {
                 let to = bc_caret + (n as usize);
                 r.to_span_line(buf, bc_caret, to)?
             };
+            trace!("  to_span_line {:?}", line_span);
             line_span.right_padding(
                 //
                 self.coord.wth.saturating_sub(n),

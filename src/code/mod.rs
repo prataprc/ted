@@ -137,15 +137,10 @@ impl Code {
                 wf_coord.hgt -= 1;
                 wf_coord
             };
-            match app.buffers.last() {
-                Some(buf) => Some(WindowFile::new(wf_coord, buf, app.as_ref())),
-                None => {
-                    let buf = Buffer::empty();
-                    let wfile = WindowFile::new(wf_coord, &buf, app.as_ref());
-                    app.add_buffer(buf);
-                    Some(wfile)
-                }
-            }
+            let buf = app.buffers.pop().unwrap_or(Buffer::empty());
+            let wf = WindowFile::new(&app, wf_coord, &buf, app.as_ref());
+            app.add_buffer(buf);
+            Some(wf)
         };
 
         Ok(app)

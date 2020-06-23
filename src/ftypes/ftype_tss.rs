@@ -1,3 +1,4 @@
+use log::trace;
 use tree_sitter as ts;
 
 use crate::{
@@ -24,7 +25,10 @@ impl Tss {
     pub fn new(buf: &Buffer, scheme: &ColorScheme) -> Result<Tss> {
         let lang = unsafe { tree_sitter_tss() };
         let (parser, tree) = ftypes::new_parser(&buf.to_string(), lang)?;
-        let atmt = Automata::from_str(tss::TSS, scheme)?;
+        let atmt = Automata::from_str("tss", tss::TSS, scheme)?;
+
+        trace!("{}", atmt);
+
         Ok(Tss { parser, tree, atmt })
     }
 
@@ -54,7 +58,7 @@ impl Tss {
         scheme: &ColorScheme,
         from: usize,
         to: usize,
-    ) -> Option<Spanline> {
+    ) -> Result<Spanline> {
         let mut atmt = self.atmt.clone();
         syntax::highlight(buf, scheme, &self.tree, &mut atmt, from, to)
     }

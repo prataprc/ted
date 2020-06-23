@@ -1,4 +1,5 @@
 use lazy_static::lazy_static;
+use log::trace;
 use tree_sitter as ts;
 
 use std::path;
@@ -55,7 +56,7 @@ macro_rules! ftype {
                 scheme: &ColorScheme,
                 from: usize,
                 to: usize,
-            ) -> Option<Spanline> {
+            ) -> Result<Spanline> {
                 match self {
                     $(Page::$variant(val) => val.to_span_line(buf, scheme, from, to),)*
                 }
@@ -102,5 +103,8 @@ pub fn new_parser(content: &str, lang: ts::Language) -> Result<(ts::Parser, ts::
         parser
     };
     let tree = parser.parse(content, None).unwrap();
+
+    trace!("lang:{:?}\n{}", lang, tree.root_node().to_sexp());
+
     Ok((parser, tree))
 }

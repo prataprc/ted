@@ -1,8 +1,8 @@
 use tree_sitter as ts;
 
 use crate::{
-    buffer::Buffer,
-    colors::ColorScheme,
+    buffer::{self, Buffer},
+    colors::{ColorScheme, Highlight},
     event::Event,
     ftypes,
     term::{Span, Spanline},
@@ -47,12 +47,13 @@ impl PlainText {
 
     pub fn to_span_line(
         &self,
-        _: &Buffer,
-        _: &ColorScheme,
-        _: usize,
-        _: usize,
-    ) -> Option<Spanline> {
-        None
+        buf: &Buffer,
+        scheme: &ColorScheme,
+        a: usize,
+        z: usize,
+    ) -> Result<Spanline> {
+        let spl = buffer::to_span_line(buf, a, z)?;
+        Ok(spl.using(scheme.to_style(Highlight::Canvas)))
     }
 }
 

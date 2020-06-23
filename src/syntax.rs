@@ -1,4 +1,3 @@
-use log::error;
 use tree_sitter as ts;
 
 use std::{cmp, iter::FromIterator};
@@ -22,47 +21,33 @@ pub fn highlight(
     atmt: &mut Automata,
     from: usize,
     to: usize,
-) -> Option<Spanline> {
+) -> Result<Spanline> {
     let canvas = scheme.to_style(Highlight::Canvas);
     let root = tree.root_node();
     let mut syns = {
         let (depth, sibling) = (0, 0);
         let tok = Token::from_node(buf, &root, depth, sibling);
-        match atmt.shift_in(&tok) {
-            Ok(Some(style)) => vec![SyntSpan {
+        match atmt.shift_in(&tok)? {
+            Some(style) => vec![SyntSpan {
                 depth: tok.depth,
                 a: tok.a,
                 z: tok.z,
                 style,
             }],
-            Ok(None) => vec![],
-            Err(err) => {
-                error!("highlighting {}", err);
-                return None;
-            }
+            None => vec![],
         }
     };
 
     let depth = 1;
-    match do_highlight(buf, scheme, tree, atmt, root, depth, from, to) {
-        Ok(ls) => syns.extend(ls),
-        Err(err) => {
-            error!("highlighting {}", err);
-            return None;
-        }
-    }
+    syns.extend(do_highlight(
+        buf, scheme, tree, atmt, root, depth, from, to,
+    )?);
     syns.sort();
 
     let mut hl_spans = HlSpans::new(canvas);
     syns.into_iter().for_each(|syn| hl_spans.push(syn));
 
-    match hl_spans.into_span_line(buf) {
-        Ok(spl) => Some(spl),
-        Err(err) => {
-            error!("highlighting {}", err);
-            None
-        }
-    }
+    hl_spans.into_span_line(buf)
 }
 
 fn do_highlight(

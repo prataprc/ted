@@ -164,6 +164,7 @@ impl Window for WindowLine {
         use std::iter::repeat;
 
         let mut stdout = io::stdout();
+        let scheme = app.as_color_scheme();
 
         let (col, row) = self.coord.to_origin_cursor();
         err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, row)))?;
@@ -179,7 +180,7 @@ impl Window for WindowLine {
                 let (name, coord) = (&self.name, self.coord);
                 let mut v = NoWrap::new(name, coord, *cursor, *obc_xy);
                 v.set_scroll_off(0).set_line_number(false);
-                *cursor = v.render(buffer, self, app.as_color_scheme())?;
+                *cursor = v.render(buffer, self, scheme)?;
                 *obc_xy = buffer.to_xy_cursor();
             }
             Inner::Status { spans } => {
@@ -191,7 +192,6 @@ impl Window for WindowLine {
                     let n: usize = spans.iter().map(|span| span.to_width()).sum();
                     let iter = repeat(' ').take((wth as usize) - n);
                     let padding: Span = String::from_iter(iter).into();
-                    let scheme = app.as_color_scheme();
                     padding.using(scheme.to_style(Highlight::StatusLine))
                 };
                 err_at!(Fatal, queue!(stdout, padding))?;
@@ -205,7 +205,6 @@ impl Window for WindowLine {
                     let n: usize = spans.iter().map(|span| span.to_width()).sum();
                     let iter = repeat(' ').take((wth as usize) - n);
                     let padding: Span = String::from_iter(iter).into();
-                    let scheme = app.as_color_scheme();
                     padding.using(scheme.to_style(Highlight::TabLine))
                 };
                 err_at!(Fatal, queue!(stdout, padding))?;

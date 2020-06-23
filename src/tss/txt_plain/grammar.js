@@ -1,5 +1,5 @@
 module.exports = grammar({
-  name: 'txt_en',
+  name: 'txt_plain',
 
   rules: {
     source_file: $ => repeat(choice($.word, $.wword, $.dot, $.nl)),

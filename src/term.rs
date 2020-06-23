@@ -193,7 +193,7 @@ impl fmt::Display for Color {
         use Color::{Black, DarkGreen, DarkGrey, DarkRed, Green, Red, Yellow};
         use Color::{Blue, Cyan, DarkBlue, DarkMagenta, DarkYellow, Magenta};
 
-        match self {
+        match self.clone() {
             Reset => write!(f, "reset"),
             Black => write!(f, "black"),
             DarkGrey => write!(f, "dark-grey"),
@@ -211,8 +211,11 @@ impl fmt::Display for Color {
             DarkCyan => write!(f, "dark-cyan"),
             White => write!(f, "white"),
             Grey => write!(f, "grey"),
-            Rgb { r, g, b } => write!(f, "rgb<{},{},{}>", r, g, b),
-            AnsiValue(val) => write!(f, "ansi-value<{}>", val),
+            Rgb { r, g, b } => {
+                let rgb = (r as u32) << 16 | (g as u32) << 8 | (b as u32);
+                write!(f, "#{:x}", rgb)
+            }
+            AnsiValue(val) => write!(f, "{:x}", val),
         }
     }
 }
@@ -232,7 +235,7 @@ impl fmt::Display for Style {
             let iter = self.attrs.iter().map(|a| a.to_string());
             iter.collect()
         };
-        write!(f, "fg:{},bg:{},attrs:{}", self.bg, self.fg, attrs.join("|"))
+        write!(f, "{},{},{}", self.bg, self.fg, attrs.join("|"))
     }
 }
 
@@ -381,6 +384,12 @@ pub struct Span {
     pub cursor: Option<Cursor>,
 }
 
+impl fmt::Debug for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(f, "S({:?})", self.to_content())
+    }
+}
+
 impl From<StyledContent<String>> for Span {
     fn from(content: StyledContent<String>) -> Span {
         Span {
@@ -522,6 +531,16 @@ impl Spanline {
             let span: Span = String::from_iter(repeat(' ').take(n)).into();
             self.spans.push(span.using(style))
         }
+    }
+}
+
+impl fmt::Debug for Spanline {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        let spans: Vec<String> = {
+            let iter = self.spans.iter().map(|s| format!("{:?}", s));
+            iter.collect()
+        };
+        write!(f, "L({:?})", spans.join(","))
     }
 }
 

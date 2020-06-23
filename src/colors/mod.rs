@@ -10,6 +10,7 @@ use crate::{term::Style, Error, Result};
 pub const DEFAULT: &'static str = include_str!("./default.toml");
 
 /// Colorscheme for ted applications.
+#[derive(Clone)]
 pub struct ColorScheme {
     name: String,
     hs: Vec<Style>,

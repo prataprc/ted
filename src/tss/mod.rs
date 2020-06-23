@@ -44,10 +44,16 @@ impl fmt::Display for Token {
 }
 
 impl Token {
-    pub fn from_node(buf: &Buffer, node: &ts::Node, depth: usize, sibling: usize) -> Token {
+    pub fn from_node(
+        //
+        buf: &Buffer,
+        node: &ts::Node,
+        depth: usize,
+        sibling: usize,
+    ) -> Token {
         let kind = node.kind().to_string();
         let a = buf.byte_to_char(node.start_byte());
-        let z = buf.byte_to_char(node.start_byte());
+        let z = buf.byte_to_char(node.end_byte());
         Token {
             kind,
             depth,
@@ -75,8 +81,8 @@ impl fmt::Display for Span {
         use Span::{Pos, Text};
 
         match self {
-            Pos(a, z) => write!(f, "tssSpan<{},{}>", *a, *z),
-            Text(txt) => write!(f, "tssSpan<{}>", txt),
+            Pos(a, z) => write!(f, "{},{}", *a, *z),
+            Text(txt) => write!(f, "{:?}", txt),
         }
     }
 }
@@ -94,7 +100,7 @@ impl Span {
                 *self = Span::Text(tss[*a..*z].to_string());
                 Ok(())
             }
-            Span::Text(_) => err_at!(Fatal, msg: format!("unexpected span")),
+            Span::Text(_) => Ok(()),
         }
     }
 
@@ -115,12 +121,23 @@ impl Span {
 
 #[derive(Default, Clone)]
 pub struct Automata {
+    name: String,
     patterns: Vec<Rc<Node>>,
     open_nodes: Vec<Node>,
 }
 
+impl fmt::Display for Automata {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(f, "tss-Automata<{},{}>\n", self.name, self.patterns.len())?;
+        for node in self.patterns.iter() {
+            write!(f, "{}\n", node)?;
+        }
+        Ok(())
+    }
+}
+
 impl Automata {
-    pub fn from_str(tss: &str, scheme: &ColorScheme) -> Result<Automata> {
+    pub fn from_str(name: &str, tss: &str, scheme: &ColorScheme) -> Result<Automata> {
         let tree = {
             let mut p = ts::Parser::new();
             let language = unsafe { tree_sitter_tss() };
@@ -156,6 +173,7 @@ impl Automata {
                 let style = style.clone();
                 patterns.push(Rc::new(Node::compile_pattern(
                     n_sel,
+                    tss,
                     style.clone(),
                     &mut tc,
                 )?))
@@ -163,18 +181,10 @@ impl Automata {
         }
 
         Ok(Automata {
+            name: name.to_string(),
             patterns,
             open_nodes: Default::default(),
         })
-    }
-}
-
-impl fmt::Display for Automata {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        for node in self.patterns.iter() {
-            write!(f, "{}\n", node)?;
-        }
-        Ok(())
     }
 }
 
@@ -267,7 +277,7 @@ impl fmt::Display for Edge {
         use Edge::{Child, Descendant, Kind, Sibling, Twin};
 
         match self {
-            Kind(_) => write!(f, "e-kind"),
+            Kind(span) => write!(f, "e-kind<{}>", span),
             Twin(edge) => write!(f, "e-twin<{}>", edge),
             Sibling(edge) => write!(f, "e-sibling<{}>", edge),
             Child(edge) => write!(f, "e-child<{}>", edge),
@@ -558,20 +568,21 @@ impl Node {
 
     fn compile_pattern<'a>(
         ts_node: ts::Node<'a>,
+        tss: &str,
         mut next: Node,
         tc: &mut ts::TreeCursor<'a>,
     ) -> Result<Node> {
         match ts_node.child_count() {
             0 => err_at!(Fatal, msg: format!("unexpected node")),
-            1 => Self::compile_sel(ts_node.child(0).unwrap(), next, tc),
+            1 => Self::compile_sel(ts_node.child(0).unwrap(), tss, next, tc),
             _ => {
                 let mut cs: Vec<ts::Node> = ts_node.children(tc).collect();
                 cs.reverse();
                 let mut iter = cs.into_iter();
-                next = Self::compile_sel(iter.next().unwrap(), next, tc)?;
+                next = Self::compile_sel(iter.next().unwrap(), tss, next, tc)?;
                 for child in iter {
                     wrap_edge!(next.as_mut_edge(), Descendant)?;
-                    next = Self::compile_sel(child, next, tc)?;
+                    next = Self::compile_sel(child, tss, next, tc)?;
                 }
                 Ok(next)
             }
@@ -580,6 +591,7 @@ impl Node {
 
     fn compile_sel<'a>(
         ts_node: ts::Node<'a>,
+        tss: &str,
         mut next: Node,
         tc: &mut ts::TreeCursor<'a>,
     ) -> Result<Node> {
@@ -588,23 +600,27 @@ impl Node {
         let chd = &cs[0];
         match chd.kind() {
             "sel_kind" => {
-                let edge = Edge::Kind(Span::from_node(&chd));
+                let edge = Edge::Kind({
+                    let mut cont = Span::from_node(&chd);
+                    cont.pos_to_text(tss);
+                    cont
+                });
                 Ok(Node::Pattern(edge, Rc::new(next)))
             }
             "sel_twins" => {
-                next = Self::compile_sel(chd.child(2).unwrap(), next, tc)?;
+                next = Self::compile_sel(chd.child(2).unwrap(), tss, next, tc)?;
                 wrap_edge!(next.as_mut_edge(), Twin)?;
-                Self::compile_sel(chd.child(0).unwrap(), next, tc)
+                Self::compile_sel(chd.child(0).unwrap(), tss, next, tc)
             }
             "sel_siblings" => {
-                next = Self::compile_sel(chd.child(2).unwrap(), next, tc)?;
+                next = Self::compile_sel(chd.child(2).unwrap(), tss, next, tc)?;
                 wrap_edge!(next.as_mut_edge(), Sibling)?;
-                Self::compile_sel(chd.child(0).unwrap(), next, tc)
+                Self::compile_sel(chd.child(0).unwrap(), tss, next, tc)
             }
             "sel_child" => {
-                next = Self::compile_sel(chd.child(2).unwrap(), next, tc)?;
+                next = Self::compile_sel(chd.child(2).unwrap(), tss, next, tc)?;
                 wrap_edge!(next.as_mut_edge(), Child)?;
-                Self::compile_sel(chd.child(0).unwrap(), next, tc)
+                Self::compile_sel(chd.child(0).unwrap(), tss, next, tc)
             }
             kind => err_at!(Fatal, msg: format!("unexpected {}", kind)),
         }
