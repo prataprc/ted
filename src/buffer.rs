@@ -317,7 +317,7 @@ impl Buffer {
     }
 
     pub fn byte_to_char(&self, byte_idx: usize) -> usize {
-        self.to_change().buf.byte_to_char(byte_idx)
+        self.to_change().as_ref().byte_to_char(byte_idx)
     }
 }
 

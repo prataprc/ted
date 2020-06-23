@@ -1,3 +1,4 @@
+use log::trace;
 use tree_sitter as ts;
 
 use std::{borrow::Borrow, convert::TryFrom, fmt, mem, rc::Rc, result};
@@ -39,25 +40,24 @@ pub struct Token {
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "Token<{},{},{}>", self.kind, self.depth, self.sibling)
+        write!(
+            f,
+            "Token<{},{},{},{}..{}>",
+            self.kind, self.depth, self.sibling, self.a, self.z
+        )
     }
 }
 
 impl Token {
-    pub fn from_node(
-        //
-        buf: &Buffer,
-        node: &ts::Node,
-        depth: usize,
-        sibling: usize,
-    ) -> Token {
-        let kind = node.kind().to_string();
-        let a = buf.byte_to_char(node.start_byte());
-        let z = buf.byte_to_char(node.end_byte());
+    pub fn from_node(buf: &Buffer, nd: &ts::Node, d: usize, s: usize) -> Token {
+        let kind = nd.kind().to_string();
+        let a = buf.byte_to_char(nd.start_byte());
+        let z = buf.byte_to_char(nd.end_byte());
+        // trace!("{:?} {} {}", nd, nd.start_byte(), nd.end_byte());
         Token {
             kind,
-            depth,
-            sibling,
+            depth: d,
+            sibling: s,
             a,
             z,
         }
@@ -192,6 +192,9 @@ impl Automata {
     pub fn shift_in(&mut self, token: &Token) -> Result<Option<Style>> {
         use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
 
+        trace!("shift_in {}", token);
+
+        // check whether there is a match with open-patterns.
         let mut style1: Option<Style> = None;
         let mut ops = vec![];
         for (off, open_node) in self.open_nodes.iter().enumerate() {
@@ -201,8 +204,8 @@ impl Automata {
                     ops.push((off, None));
                     Some(style1.unwrap_or(style))
                 }
-                Some(node) => {
-                    ops.push((off, Some(node)));
+                Some(next) => {
+                    ops.push((off, Some(next)));
                     style1
                 }
                 None if drop => {
@@ -212,11 +215,10 @@ impl Automata {
                 None => style1,
             }
         }
-
-        for (off, node) in ops.into_iter() {
-            match node {
-                Some(node) => {
-                    let _ = mem::replace(&mut self.open_nodes[off], node);
+        for (off, next) in ops.into_iter() {
+            match next {
+                Some(next) => {
+                    let _ = mem::replace(&mut self.open_nodes[off], next);
                 }
                 None => {
                     self.open_nodes.remove(off);
@@ -430,6 +432,7 @@ impl Node {
         use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
 
         let (ok, drop, next) = match self {
+            Pattern(_, _) => return Ok((None, false)),
             Twin {
                 edge,
                 next,
@@ -448,16 +451,16 @@ impl Node {
                 nth_child,
             } => {
                 let ok1 = token.depth == *depth;
-                let ok2 = *nth_child < token.sibling;
+                let ok2 = token.sibling > *nth_child;
                 let ok3 = edge.is_match(token)?;
                 (ok1 && ok2 && ok3, !ok1, next)
             }
             Child {
                 edge, next, depth, ..
             } => {
-                let ok1 = token.depth == depth + 1;
+                let ok1 = token.depth == *depth + 1;
                 let ok3 = edge.is_match(token)?;
-                (ok1 && ok3, token.depth > (depth + 1), next)
+                (ok1 && ok3, token.depth > (*depth + 1), next)
             }
             Descendant {
                 edge, next, depth, ..
@@ -466,8 +469,7 @@ impl Node {
                 let ok3 = edge.is_match(token)?;
                 (ok1 && ok3, false, next)
             }
-            Pattern(_, _) => err_at!(Fatal, msg: format!("unreachable"))?,
-            End(_) => err_at!(Fatal, msg: format!("unreachable"))?,
+            End(_) => return Ok((None, false)),
         };
 
         if ok {
