@@ -45,7 +45,7 @@ macro_rules! err_at {
         match $e {
             Ok(val) => Ok(val),
             Err(err) => {
-                let m = format!("{}:{} err:{:?}", file!(), line!(), err);
+                let m = format!("{}:{} {}", file!(), line!(), err);
                 Err(Error::$v(m))
             }
         }
@@ -54,7 +54,7 @@ macro_rules! err_at {
         match $e {
             Ok(val) => Ok(val),
             Err(err) => {
-                let m = format!("{}:{} {} err:{:?}", file!(), line!(), $m, err);
+                let m = format!("{}:{} {} {}", file!(), line!(), $m, err);
                 Err(Error::$v(m))
             }
         }
