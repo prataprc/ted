@@ -8,7 +8,7 @@ module.exports = grammar({
     hl_rule: $ => seq(
         field('selectors', $.selectors),
         ':',
-        field('style', choice($.highlight, $.properties)),
+        choice($.highlight, $.properties),
         ';'
     ),
     comment: $ => /#.*/,
@@ -29,7 +29,7 @@ module.exports = grammar({
 
     properties: $ => seq(
         '{',
-        field('properties', repeat(seq(field('property', $.property), ','))),
+        seq($.property, repeat(seq(',', $.property))),
         '}'
     ),
     property: $ => choice(
@@ -96,6 +96,7 @@ module.exports = grammar({
         'comment',
         'constant',
         'string',
+        'escape-seq',
         'char',
         'number',
         'boolean',

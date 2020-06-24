@@ -24,21 +24,17 @@
           "value": ":"
         },
         {
-          "type": "FIELD",
-          "name": "style",
-          "content": {
-            "type": "CHOICE",
-            "members": [
-              {
-                "type": "SYMBOL",
-                "name": "highlight"
-              },
-              {
-                "type": "SYMBOL",
-                "name": "properties"
-              }
-            ]
-          }
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "highlight"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "properties"
+            }
+          ]
         },
         {
           "type": "STRING",
@@ -182,28 +178,29 @@
           "value": "{"
         },
         {
-          "type": "FIELD",
-          "name": "properties",
-          "content": {
-            "type": "REPEAT",
-            "content": {
-              "type": "SEQ",
-              "members": [
-                {
-                  "type": "FIELD",
-                  "name": "property",
-                  "content": {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "property"
+            },
+            {
+              "type": "REPEAT",
+              "content": {
+                "type": "SEQ",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": ","
+                  },
+                  {
                     "type": "SYMBOL",
                     "name": "property"
                   }
-                },
-                {
-                  "type": "STRING",
-                  "value": ","
-                }
-              ]
+                ]
+              }
             }
-          }
+          ]
         },
         {
           "type": "STRING",
@@ -578,6 +575,10 @@
         {
           "type": "STRING",
           "value": "string"
+        },
+        {
+          "type": "STRING",
+          "value": "escape-seq"
         },
         {
           "type": "STRING",
