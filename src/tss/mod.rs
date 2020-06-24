@@ -162,7 +162,7 @@ impl Automata {
             }
 
             let style = {
-                let ts_node = child.child_by_field_name("style").unwrap();
+                let ts_node = child.child(2).unwrap();
                 Node::compile_style(ts_node, tss, &mut tc, scheme)?
             };
             let n_selectors: Vec<ts::Node> = {
@@ -527,9 +527,17 @@ impl Node {
                 }?
             }
             "properties" => {
-                let mut style: Style = Default::default();
-                for nprop in ts_node.child(1).unwrap().children(tc) {
-                    let nprop = nprop.child_by_field_name("property").unwrap();
+                let mut style: Style = scheme.to_style(Highlight::Canvas);
+                let sp_nodes = {
+                    let sp_node = ts_node.child(1).unwrap();
+                    let mut iter = sp_node.children(tc);
+                    let mut sp_nodes = vec![iter.next().unwrap()];
+                    for p_node in iter {
+                        sp_nodes.push(p_node.child(1).unwrap());
+                    }
+                    sp_nodes
+                };
+                for nprop in sp_nodes.into_iter() {
                     let mut cont = Span::from_node(&nprop.child(2).unwrap());
                     cont.pos_to_text(tss)?;
                     match nprop.kind() {

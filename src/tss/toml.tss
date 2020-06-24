@@ -3,13 +3,15 @@
 comment: comment;
 open_sqr: special-char;
 clos_sqr: special-char;
+open_tba: special-char;
+clos_tba: special-char;
 open_crl: special-char;
 clos_crl: special-char;
-.dot: special-char;
-.equal: special-char;
+dotted_key: type;
+key: type;
 string: string;
 escape_sequence: escape-seq;
-integer: number;
+integer: { fg: green };
 float: float;
 boolean: boolean;
 offset_date_time: constant;
