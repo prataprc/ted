@@ -612,7 +612,7 @@ impl Node {
             "sel_kind" => {
                 let edge = Edge::Kind({
                     let mut cont = Span::from_node(&chd);
-                    cont.pos_to_text(tss);
+                    cont.pos_to_text(tss)?;
                     cont
                 });
                 Ok(Node::Pattern(edge, Rc::new(next)))

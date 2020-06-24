@@ -8,7 +8,9 @@ use simplelog;
 use structopt::StructOpt;
 
 use std::{
-    fs, path,
+    fs,
+    io::Write,
+    path,
     sync::mpsc,
     time::{Duration, SystemTime},
 };
@@ -18,7 +20,7 @@ use crate::{
     code,
     event::Event,
     pubsub::{Notify, PubSub},
-    term::{self, Terminal},
+    term::Terminal,
     window::Coord,
     Error, Result,
 };
@@ -61,13 +63,19 @@ pub struct State {
     pub subscribers: PubSub,
 }
 
+impl AsMut<Terminal> for State {
+    fn as_mut(&mut self) -> &mut Terminal {
+        &mut self.tm
+    }
+}
+
 impl State {
     /// Create a new ted-state with command line opts.
     pub fn new(opts: Opt) -> Result<State> {
         use crate::config;
 
-        // first the terminal
         let tm = Terminal::init()?;
+
         // then the logger
         init_logger(&opts)?;
         // then the configuration
@@ -133,7 +141,7 @@ impl State {
 
         // initial screen refresh
         self.app.on_refresh()?;
-        term::flush(self.app.to_cursor())?;
+        err_at!(Fatal, term_ce!(self, self.app.to_cursor()))?;
 
         'a: loop {
             // new event
@@ -142,8 +150,6 @@ impl State {
 
             let start = SystemTime::now();
 
-            // hide cursor, handle event and refresh window
-            term::hide_cursor()?;
             for mut evnt in evnt {
                 // preprocessing
                 match &evnt {
@@ -164,7 +170,7 @@ impl State {
                     }
                 }
             }
-            term::flush(self.app.to_cursor())?;
+            err_at!(Fatal, term_ce!(self, self.app.to_cursor()))?;
 
             stats.sample(start.elapsed().unwrap());
         }

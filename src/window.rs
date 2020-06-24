@@ -1,3 +1,5 @@
+use crossterm;
+
 use std::{fmt, ops::Add, result};
 
 use crate::{
@@ -228,6 +230,13 @@ impl Add for Cursor {
 
     fn add(self, rhs: Cursor) -> Cursor {
         cursor!(self.col + rhs.col, self.row + rhs.row)
+    }
+}
+
+impl From<Cursor> for crossterm::cursor::MoveTo {
+    fn from(cursor: Cursor) -> crossterm::cursor::MoveTo {
+        let Cursor { col, row } = cursor;
+        crossterm::cursor::MoveTo(col, row)
     }
 }
 

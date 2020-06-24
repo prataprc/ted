@@ -12,9 +12,10 @@ pub mod util;
 pub mod config;
 #[macro_use]
 pub mod window;
+#[macro_use]
+pub mod term;
 
 pub mod state;
-pub mod term;
 
 pub mod buffer;
 pub mod colors;

@@ -13,6 +13,39 @@ use std::{
 
 use crate::{window::Cursor, Error, Result};
 
+#[macro_export]
+macro_rules! term_qe {
+    ($val:expr, $(, $args:expr)* $(,)?) => {{
+        use crossterm::queue;
+
+        let term: &mut Terminal = $val.as_mut();
+        queue!(&mut term.buf, $($args)*)
+    }};
+}
+
+#[macro_export]
+macro_rules! term_wc {
+    ($val:expr, $(, $args:expr)* $(,)?) => {{
+        use crossterm::queue;
+
+        let term: &mut Terminal = $val.as_mut();
+        queue!(&mut term.buf, $($args)*)
+    }};
+}
+
+#[macro_export]
+macro_rules! term_ce {
+    ($val:expr, $cur:expr) => {{
+        use crossterm::{cursor::MoveTo, execute};
+
+        let move_to: MoveTo = $cur.into();
+        let term: &mut Terminal = $val.as_mut();
+        let res = execute!(&mut term.buf, move_to);
+        term.buf.truncate(0);
+        res
+    }};
+}
+
 /// Flush the terminal with cursor position.
 #[inline]
 pub fn flush(cursor: Cursor) -> Result<()> {
@@ -25,27 +58,23 @@ pub fn flush(cursor: Cursor) -> Result<()> {
     Ok(())
 }
 
-/// Hide the cursor, subsequently application shall buffer the changes.
-#[inline]
-pub fn hide_cursor() -> Result<()> {
-    use crossterm::cursor::Hide;
-
-    let mut stdout = io::stdout();
-    err_at!(Fatal, queue!(stdout, Hide))?;
-    Ok(())
-}
-
 /// Captures the screen and cleans up on exit.
 pub struct Terminal {
     /// number of colums on the screen
     pub cols: u16,
     /// number of rows on the screen
     pub rows: u16,
+    /// queue-buffer
+    pub buf: Vec<u8>,
 }
 
 impl From<(u16, u16)> for Terminal {
     fn from((cols, rows): (u16, u16)) -> Terminal {
-        Terminal { cols, rows }
+        Terminal {
+            cols,
+            rows,
+            buf: Default::default(),
+        }
     }
 }
 

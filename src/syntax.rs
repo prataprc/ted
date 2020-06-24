@@ -12,7 +12,7 @@ use crate::{
     term::{Span, Spanline},
     tss::{Automata, Token},
     window::WinBuffer,
-    Result,
+    Error, Result,
 };
 
 /// Syntax highlighting using tree-sitter and ted-style-sheet automata.
@@ -49,7 +49,9 @@ pub fn highlight(
     syns.sort();
 
     let mut hl_spans = HlSpans::new(canvas, from, to);
-    syns.into_iter().for_each(|syn| hl_spans.push(syn));
+    for syn in syns.into_iter() {
+        hl_spans.push(syn)?
+    }
 
     trace!("Hlspans {}", hl_spans);
 
@@ -128,7 +130,7 @@ impl HlSpans {
         }
     }
 
-    fn push(&mut self, mut syn: SyntSpan) {
+    fn push(&mut self, mut syn: SyntSpan) -> Result<()> {
         match self.syns.len() {
             0 if self.from < syn.a => {
                 self.syns.push(SyntSpan {
@@ -140,7 +142,10 @@ impl HlSpans {
                 self.syns.push(syn);
             }
             0 if self.from == syn.a => self.syns.push(syn),
-            0 => panic!("misaligned highlight span {} {}", self.from, syn.a),
+            0 => err_at!(
+                Fatal,
+                msg: format!("misaligned span {} {}", self.from, syn.a)
+            )?,
             _ => {
                 let SyntSpan { depth, a, z, style } = self.syns.pop().unwrap();
                 assert!(a <= syn.a);
@@ -159,6 +164,21 @@ impl HlSpans {
                     // perfect alignment.
                     self.syns.push(SyntSpan { depth, a, z, style });
                     self.syns.push(syn)
+                } else if z > syn.z {
+                    // fully contained
+                    self.syns.push(SyntSpan {
+                        depth,
+                        a,
+                        z: syn.a,
+                        style: style.clone(),
+                    });
+                    self.syns.push(syn.clone());
+                    self.syns.push(SyntSpan {
+                        depth,
+                        a: syn.z,
+                        z,
+                        style,
+                    });
                 } else if syn.depth >= depth {
                     // overlap, incoming span is more specific
                     self.syns.push(SyntSpan {
@@ -169,13 +189,15 @@ impl HlSpans {
                     });
                     self.syns.push(syn);
                 } else {
-                    // existing span is more specific.
-                    syn.a = z;
+                    // overlap, existing span is more specific.
                     self.syns.push(SyntSpan { depth, a, z, style });
+                    syn.a = z;
                     self.syns.push(syn)
                 }
             }
         }
+
+        Ok(())
     }
 
     fn into_span_line(&mut self, buf: &Buffer) -> Result<Spanline> {
@@ -196,7 +218,7 @@ impl HlSpans {
                 self.syns.push(SyntSpan { depth, a, z, style });
             }
             Some(SyntSpan { z, .. }) => {
-                panic!("misaligned highlight span {} {}", z, self.to);
+                err_at!(Fatal, msg: format!("misaligned {} {}", z, self.to))?
             }
             None => {
                 self.syns.push({
@@ -220,6 +242,7 @@ impl HlSpans {
 }
 
 // matching syntax span with tss-automata, represents a single span/style.
+#[derive(Clone)]
 struct SyntSpan {
     depth: usize,
     a: usize, // character position, inclusive
