@@ -22,10 +22,10 @@ impl fmt::Display for ColorScheme {
     }
 }
 
-impl Default for ColorScheme {
-    fn default() -> ColorScheme {
-        let toml_style: toml::Value = DEFAULT.parse().unwrap();
-        TryFrom::try_from(toml_style).unwrap()
+impl ColorScheme {
+    pub fn default() -> Result<ColorScheme> {
+        let toml_style: toml::Value = err_at!(FailConvert, DEFAULT.parse())?;
+        TryFrom::try_from(toml_style)
     }
 }
 
