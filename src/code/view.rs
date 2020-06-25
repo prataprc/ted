@@ -1,14 +1,7 @@
 use crossterm::queue;
 use log::trace;
 
-use std::{
-    cmp,
-    convert::TryInto,
-    fmt,
-    io::{self, Write},
-    iter::FromIterator,
-    result,
-};
+use std::{cmp, convert::TryInto, fmt, iter::FromIterator, result};
 
 use crate::{
     buffer::{self, Buffer},
@@ -116,8 +109,6 @@ impl Wrap {
             line_idx
         );
 
-        let mut stdout = io::stdout();
-
         let full_coord = self.outer_coord();
         let (col, row) = full_coord.to_origin_cursor();
 
@@ -144,7 +135,7 @@ impl Wrap {
                 self.coord.wth.saturating_sub(n),
                 s_canvas.clone(),
             );
-            err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
+            err_at!(Fatal, termqu!(nu_span, line_span))?;
 
             trace!(
                 "  to_span_line row:{} {} {:?} {:?}",
@@ -300,8 +291,6 @@ impl NoWrap {
         let nbc_xy = buf.to_xy_cursor();
         trace!("REFRESH {} nbc_xy:{}", self, nbc_xy,);
 
-        let mut stdout = io::stdout();
-
         let full_coord = self.outer_coord();
         let (col, mut row) = full_coord.to_origin_cursor();
         let max_row = row + full_coord.hgt;
@@ -332,7 +321,7 @@ impl NoWrap {
                 );
                 line_span
             };
-            err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
+            err_at!(Fatal, termqu!(nu_span, line_span))?;
             row += 1;
         }
 
@@ -366,7 +355,6 @@ fn empty_lines(
 ) -> Result<()> {
     use std::iter::repeat;
 
-    let mut stdout = io::stdout();
     let (col, _) = full_coord.to_origin_cursor();
     let (_, wth) = full_coord.to_size();
 
@@ -381,7 +369,7 @@ fn empty_lines(
                 let span: Span = String::from_iter(iter).into();
                 span.using(s_canvas.clone())
             };
-            err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
+            err_at!(Fatal, termqu!(nu_span, line_span))?;
             row += 1;
         }
     }

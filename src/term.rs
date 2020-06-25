@@ -1,6 +1,7 @@
 //! Module manages all things related to terminal.
 
-use crossterm::{self, execute, queue, style::StyledContent, Command};
+use crossterm::{self, style::StyledContent, Command};
+use lazy_static::lazy_static;
 use log::trace;
 use unicode_width::UnicodeWidthChar;
 
@@ -10,53 +11,65 @@ use std::{
     io::{self, Write},
     iter::FromIterator,
     result,
+    sync::Mutex,
 };
 
 use crate::{window::Cursor, Error, Result};
 
-#[macro_export]
-macro_rules! term_qe {
-    ($val:expr, $(, $args:expr)* $(,)?) => {{
-        use crossterm::queue;
+lazy_static! {
+    pub(crate) static ref TERM: Mutex<Terminal> = {
+        let tm = Terminal::init().unwrap();
+        Mutex::new(tm)
+    };
+}
 
-        let term: &mut Terminal = $val.as_mut();
-        queue!(&mut term.buf, $($args)*)
+#[macro_export]
+macro_rules! hidecr {
+    () => {{
+        use crossterm::{cursor::Hide, queue};
+        use std::io::Write;
+        use std::ops::DerefMut;
+
+        let mut tm = err_at!(Fatal, crate::term::TERM.lock())?;
+        err_at!(Fatal, queue!(&mut tm.deref_mut().buf, Hide))
     }};
 }
 
 #[macro_export]
-macro_rules! term_wc {
-    ($val:expr, $(, $args:expr)* $(,)?) => {{
+macro_rules! termqu {
+    ($arg0:expr $(, $args:expr)* $(,)?) => {{
         use crossterm::queue;
+        use std::ops::DerefMut;
+        use std::io::Write;
 
-        let term: &mut Terminal = $val.as_mut();
-        queue!(&mut term.buf, $($args)*)
+        let mut tm = err_at!(Fatal, crate::term::TERM.lock())?;
+        err_at!(Fatal, queue!(&mut tm.deref_mut().buf, $arg0, $($args)*))
     }};
 }
 
 #[macro_export]
-macro_rules! term_ce {
-    ($val:expr, $cur:expr) => {{
-        use crossterm::{cursor::MoveTo, execute};
+macro_rules! termex {
+    ($cur:expr) => {{
+        use crossterm::{
+            cursor::{MoveTo, Show},
+            execute,
+        };
+        use std::io::{self, Write};
+        use std::ops::DerefMut;
+
+        let mut tm = err_at!(Fatal, crate::term::TERM.lock())?;
+        let buf = &mut tm.deref_mut().buf;
 
         let move_to: MoveTo = $cur.into();
-        let term: &mut Terminal = $val.as_mut();
-        let res = execute!(&mut term.buf, move_to);
-        term.buf.truncate(0);
+        let res = err_at!(Fatal, execute!(buf, move_to, Show));
+
+        let mut stdout = io::stdout();
+        err_at!(IOError, stdout.write(buf))?;
+        err_at!(IOError, stdout.flush())?;
+
+        tm.buf.truncate(0);
         res
     }};
-}
-
-/// Flush the terminal with cursor position.
-#[inline]
-pub fn flush(cursor: Cursor) -> Result<()> {
-    use crossterm::cursor::{MoveTo, Show};
-
-    let mut stdout = io::stdout();
-    let Cursor { col, row } = cursor;
-    err_at!(Fatal, queue!(stdout, MoveTo(col, row), Show))?;
-    err_at!(Fatal, stdout.flush())?;
-    Ok(())
 }
 
 /// Captures the screen and cleans up on exit.
@@ -82,9 +95,8 @@ impl From<(u16, u16)> for Terminal {
 impl Terminal {
     /// initialize the terminal.
     pub fn init() -> Result<Terminal> {
-        use crossterm::cursor::Hide;
-        use crossterm::event::EnableMouseCapture;
         use crossterm::terminal::{enable_raw_mode, size, EnterAlternateScreen};
+        use crossterm::{cursor::Hide, event::EnableMouseCapture, execute};
 
         let tm: Terminal = err_at!(Fatal, size())?.into();
 
@@ -111,9 +123,8 @@ impl fmt::Display for Terminal {
 
 impl Drop for Terminal {
     fn drop(&mut self) {
-        use crossterm::cursor::Show;
-        use crossterm::event::DisableMouseCapture;
         use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
+        use crossterm::{cursor::Show, event::DisableMouseCapture, execute};
 
         execute!(
             io::stdout(),

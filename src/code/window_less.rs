@@ -73,8 +73,6 @@ impl Window for WindowLess {
         //use crossterm::queue;
         //use std::io::{self, Write};
 
-        //let mut stdout = io::stdout();
-
         //let (col, row_iter) = {
         //    let (col, _) = self.coord.to_origin_cursor();
         //    let (hgt, _) = self.coord.to_size();
@@ -83,10 +81,10 @@ impl Window for WindowLess {
         //};
         //for (row, line) in row_iter.zip(self.span_lines.iter_mut()) {
         //    line.set_cursor(Cursor { col, row });
-        //    err_at!(Fatal, queue!(stdout, line))?;
+        //    err_at!(Fatal, termqu!(line))?;
         //}
         //let span: Span = self.buffer.to_string().into();
-        //err_at!(Fatal, queue!(stdout, span))?;
+        //err_at!(Fatal, termqu!(span))?;
         Ok(())
     }
 }

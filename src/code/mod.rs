@@ -18,16 +18,10 @@ mod window_less;
 mod window_line;
 mod window_prompt;
 
-use crossterm::{cursor as term_cursor, queue};
 use log::trace;
 use toml;
 
-use std::{
-    ffi,
-    io::{self, Write},
-    mem,
-    sync::mpsc,
-};
+use std::{ffi, mem, sync::mpsc};
 
 use crate::{
     app::Application,
@@ -129,8 +123,6 @@ impl Code {
             Inner::Edit { stsline }
         };
 
-        // Code::draw_screen(app.coord, &app.scheme)?;
-
         app.wfile = {
             let wf_coord = {
                 let mut wf_coord = coord;
@@ -223,37 +215,6 @@ impl Code {
 }
 
 impl Code {
-    fn draw_screen(coord: Coord, scheme: &ColorScheme) -> Result<()> {
-        use crossterm::style::{SetBackgroundColor, SetForegroundColor};
-        use std::iter::{repeat, FromIterator};
-
-        let mut stdout = io::stdout();
-        {
-            let style = scheme.to_style(Highlight::Canvas);
-            err_at!(
-                Fatal,
-                queue!(
-                    stdout,
-                    SetForegroundColor(style.fg.clone().into()),
-                    SetBackgroundColor(style.bg.clone().into())
-                )
-            )?;
-        }
-
-        let (col, row) = coord.to_origin_cursor();
-        let (hgt, wth) = coord.to_size();
-        for r in row..(row + hgt) {
-            let span: Span = {
-                let s = String::from_iter(repeat(' ').take(wth as usize));
-                s.into()
-            };
-            err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, r)))?;
-            err_at!(Fatal, queue!(stdout, span))?;
-        }
-
-        Ok(())
-    }
-
     fn open_cmd_files(&mut self, fls: Vec<String>) -> Result<Vec<WindowPrompt>> {
         let locs: Vec<Location> = fls
             .into_iter()

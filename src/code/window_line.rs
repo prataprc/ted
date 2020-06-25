@@ -2,12 +2,7 @@ use crossterm::{cursor as term_cursor, queue};
 #[allow(unused_imports)]
 use log::trace;
 
-use std::{
-    fmt,
-    io::{self, Write},
-    iter::FromIterator,
-    mem, result,
-};
+use std::{fmt, iter::FromIterator, mem, result};
 
 use crate::{
     buffer::{self, Buffer},
@@ -163,11 +158,10 @@ impl Window for WindowLine {
         use crate::code::view::NoWrap;
         use std::iter::repeat;
 
-        let mut stdout = io::stdout();
         let scheme = app.as_color_scheme();
 
         let (col, row) = self.coord.to_origin_cursor();
-        err_at!(Fatal, queue!(stdout, term_cursor::MoveTo(col, row)))?;
+        err_at!(Fatal, termqu!(term_cursor::MoveTo(col, row)))?;
 
         let mut inner = mem::replace(&mut self.inner, Default::default());
         match &mut inner {
@@ -185,7 +179,7 @@ impl Window for WindowLine {
             }
             Inner::Status { spans } => {
                 for span in spans.iter() {
-                    err_at!(Fatal, queue!(stdout, span))?;
+                    err_at!(Fatal, termqu!(span))?;
                 }
                 let padding = {
                     let (_, wth) = self.coord.to_size();
@@ -194,11 +188,11 @@ impl Window for WindowLine {
                     let padding: Span = String::from_iter(iter).into();
                     padding.using(scheme.to_style(Highlight::StatusLine))
                 };
-                err_at!(Fatal, queue!(stdout, padding))?;
+                err_at!(Fatal, termqu!(padding))?;
             }
             Inner::Tab { spans } => {
                 for span in spans.iter() {
-                    err_at!(Fatal, queue!(stdout, span))?;
+                    err_at!(Fatal, termqu!(span))?;
                 }
                 let padding = {
                     let (_, wth) = self.coord.to_size();
@@ -207,7 +201,7 @@ impl Window for WindowLine {
                     let padding: Span = String::from_iter(iter).into();
                     padding.using(scheme.to_style(Highlight::TabLine))
                 };
-                err_at!(Fatal, queue!(stdout, padding))?;
+                err_at!(Fatal, termqu!(padding))?;
             }
             Inner::None => (),
         };

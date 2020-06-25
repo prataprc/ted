@@ -1,11 +1,6 @@
 use crossterm::queue;
 
-use std::{
-    ffi, fmt,
-    io::{self, Write},
-    iter::FromIterator,
-    result,
-};
+use std::{ffi, fmt, iter::FromIterator, result};
 
 use crate::{
     app::Application,
@@ -112,8 +107,6 @@ impl WindowFile {
         use std::iter::repeat;
 
         let (hgt, _) = self.coord.to_size();
-        let mut stdout = io::stdout();
-
         if self.is_top_margin() {
             let iter = repeat(app.as_ref().top_margin_char);
             let span = {
@@ -122,14 +115,14 @@ impl WindowFile {
                 span.set_cursor(self.coord.to_top_left());
                 span
             };
-            err_at!(Fatal, queue!(stdout, span))?;
+            err_at!(Fatal, termqu!(span))?;
         }
         if self.is_left_margin() {
             let st = app.as_ref().left_margin_char.to_string();
             for _i in 0..hgt {
                 let mut span: Span = st.clone().into();
                 span.set_cursor(self.coord.to_top_left());
-                err_at!(Fatal, queue!(stdout, span))?;
+                err_at!(Fatal, termqu!(span))?;
             }
         }
 

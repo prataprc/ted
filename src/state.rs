@@ -8,9 +8,7 @@ use simplelog;
 use structopt::StructOpt;
 
 use std::{
-    fs,
-    io::Write,
-    path,
+    fs, path,
     sync::mpsc,
     time::{Duration, SystemTime},
 };
@@ -141,7 +139,7 @@ impl State {
 
         // initial screen refresh
         self.app.on_refresh()?;
-        err_at!(Fatal, term_ce!(self, self.app.to_cursor()))?;
+        err_at!(Fatal, termex!(self.app.to_cursor()))?;
 
         'a: loop {
             // new event
@@ -149,6 +147,7 @@ impl State {
             trace!("{} {}", evnt, self.app.to_cursor());
 
             let start = SystemTime::now();
+            hidecr!()?;
 
             for mut evnt in evnt {
                 // preprocessing
@@ -170,7 +169,7 @@ impl State {
                     }
                 }
             }
-            err_at!(Fatal, term_ce!(self, self.app.to_cursor()))?;
+            err_at!(Fatal, termex!(self.app.to_cursor()))?;
 
             stats.sample(start.elapsed().unwrap());
         }
