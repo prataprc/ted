@@ -20,46 +20,6 @@ macro_rules! cursor {
     };
 }
 
-#[macro_export]
-macro_rules! span {
-    (fg:$fg:expr, bg:$bg:expr, st:$text:expr) => {{
-        let span: Span = $text.into();
-        span.with($fg).on($bg)
-    }};
-    (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), st:$text:expr) => {{
-        let mut span: Span = $text.into();
-        span.set_cursor(Cursor { col: $col, row: $row });
-        span.with($fg).on($bg)
-    }};
-    (($col:expr, $row:expr), st:$text:expr) => {{
-        let mut span: Span = $text.into();
-        span.set_cursor(Cursor { col: $col, row: $row });
-        span
-    }};
-    (st:$text:expr) => {{
-        let span: Span = $text.into();
-        span
-    }};
-    (fg:$fg:expr, bg:$bg:expr, $($s:expr),*) => {{
-        let span: Span = format!($($s),*).into();
-        span.with($fg).on($bg)
-    }};
-    (fg:$fg:expr, bg:$bg:expr, ($col:expr, $row:expr), $($s:expr),*) => {{
-        let mut span: Span = format!($($s),*).into();
-        span.set_cursor(Cursor { col: $col, row: $row });
-        span.with($fg).on($bg)
-    }};
-    (($col:expr, $row:expr), $($s:expr),*) => {{
-        let mut span: Span = format!($($s),*).into();
-        span.set_cursor(Cursor { col: $col, row: $row });
-        span
-    }};
-    ($($s:expr),*) => {{
-        let span: Span = format!($($s),*).into();
-        span
-    }};
-}
-
 /// Window trait for all screen areas defined by ted applications.
 pub trait Window {
     type App;

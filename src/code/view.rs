@@ -138,13 +138,21 @@ impl Wrap {
                 let to = bc_caret + (n as usize);
                 r.to_span_line(buf, bc_caret, to)?
             };
-            trace!("  to_span_line {:?}", line_span);
+            line_span.fix_trailing_new_line();
             line_span.right_padding(
                 //
                 self.coord.wth.saturating_sub(n),
                 s_canvas.clone(),
             );
             err_at!(Fatal, queue!(stdout, nu_span, line_span))?;
+
+            trace!(
+                "  to_span_line row:{} {} {:?} {:?}",
+                row,
+                line_span.to_width(),
+                line_span,
+                nu_span.cursor
+            );
         }
 
         Ok(self.cursor)
@@ -317,8 +325,8 @@ impl NoWrap {
                 };
                 let to = from + cmp::min(to - from, wth as usize);
                 let mut line_span = r.to_span_line(buf, from, to)?;
+                line_span.fix_trailing_new_line();
                 line_span.right_padding(
-                    //
                     self.coord.wth.saturating_sub((to - from) as u16),
                     s_canvas.clone(),
                 );
@@ -350,7 +358,6 @@ impl NoWrap {
 }
 
 fn empty_lines(
-    //
     mut row: u16,
     max_row: u16,
     full_coord: Coord,
@@ -363,8 +370,8 @@ fn empty_lines(
     let (col, _) = full_coord.to_origin_cursor();
     let (_, wth) = full_coord.to_size();
 
+    trace!("EMPTY LINES {}..={}", row, max_row);
     if row <= max_row {
-        trace!("EMPTY LINES {}..={}", row, max_row);
         let s_canvas = scheme.to_style(Highlight::Canvas);
         for _ in row..=max_row {
             let mut nu_span = nu.to_span(ColKind::Empty);
@@ -381,35 +388,6 @@ fn empty_lines(
     assert!(row == (max_row + 1), "assert {} {}", row, max_row);
 
     Ok(())
-}
-
-fn tail_line(col: u16, row: u16, max_row: u16, nu: &ColNu, buf: &Buffer) -> Result<u16> {
-    let n = buf.n_chars();
-    let ok1 = n == 0;
-    let ok2 = (row <= max_row) && buf.is_trailing_newline();
-
-    let n = if ok1 { 1 } else { buf.char_to_line(n - 1) + 1 };
-    let mut stdout = io::stdout();
-
-    let new_row = if ok1 || ok2 {
-        let mut span = nu.to_span(ColKind::Nu(n));
-        span.set_cursor(Cursor { col, row });
-        err_at!(Fatal, queue!(stdout, span))?;
-        row + 1
-    } else {
-        row
-    };
-
-    trace!(
-        "TRAIL {}->{}-of-{} nu:{} trail:{},{}",
-        row,
-        new_row,
-        max_row,
-        n,
-        ok1,
-        ok2
-    );
-    Ok(new_row)
 }
 
 struct WrapView {
@@ -546,10 +524,11 @@ impl WrapView {
         });
 
         {
-            let hgt = self.coord.hgt as usize;
             if rows.len() == 0 {
                 rows.extend(vec![(ColKind::Nu(1), 0, 0)]);
             }
+
+            let hgt = self.coord.hgt as usize;
             if rows.len() < hgt {
                 let items: Vec<(ColKind, usize, u16)> = {
                     let empty = (ColKind::Empty, 0, 0);

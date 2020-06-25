@@ -115,7 +115,10 @@ impl Window for WindowPrompt {
             line.set_cursor(Cursor { col, row });
             err_at!(Fatal, queue!(stdout, line))?;
         }
-        err_at!(Fatal, queue!(stdout, span!(st: self.buffer.to_string())))?;
+        {
+            let input: Span = self.buffer.to_string().into();
+            err_at!(Fatal, queue!(stdout, input))?
+        }
         Ok(())
     }
 }

@@ -129,7 +129,7 @@ impl Code {
             Inner::Edit { stsline }
         };
 
-        Code::draw_screen(app.coord, &app.scheme)?;
+        // Code::draw_screen(app.coord, &app.scheme)?;
 
         app.wfile = {
             let wf_coord = {
@@ -302,11 +302,15 @@ impl Code {
         };
         for (loc, err) in efiles.into_iter() {
             let span1 = {
-                let st = format!("{:?} : {}", loc.to_long_string()?, err);
-                span!(st: st).using(self.scheme.to_style(Highlight::Error))
+                let span: Span = {
+                    //
+                    format!("{:?} : {}", loc.to_long_string()?, err).into()
+                };
+                span.using(self.scheme.to_style(Highlight::Error))
             };
             let span2 = {
-                let span = span!(st: format!("-press any key to continue-"));
+                let st = format!("-press any key to continue-");
+                let span: Span = st.into();
                 span.using(self.scheme.to_style(Highlight::Prompt))
             };
             let span_lines: Vec<Spanline> = vec![span1.into(), span2.into()];

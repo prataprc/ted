@@ -86,19 +86,19 @@ impl ColNu {
     pub fn to_span(&self, nu: ColKind) -> Span {
         use ColKind::{Empty, Nu, Wrap};
 
+        let width = (self.width as usize) - 1;
+
         match nu {
             Nu(nu) if self.line_number => {
-                let width = (self.width as usize) - 1;
                 let span: Span = format!("{:>w$} ", nu, w = width).into();
                 span.using(self.style_line_nr.clone())
             }
             Wrap if self.line_number => {
-                let width = (self.width as usize) - 1;
                 let span: Span = format!("{:>w$} ", "", w = width).into();
                 span.using(self.style_line_nr.clone())
             }
             Empty => {
-                let span: Span = "~".to_string().into();
+                let span: Span = format!("{:<w$} ", "~", w = width).into();
                 span.using(self.style_empty.clone())
             }
             _ => "".to_string().into(),

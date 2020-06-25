@@ -98,35 +98,38 @@ impl WindowFile {
         let shrt_ver = format!("{:?} {} [{}]", s_name, fstt, ft);
         let n = long_ver.chars().collect::<Vec<char>>().len();
 
-        let (col, mut row) = self.coord.to_origin_cursor();
-        row += hgt - 1;
-        Ok(span!(
-            (col, row),
-            "{}",
-            if_else!(n > (wth as usize), shrt_ver, long_ver)
-        ))
+        Ok({
+            let (col, mut row) = self.coord.to_origin_cursor();
+            row += hgt - 1;
+            let st = if_else!(n > (wth as usize), shrt_ver, long_ver);
+            let mut span: Span = st.into();
+            span.set_cursor(Cursor { col, row });
+            span
+        })
     }
 
     fn do_refresh(&mut self, app: &Code) -> Result<()> {
         use std::iter::repeat;
 
-        let Cursor { col, row } = self.coord.to_top_left();
         let (hgt, _) = self.coord.to_size();
         let mut stdout = io::stdout();
 
         if self.is_top_margin() {
             let iter = repeat(app.as_ref().top_margin_char);
-            let span = span!(
-                (col, row),
-                st: String::from_iter(iter.take(self.coord.wth as usize))
-            );
+            let span = {
+                let st = String::from_iter(iter.take(self.coord.wth as usize));
+                let mut span: Span = st.into();
+                span.set_cursor(self.coord.to_top_left());
+                span
+            };
             err_at!(Fatal, queue!(stdout, span))?;
         }
         if self.is_left_margin() {
             let st = app.as_ref().left_margin_char.to_string();
             for _i in 0..hgt {
-                let string = st.clone();
-                err_at!(Fatal, queue!(stdout, span!((col, row), st: string)))?;
+                let mut span: Span = st.clone().into();
+                span.set_cursor(self.coord.to_top_left());
+                err_at!(Fatal, queue!(stdout, span))?;
             }
         }
 

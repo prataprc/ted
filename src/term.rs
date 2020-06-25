@@ -5,6 +5,7 @@ use log::trace;
 use unicode_width::UnicodeWidthChar;
 
 use std::{
+    convert::TryInto,
     fmt,
     io::{self, Write},
     iter::FromIterator,
@@ -491,6 +492,24 @@ impl Span {
             .filter_map(|ch| ch.width())
             .sum()
     }
+
+    /// Return the display-width for this span as u16.
+    #[inline]
+    pub fn to_width_u16(&self) -> Result<u16> {
+        err_at!(FailConvert, self.to_width().try_into())
+    }
+
+    fn fix_trailing_new_line(mut self) -> Span {
+        let mut content = self.to_content();
+        match content.pop() {
+            Some('\n') => content.push(' '),
+            Some(ch) => content.push(ch),
+            None => (),
+        }
+        let style = self.content.style().clone();
+        self.content = StyledContent::new(style, content);
+        self
+    }
 }
 
 impl Command for Span {
@@ -607,6 +626,13 @@ impl Spanline {
             iter.map(|span| span.using(style.clone())).collect()
         };
         self
+    }
+
+    pub fn fix_trailing_new_line(&mut self) {
+        match self.spans.pop() {
+            Some(span) => self.spans.push(span.fix_trailing_new_line()),
+            None => (),
+        }
     }
 }
 
