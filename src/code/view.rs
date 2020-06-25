@@ -137,13 +137,13 @@ impl Wrap {
             );
             err_at!(Fatal, termqu!(nu_span, line_span))?;
 
-            trace!(
-                "  to_span_line row:{} {} {:?} {:?}",
-                row,
-                line_span.to_width(),
-                line_span,
-                nu_span.cursor
-            );
+            //trace!(
+            //    "  to_span_line row:{} {} {:?} {:?}",
+            //    row,
+            //    line_span.to_width(),
+            //    line_span,
+            //    nu_span.cursor
+            //);
         }
 
         Ok(self.cursor)

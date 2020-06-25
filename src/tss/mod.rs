@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use log::trace;
 use tree_sitter as ts;
 
@@ -61,6 +62,12 @@ impl Token {
             a,
             z,
         }
+    }
+
+    // typically from..till is the line span.
+    #[inline]
+    pub fn is_overlap(&self, from: usize, till: usize) -> bool {
+        !(self.a >= till || self.z <= from)
     }
 }
 
@@ -192,18 +199,18 @@ impl Automata {
     pub fn shift_in(&mut self, token: &Token) -> Result<Option<Style>> {
         use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
 
-        trace!("shift_in {}", token);
-
         // check whether there is a match with open-patterns.
         let mut style1: Option<Style> = None;
         let mut ops = vec![];
+        trace!("open_nodes: {:?}", self.open_nodes);
         for (off, open_node) in self.open_nodes.iter().enumerate() {
             let (next, drop) = open_node.is_match(token)?;
             style1 = match next {
-                Some(Node::End(style)) => {
+                Some(Node::End(style)) if drop => {
                     ops.push((off, None));
                     Some(style1.unwrap_or(style))
                 }
+                Some(Node::End(style)) => Some(style1.unwrap_or(style)),
                 Some(next) => {
                     ops.push((off, Some(next)));
                     style1
@@ -215,6 +222,7 @@ impl Automata {
                 None => style1,
             }
         }
+        trace!("ops: {:?}", ops);
         for (off, next) in ops.into_iter() {
             match next {
                 Some(next) => {
@@ -385,6 +393,12 @@ impl fmt::Display for Node {
             ),
             End(style) => write!(f, "End<{}>", style),
         }
+    }
+}
+
+impl fmt::Debug for Node {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        <Self as fmt::Display>::fmt(self, f)
     }
 }
 

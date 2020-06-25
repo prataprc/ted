@@ -276,7 +276,10 @@ impl fmt::Display for Style {
             let iter = self.attrs.iter().map(|a| a.to_string());
             iter.collect()
         };
-        write!(f, "{},{},{}", self.bg, self.fg, attrs.join("|"))
+        match attrs.len() {
+            0 => write!(f, "{},{}", self.bg, self.fg),
+            _ => write!(f, "{},{},{}", self.bg, self.fg, attrs.join("|")),
+        }
     }
 }
 
@@ -371,9 +374,9 @@ impl Style {
                         String::from_iter(iter)
                     };
                     let s = p + &color[1..];
-                    let r = err_at!(FailConvert, from_str_radix(&s[0..2], 16))?;
-                    let g = err_at!(FailConvert, from_str_radix(&s[2..4], 16))?;
-                    let b = err_at!(FailConvert, from_str_radix(&s[4..6], 16))?;
+                    let r = err_at!(FailConvert, from_str_radix(&s[0..2], 16), color)?;
+                    let g = err_at!(FailConvert, from_str_radix(&s[2..4], 16), color)?;
+                    let b = err_at!(FailConvert, from_str_radix(&s[4..6], 16), color)?;
                     Color::Rgb { r, g, b }
                 }
                 Some(_) => match err_at!(FailConvert, from_str_radix(color, 10)) {
