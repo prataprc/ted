@@ -17,7 +17,7 @@ unicode-width = "0.1.5"
 structopt = { version = "*", default-features = false }
 dirs = "2.0.2"
 crossterm = "0.16.0"
-log = { version = "0.4.8", features = ["max_level_trace", "release_max_level_debug"] }
+log = { version = "0.4.8", features = ["max_level_trace", "release_max_level_trace"] }
 simplelog = "0.7.5"
 lazy_static = "1.4.0"
 tree-sitter = "0.6.3"
