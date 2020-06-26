@@ -1,5 +1,5 @@
 #[allow(unused_imports)]
-use log::trace;
+use log::{debug, trace};
 use tree_sitter as ts;
 
 use std::{borrow::Borrow, convert::TryFrom, fmt, mem, rc::Rc, result};
@@ -174,7 +174,10 @@ impl Automata {
             };
             let n_selectors: Vec<ts::Node> = {
                 let xs = child.child_by_field_name("selectors").unwrap();
-                xs.children(&mut tc).collect()
+                xs.children(&mut tc)
+                    .enumerate()
+                    .filter_map(|(i, c)| if i % 2 == 0 { Some(c) } else { None })
+                    .collect()
             };
             for n_sel in n_selectors.into_iter() {
                 let style = style.clone();
@@ -543,15 +546,17 @@ impl Node {
             }
             "properties" => {
                 let mut style: Style = scheme.to_style(Highlight::Canvas);
-                let sp_nodes = {
-                    let sp_node = ts_node.child(1).unwrap();
-                    let mut iter = sp_node.children(tc);
-                    let mut sp_nodes = vec![iter.next().unwrap()];
-                    for p_node in iter {
-                        sp_nodes.push(p_node.child(1).unwrap());
-                    }
-                    sp_nodes
-                };
+                let sp_nodes: Vec<ts::Node> = ts_node
+                    .children(tc)
+                    .enumerate()
+                    .filter_map(|(i, c)| {
+                        if i % 2 == 1 {
+                            Some(c.child(0).unwrap())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
                 for nprop in sp_nodes.into_iter() {
                     let mut cont = Span::from_node(&nprop.child(2).unwrap());
                     cont.pos_to_text(tss)?;
