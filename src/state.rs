@@ -224,7 +224,11 @@ impl Latency {
     }
 
     fn mean(&self) -> Duration {
-        self.total / (self.samples as u32)
+        if self.samples > 0 {
+            self.total / (self.samples as u32)
+        } else {
+            Duration::from_secs(0)
+        }
     }
 
     fn percentiles(&self) -> Vec<(u8, usize)> {
