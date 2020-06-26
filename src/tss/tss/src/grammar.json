@@ -212,36 +212,20 @@
       "type": "CHOICE",
       "members": [
         {
-          "type": "FIELD",
-          "name": "fg",
-          "content": {
-            "type": "SYMBOL",
-            "name": "fg"
-          }
+          "type": "SYMBOL",
+          "name": "fg"
         },
         {
-          "type": "FIELD",
-          "name": "bg",
-          "content": {
-            "type": "SYMBOL",
-            "name": "bg"
-          }
+          "type": "SYMBOL",
+          "name": "bg"
         },
         {
-          "type": "FIELD",
-          "name": "attr",
-          "content": {
-            "type": "SYMBOL",
-            "name": "attrb"
-          }
+          "type": "SYMBOL",
+          "name": "attrb"
         },
         {
-          "type": "FIELD",
-          "name": "attribute",
-          "content": {
-            "type": "SYMBOL",
-            "name": "attribute"
-          }
+          "type": "SYMBOL",
+          "name": "attribute"
         }
       ]
     },
@@ -392,6 +376,58 @@
         {
           "type": "STRING",
           "value": "underline"
+        },
+        {
+          "type": "STRING",
+          "value": "dim"
+        },
+        {
+          "type": "STRING",
+          "value": "italic"
+        },
+        {
+          "type": "STRING",
+          "value": "slowblink"
+        },
+        {
+          "type": "STRING",
+          "value": "slow-blink"
+        },
+        {
+          "type": "STRING",
+          "value": "slow_blink"
+        },
+        {
+          "type": "STRING",
+          "value": "rapidblink"
+        },
+        {
+          "type": "STRING",
+          "value": "rapid-blink"
+        },
+        {
+          "type": "STRING",
+          "value": "rapid_blink"
+        },
+        {
+          "type": "STRING",
+          "value": "crossedout"
+        },
+        {
+          "type": "STRING",
+          "value": "crossed-out"
+        },
+        {
+          "type": "STRING",
+          "value": "crossed_out"
+        },
+        {
+          "type": "STRING",
+          "value": "framed"
+        },
+        {
+          "type": "STRING",
+          "value": "encircled"
         },
         {
           "type": "STRING",

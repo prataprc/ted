@@ -144,31 +144,48 @@ pub enum Attribute {
     Reset,
     Bold,
     Underlined,
+    Dim,
+    Italic,
+    RapidBlink,
+    SlowBlink,
+    CrossedOut,
+    Encircled,
+    Framed,
     Reverse,
 }
 
 impl From<Attribute> for crossterm::style::Attribute {
     fn from(attr: Attribute) -> crossterm::style::Attribute {
-        use Attribute::{Bold, Reset, Reverse, Underlined};
-
         match attr {
-            Reset => crossterm::style::Attribute::Reset,
-            Bold => crossterm::style::Attribute::Bold,
-            Underlined => crossterm::style::Attribute::Underlined,
-            Reverse => crossterm::style::Attribute::Reverse,
+            Attribute::Reset => crossterm::style::Attribute::Reset,
+            Attribute::Bold => crossterm::style::Attribute::Bold,
+            Attribute::Underlined => crossterm::style::Attribute::Underlined,
+            Attribute::Dim => crossterm::style::Attribute::Dim,
+            Attribute::Italic => crossterm::style::Attribute::Italic,
+            Attribute::RapidBlink => crossterm::style::Attribute::RapidBlink,
+            Attribute::SlowBlink => crossterm::style::Attribute::SlowBlink,
+            Attribute::CrossedOut => crossterm::style::Attribute::CrossedOut,
+            Attribute::Encircled => crossterm::style::Attribute::Encircled,
+            Attribute::Framed => crossterm::style::Attribute::Framed,
+            Attribute::Reverse => crossterm::style::Attribute::Reverse,
         }
     }
 }
 
 impl fmt::Display for Attribute {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Attribute::{Bold, Reset, Reverse, Underlined};
-
         match self {
-            Reset => write!(f, "reset"),
-            Bold => write!(f, "bold"),
-            Underlined => write!(f, "underlined"),
-            Reverse => write!(f, "reverse"),
+            Attribute::Reset => write!(f, "reset"),
+            Attribute::Bold => write!(f, "bold"),
+            Attribute::Underlined => write!(f, "underlined"),
+            Attribute::Dim => write!(f, "dim"),
+            Attribute::Italic => write!(f, "italic"),
+            Attribute::RapidBlink => write!(f, "rapid-blink"),
+            Attribute::SlowBlink => write!(f, "slow-blink"),
+            Attribute::CrossedOut => write!(f, "crossed-out"),
+            Attribute::Encircled => write!(f, "encircled"),
+            Attribute::Framed => write!(f, "framed"),
+            Attribute::Reverse => write!(f, "reverse"),
         }
     }
 }
@@ -410,10 +427,25 @@ impl Style {
 
         let mut attrs: Vec<Attribute> = Default::default();
         for item in ss.into_iter() {
-            match item {
+            match item.trim() {
                 "bold" => attrs.push(Attribute::Bold),
-                "underlined" => attrs.push(Attribute::Underlined),
-                "underline" => attrs.push(Attribute::Underlined),
+                "underlined" | "underline" => attrs.push(Attribute::Underlined),
+                "dim" => attrs.push(Attribute::Dim),
+                "italic" => attrs.push(Attribute::Italic),
+                "slowblink" | "slow-blink" | "slow_blink" => {
+                    //
+                    attrs.push(Attribute::SlowBlink)
+                }
+                "rapidblink" | "rapid-blink" | "rapid_blink" => {
+                    //
+                    attrs.push(Attribute::RapidBlink)
+                }
+                "crossedout" | "crossed-out" | "crossed_out" => {
+                    //
+                    attrs.push(Attribute::CrossedOut)
+                }
+                "framed" => attrs.push(Attribute::Framed),
+                "encircled" => attrs.push(Attribute::Encircled),
                 "reverse" => attrs.push(Attribute::Reverse),
                 _ => err_at!(Invalid, msg: format!("invalid attr {:?}", item))?,
             }

@@ -32,12 +32,7 @@ module.exports = grammar({
         seq($.property, repeat(seq(',', $.property))),
         '}'
     ),
-    property: $ => choice(
-        field('fg', $.fg),
-        field('bg', $.bg),
-        field('attr', $.attrb),
-        field('attribute', $.attribute)
-    ),
+    property: $ => choice($.fg, $.bg, $.attrb, $.attribute),
     fg: $ => seq('fg', ':', choice($.rgb_color, $.ansi_color, $.color_name)),
     bg: $ => seq('bg', ':', choice($.rgb_color, $.ansi_color, $.color_name)),
     attrb: $ => seq('attr', ':', repeat($.attrs)),
@@ -49,6 +44,19 @@ module.exports = grammar({
         'italic',
         'underlined',
         'underline',
+        'dim',
+        'italic',
+        'slowblink',
+        'slow-blink',
+        'slow_blink',
+        'rapidblink',
+        'rapid-blink',
+        'rapid_blink',
+        'crossedout',
+        'crossed-out',
+        'crossed_out',
+        'framed',
+        'encircled',
         'reverse',
     ),
 
