@@ -1,4 +1,5 @@
-use log::trace;
+#[allow(unused_imports)]
+use log::{debug, trace};
 use tree_sitter as ts;
 
 use crate::{
@@ -27,7 +28,7 @@ impl Toml {
         let (parser, tree) = ftypes::new_parser(&buf.to_string(), lang)?;
         let atmt = Automata::from_str("toml", tss::TOML, scheme)?;
 
-        trace!("{}", atmt);
+        debug!("{}", atmt);
 
         Ok(Toml { parser, tree, atmt })
     }

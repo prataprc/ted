@@ -18,7 +18,8 @@ mod window_less;
 mod window_line;
 mod window_prompt;
 
-use log::trace;
+#[allow(unused_imports)]
+use log::{debug, trace};
 use toml;
 
 use std::{ffi, mem, sync::mpsc};
@@ -94,7 +95,7 @@ impl Code {
             cnf.mixin(config.try_into().unwrap())
         };
 
-        trace!(
+        debug!(
             "starting app `code` coord:{} config...\n{}",
             coord,
             err_at!(FailConvert, toml::to_string(&config))?
@@ -228,12 +229,12 @@ impl Code {
             match loc.to_rw_file() {
                 Some(f) => match Buffer::from_reader(f, loc.clone()) {
                     Ok(mut buf) if self.config.read_only => {
-                        trace!("opening {} in read-mode", loc);
+                        debug!("opening {} in read-mode", loc);
                         buf.set_read_only(true);
                         self.add_buffer(buf)
                     }
                     Ok(buf) => {
-                        trace!("opening {} in write-mode", loc);
+                        debug!("opening {} in write-mode", loc);
                         self.add_buffer(buf)
                     }
                     Err(err) => efiles.push((loc, err)),
@@ -241,7 +242,7 @@ impl Code {
                 None => match loc.to_r_file() {
                     Some(f) => match Buffer::from_reader(f, loc.clone()) {
                         Ok(mut buf) => {
-                            trace!("opening {} in read-mode", loc);
+                            debug!("opening {} in read-mode", loc);
                             buf.set_read_only(true);
                             self.add_buffer(buf);
                         }

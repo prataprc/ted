@@ -2,7 +2,8 @@
 
 use crossterm::{self, style::StyledContent, Command};
 use lazy_static::lazy_static;
-use log::trace;
+#[allow(unused_imports)]
+use log::{debug, trace};
 use unicode_width::UnicodeWidthChar;
 
 use std::{
@@ -105,7 +106,7 @@ impl Terminal {
             Fatal,
             execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture, Hide)
         )?;
-        trace!(
+        debug!(
             "{} color_count:{}",
             tm,
             crossterm::style::available_color_count()

@@ -1,4 +1,5 @@
-use log::{error, trace};
+#[allow(unused_imports)]
+use log::{debug, error, trace};
 
 use crate::{
     code::{config::Config, Code},
@@ -23,19 +24,19 @@ impl Set {
         match self.param.as_str() {
             "wrap" => {
                 config.wrap = true;
-                trace!("set all windows to wrap text");
+                debug!("set all windows to wrap text");
             }
             "nowrap" => {
                 config.wrap = false;
-                trace!("set all windows to non-wrap text");
+                debug!("set all windows to non-wrap text");
             }
             "ro" => {
                 config.read_only = true;
-                trace!("set default file open to read-only mode");
+                debug!("set default file open to read-only mode");
             }
             "noro" => {
                 config.read_only = false;
-                trace!("set default file open to read-write mode");
+                debug!("set default file open to read-write mode");
             }
             _ => {
                 error!("invalid configuration command {}", self.param);

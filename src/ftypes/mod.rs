@@ -1,5 +1,6 @@
 use lazy_static::lazy_static;
-use log::trace;
+#[allow(unused_imports)]
+use log::{debug, trace};
 use tree_sitter as ts;
 
 use std::path;
@@ -104,7 +105,7 @@ pub fn new_parser(content: &str, lang: ts::Language) -> Result<(ts::Parser, ts::
     };
     let tree = parser.parse(content, None).unwrap();
 
-    trace!("lang:{:?}\n{}", lang, tree.root_node().to_sexp());
+    debug!("lang:{:?}\n{}", lang, tree.root_node().to_sexp());
 
     Ok((parser, tree))
 }

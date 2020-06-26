@@ -1,4 +1,5 @@
-use log::trace;
+#[allow(unused_imports)]
+use log::{debug, trace};
 use tree_sitter as ts;
 
 use crate::{
@@ -27,7 +28,7 @@ impl Tss {
         let (parser, tree) = ftypes::new_parser(&buf.to_string(), lang)?;
         let atmt = Automata::from_str("tss", tss::TSS, scheme)?;
 
-        trace!("{}", atmt);
+        debug!("{}", atmt);
 
         Ok(Tss { parser, tree, atmt })
     }

@@ -1,5 +1,5 @@
 use crossterm::queue;
-use log::trace;
+use log::{debug, trace};
 
 use std::{cmp, convert::TryInto, fmt, iter::FromIterator, result};
 
@@ -83,7 +83,7 @@ impl Wrap {
             view.into_new_view(buf)?
         };
 
-        trace!("SHIFT {}->{}@{}", self, view.cursor, view.coord);
+        debug!("SHIFT {}->{}@{}", self, view.cursor, view.coord);
 
         Ok(Wrap {
             name: self.name.clone(),
@@ -102,11 +102,9 @@ impl Wrap {
     {
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
-        trace!(
+        debug!(
             "WRAP-REFRESH {} nbc_xy:{} line_idx:{}",
-            self,
-            nbc_xy,
-            line_idx
+            self, nbc_xy, line_idx
         );
 
         let full_coord = self.outer_coord();
@@ -119,7 +117,6 @@ impl Wrap {
         let iter = (row..full_coord.hgt).zip(view_rows.into_iter());
         let s_canvas = scheme.to_style(Highlight::Canvas);
         for (row, (col_kind, bc_caret, n)) in iter {
-            // trace!("  text {} ({}, {}, {})", row, col_kind, bc_caret, n);
             let nu_span = {
                 let mut nu_span = self.nu.to_span(col_kind);
                 nu_span.set_cursor(Cursor { col, row });
@@ -137,13 +134,13 @@ impl Wrap {
             );
             err_at!(Fatal, termqu!(nu_span, line_span))?;
 
-            //trace!(
-            //    "  to_span_line row:{} {} {:?} {:?}",
-            //    row,
-            //    line_span.to_width(),
-            //    line_span,
-            //    nu_span.cursor
-            //);
+            trace!(
+                "  to_span_line row:{} {} {:?} {:?}",
+                row,
+                line_span.to_width(),
+                line_span,
+                nu_span.cursor
+            );
         }
 
         Ok(self.cursor)
@@ -272,7 +269,7 @@ impl NoWrap {
             row: new_row,
         };
 
-        trace!("SHIFT {}->{}@{}", self, cursor, coord);
+        debug!("SHIFT {}->{}@{}", self, cursor, coord);
         Ok(NoWrap {
             name: self.name,
             coord,

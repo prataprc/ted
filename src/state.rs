@@ -3,7 +3,7 @@
 //! but handled here, acts as the bridge between main.rs and the ted-library.
 
 use dirs;
-use log::trace;
+use log::{debug, trace};
 use simplelog;
 use structopt::StructOpt;
 
@@ -298,10 +298,9 @@ fn init_logger(opts: &Opt) -> Result<()> {
         simplelog::WriteLogger::init(level_filter, lcnf.build(), fs)
     )?;
 
-    trace!(
+    debug!(
         "logging initialized file:{:?} trace:{}",
-        log_file,
-        opts.trace
+        log_file, opts.trace
     );
     Ok(())
 }

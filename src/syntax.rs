@@ -29,7 +29,7 @@ pub fn highlight(
     let mut syns = {
         let (depth, sibling) = (0, 0);
         let tok = Token::from_node(buf, &root, depth, sibling);
-        trace!("{}", tok);
+        // trace!("{}", tok);
         match atmt.shift_in(&tok)? {
             Some(style) => vec![SyntSpan {
                 depth: tok.depth,
@@ -47,12 +47,15 @@ pub fn highlight(
     syns.extend(do_highlight(
         buf, scheme, tree, atmt, root, depth, from, till,
     )?);
-    syns.sort();
-    trace!("sorted syns:{:?}", syns);
+    syns.sort_by(|a, b| b.cmp(a)); // reverse sorting
+
+    // trace!("sorted syns:{:?}", syns);
 
     let mut hl_spans = HlSpans::new(canvas, from, till);
-    for syn in syns.into_iter() {
-        hl_spans.push(syn)?
+    while let Some(syn) = syns.pop() {
+        syns.extend(hl_spans.pop_after(&syn));
+        hl_spans.push(syn)?;
+        syns.sort_by(|a, b| b.cmp(a)); // reverse sorting
     }
 
     trace!("Hlspans {}", hl_spans);
@@ -135,18 +138,22 @@ impl HlSpans {
         }
     }
 
-    fn clip_span(&self, mut syn: SyntSpan) -> SyntSpan {
-        if self.from > syn.a {
-            syn.a = self.from
+    fn pop_after(&mut self, syn: &SyntSpan) -> Vec<SyntSpan> {
+        let mut hlsyns = vec![];
+        loop {
+            match self.syns.pop() {
+                Some(hlsyn) if &hlsyn > syn => hlsyns.push(hlsyn),
+                Some(hlsyn) => {
+                    self.syns.push(hlsyn);
+                    break hlsyns;
+                }
+                None => break hlsyns,
+            }
         }
-        if self.till < syn.z {
-            syn.z = self.till
-        }
-        syn
     }
 
     fn push(&mut self, mut syn: SyntSpan) -> Result<()> {
-        syn = self.clip_span(syn);
+        syn = syn.clip(self);
         match self.syns.len() {
             0 if self.from < syn.a => {
                 // There is an un-matched span.
@@ -160,7 +167,7 @@ impl HlSpans {
             }
             0 => self.syns.push(syn),
             _ => {
-                trace!("syn: {} syns: {:?}", syn, self.syns);
+                // trace!("syn: {} syns: {:?}", syn, self.syns);
                 let SyntSpan { depth, a, z, style } = self.syns.pop().unwrap();
                 assert!(a <= syn.a, "{}..{} {}", a, z, syn);
                 if z < syn.a {
@@ -182,19 +189,23 @@ impl HlSpans {
                 } else if a <= syn.a && syn.z <= z && syn.depth > depth {
                     // fully contained
                     // |..old..|..new..|..old..|
-                    self.syns.push(SyntSpan {
+                    SyntSpan {
                         depth,
                         a,
                         z: syn.a,
                         style: style.clone(),
-                    });
+                    }
+                    .filter()
+                    .map(|span| self.syns.push(span));
                     self.syns.push(syn.clone());
-                    self.syns.push(SyntSpan {
+                    SyntSpan {
                         depth,
                         a: syn.z,
                         z,
                         style,
-                    });
+                    }
+                    .filter()
+                    .map(|span| self.syns.push(span));
                 } else if a <= syn.a && syn.z <= z {
                     // fully contained
                     // |..old..|
@@ -206,6 +217,7 @@ impl HlSpans {
                     });
                 } else if syn.depth >= depth {
                     // overlap, incoming span is more specific
+                    // |..old|..|new..|
                     self.syns.push(SyntSpan {
                         depth,
                         a,
@@ -215,6 +227,7 @@ impl HlSpans {
                     self.syns.push(syn);
                 } else {
                     // overlap, existing span is more specific.
+                    // |..old|..|new..|
                     self.syns.push(SyntSpan { depth, a, z, style });
                     syn.a = z;
                     self.syns.push(syn)
@@ -283,7 +296,7 @@ impl fmt::Display for SyntSpan {
 
 impl fmt::Debug for SyntSpan {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "[{},{}..{}]", self.depth, self.a, self.z)
+        write!(f, "[{},{}..{},{}]", self.depth, self.a, self.z, self.style)
     }
 }
 
@@ -337,6 +350,25 @@ impl SyntSpan {
             let iter = buf.chars_at(self.a, DP::Right)?.take(self.z - self.a);
             String::from_iter(iter).into()
         };
+        // trace!("SyntSpan.into_span {}, style:{}", self, self.style);
         Ok(span.using(self.style.clone()))
+    }
+
+    fn clip(mut self, hl_spans: &HlSpans) -> SyntSpan {
+        if hl_spans.from > self.a {
+            self.a = hl_spans.from
+        }
+        if hl_spans.till < self.z {
+            self.z = hl_spans.till
+        }
+        self
+    }
+
+    fn filter(self) -> Option<SyntSpan> {
+        if self.a < self.z {
+            Some(self)
+        } else {
+            None
+        }
     }
 }

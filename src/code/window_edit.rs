@@ -1,4 +1,5 @@
-use log::trace;
+#[allow(unused_imports)]
+use log::{debug, trace};
 
 use std::{fmt, result};
 
@@ -54,8 +55,7 @@ impl WindowEdit {
             scheme: app.as_color_scheme().clone(),
             keymap: Keymap::new_edit(),
         };
-
-        trace!("{}", we);
+        debug!("{}", we);
         we
     }
 }

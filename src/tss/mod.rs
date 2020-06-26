@@ -202,7 +202,7 @@ impl Automata {
         // check whether there is a match with open-patterns.
         let mut style1: Option<Style> = None;
         let mut ops = vec![];
-        trace!("open_nodes: {:?}", self.open_nodes);
+        // trace!("open_nodes: {:?}", self.open_nodes);
         for (off, open_node) in self.open_nodes.iter().enumerate() {
             let (next, drop) = open_node.is_match(token)?;
             style1 = match next {
@@ -222,8 +222,8 @@ impl Automata {
                 None => style1,
             }
         }
-        trace!("ops: {:?}", ops);
-        for (off, next) in ops.into_iter() {
+        // trace!("ops: {:?}", ops);
+        for (off, next) in ops.into_iter().rev() {
             match next {
                 Some(next) => {
                     let _ = mem::replace(&mut self.open_nodes[off], next);
@@ -486,6 +486,7 @@ impl Node {
             End(_) => return Ok((None, false)),
         };
 
+        // trace!("node.is_match {} {}", ok, drop);
         if ok {
             Ok((Some(next.to_open_node(token)?), drop))
         } else {
