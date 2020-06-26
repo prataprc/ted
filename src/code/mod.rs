@@ -27,10 +27,9 @@ use std::{ffi, mem, sync::mpsc};
 use crate::{
     app::Application,
     buffer::Buffer,
-    code::{
-        cmd::Command, config::Config, window_file::WindowFile, window_less::WindowLess,
-        window_line::WindowLine, window_prompt::WindowPrompt,
-    },
+    code::window_prompt::WindowPrompt,
+    code::{cmd::Command, config::Config, window_file::WindowFile},
+    code::{window_less::WindowLess, window_line::WindowLine},
     colors::{ColorScheme, Highlight},
     event::{self, Event},
     location::Location,
@@ -44,12 +43,12 @@ use crate::{
 pub struct Code {
     coord: Coord,
     config: Config,
-    scheme: ColorScheme,
     subscribers: PubSub,
+    scheme: ColorScheme,
     buffers: Vec<Buffer>,
 
     wfile: Option<WindowFile>,
-    tbcline: WindowLine,
+    tbcline: WindowLine, // TODO: change this to `tabc`.
     inner: Inner,
 }
 
