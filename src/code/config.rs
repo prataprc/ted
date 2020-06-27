@@ -11,7 +11,8 @@ config![
     (line_number, bool, true),
     (wrap, bool, true),
     (left_margin_char, char, '|'),
-    (top_margin_char, char, '-')
+    (top_margin_char, char, '-'),
+    (color_scheme, String, "default".to_string())
 ];
 
 impl fmt::Display for Config {

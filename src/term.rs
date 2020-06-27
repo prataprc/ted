@@ -37,6 +37,13 @@ macro_rules! hidecr {
 }
 
 #[macro_export]
+macro_rules! curz {
+    ($val:expr) => {
+        $val.saturating_sub(1)
+    };
+}
+
+#[macro_export]
 macro_rules! termqu {
     ($arg0:expr $(, $args:expr)* $(,)?) => {{
         use crossterm::queue;

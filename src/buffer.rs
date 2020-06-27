@@ -448,6 +448,17 @@ impl Buffer {
     }
 
     #[inline]
+    pub fn cmd_insert(&mut self, char_idx: usize, text: &str) -> Result<()> {
+        let change = match &mut self.inner {
+            Inner::Normal(nb) => &mut nb.change,
+            Inner::Insert(ib) => &mut ib.change,
+        };
+
+        *change = Change::to_next_change(change);
+        self.to_mut_change().insert(char_idx, text)
+    }
+
+    #[inline]
     pub fn cmd_backspace(&mut self, n: usize) -> Result<()> {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
@@ -861,6 +872,11 @@ impl Change {
     fn insert_char(&mut self, ch: char) -> Result<()> {
         self.buf.insert_char(self.cursor, ch);
         self.cursor += 1;
+        Ok(())
+    }
+
+    fn insert(&mut self, char_idx: usize, text: &str) -> Result<()> {
+        self.buf.insert(char_idx, ch);
         Ok(())
     }
 

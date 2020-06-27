@@ -19,7 +19,7 @@ mod window_line;
 mod window_prompt;
 
 #[allow(unused_imports)]
-use log::{debug, trace};
+use log::{debug, error, trace};
 use toml;
 
 use std::{ffi, mem, sync::mpsc};
@@ -34,36 +34,40 @@ use crate::{
     event::{self, Event},
     location::Location,
     pubsub::{Notify, PubSub},
-    state::Opt,
+    state::{Opt, State},
     term::{Span, Spanline},
     window::{Coord, Cursor, Window},
     Error, Result,
 };
 
 pub struct Code {
-    coord: Coord,
+    config_value: toml::Value,
     config: Config,
+    coord: Coord,
     subscribers: PubSub,
     scheme: ColorScheme,
     buffers: Vec<Buffer>,
 
-    wfile: Option<WindowFile>,
-    tbcline: WindowLine, // TODO: change this to `tabc`.
     inner: Inner,
 }
 
 enum Inner {
     Edit {
+        wfile: WindowFile,
+        tbcline: WindowLine, // TODO: change this to `tabc`.
         stsline: WindowLine,
     },
-    AnyKey {
-        stsline: WindowLine,
+    Prompt {
+        edit: Box<Inner>,
         prompts: Vec<WindowPrompt>,
     },
     Command {
+        edit: Box<Inner>,
+        tbcline: WindowLine, // TODO: change this to `tabc`.
         cmdline: WindowLine,
     },
     Less {
+        edit: Box<Inner>,
         less: WindowLess,
     },
     None,
@@ -87,74 +91,85 @@ impl AsMut<Config> for Code {
     }
 }
 
-impl Code {
-    pub fn new(config: toml::Value, coord: Coord, opts: Opt) -> Result<Code> {
-        let config = {
+impl<'a> From<(Opt, &'a State, Coord)> for Code {
+    fn from((opts, state, coord): (Opt, &'a State, Coord)) -> Code {
+        use crate::config as mod_config;
+
+        let config: Config = {
+            let value = mod_config::to_section(state.config.clone(), "code");
             let cnf: Config = Default::default();
-            cnf.mixin(config.try_into().unwrap())
+            cnf.mixin(value.try_into().unwrap())
         };
 
         debug!(
             "starting app `code` coord:{} config...\n{}",
             coord,
-            err_at!(FailConvert, toml::to_string(&config))?
+            toml::to_string(&config).unwrap(),
         );
 
-        let mut app = Code {
-            coord,
-            config,
-            scheme: ColorScheme::default()?,
-            subscribers: Default::default(),
-            buffers: Default::default(),
-
-            wfile: None,
-            tbcline: Code::new_tbcline(coord),
-            inner: Default::default(),
+        let scheme = state.to_color_scheme(&config.color_scheme),
+        let (buffers, prompts) = {
+            let files = opts.files.clone();
+            open_cmd_files(Self::to_coord_prompt(coord), &config, &scheme, files)
         };
+        if buffers.len() == 0 {
+            buffers.push(Buffer::empty());
+        }
 
-        let stsline = Code::new_stsline(coord);
-        let wps = app.open_cmd_files(opts.files.clone())?;
-        app.inner = if wps.len() > 0 {
-            Inner::AnyKey {
-                stsline,
-                prompts: wps,
-            }
-        } else {
-            Inner::Edit { stsline }
-        };
-
-        app.wfile = {
-            let wf_coord = {
-                let mut wf_coord = coord;
-                wf_coord.hgt -= 1;
-                wf_coord
+        let edit = {
+            let stsline = Code::new_stsline(coord);
+            let tbcline = Code::new_tbcline(coord);
+            let wfile = {
+                let buf = buffers.first().unwrap();
+                Code::new_window_file(coord, config.clone(), buf)
             };
-            let buf = app.buffers.pop().unwrap_or(Buffer::empty());
-            let wf = WindowFile::new(&app, wf_coord, &buf, app.as_ref());
-            app.add_buffer(buf);
-            Some(wf)
+            Inner::Edit { wfile, stsline, wfile }
         };
 
-        Ok(app)
+        Code {
+            config_value: state.config.clone(),
+            config: config.clone(),
+            coord,
+            subscribers: state.subscribers.clone(),
+            scheme,
+            buffers: Default::default(),
+            inner: if prompts.len() > 0 {
+                Inner::Prompt { prompts, edit: Box::new(edit)}
+            } else {
+                edit
+            },
+        }
+    }
+}
+
+impl Code {
+    fn new_stsline(mut coord: Coord) -> WindowLine {
+        coord.row = coord.hgt;
+        coord.hgt = 1;
+        WindowLine::new_status(coord)
     }
 
-    fn new_stsline(coord: Coord) -> WindowLine {
-        let (col, _) = coord.to_origin();
-        let (hgt, wth) = coord.to_size();
-        WindowLine::new_status(Coord::new(col, hgt, 1, wth))
+    fn new_cmdline(mut coord: Coord) -> WindowLine {
+        coord.row = coord.hgt;
+        coord.hgt = 1;
+        WindowLine::new_cmd(coord)
     }
 
-    fn new_cmdline(coord: Coord) -> WindowLine {
-        let (col, _) = coord.to_origin();
-        let (hgt, wth) = coord.to_size();
-        WindowLine::new_cmd(Coord::new(col, hgt, 1, wth))
+    fn new_tbcline(mut coord: Coord) -> WindowLine {
+        coord.row = coord.hgt.saturating_sub(1);
+        coord.hgt = 1;
+        WindowLine::new_tab(coord)
     }
 
-    fn new_tbcline(coord: Coord) -> WindowLine {
-        let (col, _) = coord.to_origin();
-        let (hgt, wth) = coord.to_size();
-        let hgt = hgt.saturating_sub(1);
-        WindowLine::new_tab(Coord::new(col, hgt, 1, wth))
+    fn new_window_file(mut coo: Coord, cnf: Config, buf: &Buffer) -> WindowFile {
+        coo.hgt = coo.hgt.saturating_sub(1);
+        (coo, buf, config).into()
+    }
+
+    #[inline]
+    fn to_coord_prompt(mut coord: Coord) -> Coord {
+        coord.hgt = coord.hgt.saturating_sub(1)
+        coord
     }
 }
 
@@ -215,70 +230,53 @@ impl Code {
 }
 
 impl Code {
-    fn open_cmd_files(&mut self, fls: Vec<String>) -> Result<Vec<WindowPrompt>> {
-        let locs: Vec<Location> = fls
-            .into_iter()
-            .map(|f| {
-                let f: ffi::OsString = f.into();
-                Location::new_disk(&f)
-            })
-            .collect();
+    fn open_cmd_files(
+        coord: Coord,
+        config: &Config,
+        scheme: &ColorScheme,
+        files: Vec<String>,
+    ) -> Result<(Vec<Buffer>, Vec<WindowPrompt>)> {
+        let locs: Vec<Location> = {
+            let files: Vec<ffi::OsString> = files.into_iter().map(Into);
+            files.map(|f| Location::new_disk(&f)).collect()
+        };
         let mut efiles = vec![];
+        let mut buffers = vec![];
+        let mut prompts = vec![];
         for loc in locs.into_iter() {
-            match loc.to_rw_file() {
-                Some(f) => match Buffer::from_reader(f, loc.clone()) {
-                    Ok(mut buf) if self.config.read_only => {
-                        debug!("opening {} in read-mode", loc);
-                        buf.set_read_only(true);
-                        self.add_buffer(buf)
-                    }
-                    Ok(buf) => {
-                        debug!("opening {} in write-mode", loc);
-                        self.add_buffer(buf)
-                    }
-                    Err(err) => efiles.push((loc, err)),
+            let items = loc.to_rw_file().map(|f| ("rw", Some(f))).unwrap_or(
+                loc.to_r_file()
+                    .map(|f| ("r", Some(f)))
+                    .unwrap_or(("err", None)),
+            );
+            let buf = match items {
+                ("rw", Some(f)) => {
+                    debug!("opening {} in write-mode", loc);
+                    Buffer::from_reader(f, loc.clone()).unwrap(),
                 },
-                None => match loc.to_r_file() {
-                    Some(f) => match Buffer::from_reader(f, loc.clone()) {
-                        Ok(mut buf) => {
-                            debug!("opening {} in read-mode", loc);
-                            buf.set_read_only(true);
-                            self.add_buffer(buf);
-                        }
-                        Err(err) => efiles.push((loc, err)),
-                    },
-                    None => {
-                        let err = "file missing/no-permission".to_string();
-                        efiles.push((loc, Error::IOError(err)))
-                    }
+                ("r", Some(f)) => {
+                    debug!("opening {} in read-mode", loc);
+                    Buffer::from_reader(f, loc.clone()).unwrap(),
                 },
+                ("err", None) => {
+                    debug!("error opening {}", loc);
+                    let lines = vec![
+                        format!("error opening {:?}", loc.to_long_string()),
+                        format!("-press any key to continue-")
+                    ];
+                    prompts.push((coord, lines, scheme).into())
+                },
+                _ => unreachable!(),
+            };
+            buffers.push(buf);
+            match items {
+                ("r", _) => buf.set_read_only(true),
+                ("rw", _) => buf.set_read_only(config.read_only),
+                _ => (),
             }
         }
 
-        let mut wps = vec![];
-        let prompt_coord = {
-            let (col, row) = self.coord.to_origin();
-            let (hgt, wth) = self.coord.to_size();
-            Coord::new(col, row, hgt - 1, wth)
-        };
-        for (loc, err) in efiles.into_iter() {
-            let span1 = {
-                let span: Span = {
-                    //
-                    format!("{:?} : {}", loc.to_long_string()?, err).into()
-                };
-                span.using(self.scheme.to_style(Highlight::Error))
-            };
-            let span2 = {
-                let st = format!("-press any key to continue-");
-                let span: Span = st.into();
-                span.using(self.scheme.to_style(Highlight::Prompt))
-            };
-            let span_lines: Vec<Spanline> = vec![span1.into(), span2.into()];
-            wps.push(WindowPrompt::new(prompt_coord, span_lines));
-        }
-
-        Ok(wps)
+        Ok((buffers, prompts))
     }
 }
 
@@ -294,7 +292,7 @@ impl Application for Code {
     fn to_cursor(&self) -> Cursor {
         match &self.inner {
             Inner::Edit { .. } => self.wfile.as_ref().unwrap().to_cursor(),
-            Inner::AnyKey { prompts, .. } => prompts[0].to_cursor(),
+            Inner::Prompt { prompts, .. } => prompts[0].to_cursor(),
             Inner::Command { cmdline } => cmdline.to_cursor(),
             Inner::Less { less } => less.to_cursor(),
             Inner::None => Default::default(),
@@ -363,7 +361,7 @@ impl Inner {
                     None => unreachable!(),
                 },
             },
-            Inner::AnyKey {
+            Inner::Prompt {
                 mut prompts,
                 stsline,
             } => {
@@ -373,7 +371,7 @@ impl Inner {
                 }
                 Ok(match prompts.len() {
                     0 => (Inner::Edit { stsline }, evnt),
-                    _ => (Inner::AnyKey { prompts, stsline }, evnt),
+                    _ => (Inner::Prompt { prompts, stsline }, evnt),
                 })
             }
             Inner::Command { mut cmdline } => {
@@ -402,7 +400,7 @@ impl Inner {
     fn on_refresh(mut self, app: &mut Code) -> Result<Inner> {
         match &mut self {
             Inner::Edit { stsline } => stsline.on_refresh(app)?,
-            Inner::AnyKey { prompts, stsline } => {
+            Inner::Prompt { prompts, stsline } => {
                 prompts[0].on_refresh(app)?;
                 stsline.on_refresh(app)?;
             }

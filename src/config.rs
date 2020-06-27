@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use log::{info, warn};
 use toml;
 
@@ -6,7 +7,7 @@ use std::{
     ffi, fs, path,
 };
 
-use crate::{Error, Result};
+use crate::{colors::ColorScheme, Error, Result};
 
 /// Single invocation of this macros, accepts an array of configuration params
 /// shall introduce the following artifacts:
@@ -99,9 +100,21 @@ macro_rules! config {
 
 struct ConfigFile(ffi::OsString);
 
-impl<'a> From<&'a str> for ConfigFile {
-    fn from(stem: &str) -> ConfigFile {
+impl From<String> for ConfigFile {
+    fn from(stem: String) -> ConfigFile {
         ConfigFile(format!("{}.toml", stem).into())
+    }
+}
+
+impl From<ConfigFile> for ffi::OsString {
+    fn from(cf: ConfigFile) -> ffi::OsString {
+        cf.0
+    }
+}
+
+impl From<ConfigFile> for path::PathBuf {
+    fn from(cf: ConfigFile) -> path::PathBuf {
+        cf.0.into()
     }
 }
 
@@ -117,68 +130,130 @@ impl TryFrom<ConfigFile> for toml::Value {
     }
 }
 
+lazy_static! {
+    static ref TOML_FILES: Vec<path::PathBuf> = {
+        let mut toml_files = vec![];
+        dirs::home_dir().map(|home| {
+            let home = home.clone().into_os_string();
+            let cf: ConfigFile = ".ted".to_string().into();
+            toml_files.push([home.clone(), cf.into()].iter().collect());
+        });
+        toml_files
+    };
+    static ref FTYPES_DIRS: Vec<path::PathBuf> = {
+        let mut ftype_dirs = vec![];
+        dirs::home_dir().map(|home| {
+            let home = home.clone().into_os_string();
+            ftype_dirs.push(
+                [home.clone(), ".ted".into(), "ftypes".into()]
+                    .iter()
+                    .collect(),
+            );
+        });
+        ftype_dirs
+    };
+    static ref COLORS_DIRS: Vec<path::PathBuf> = {
+        let mut colors_dirs = vec![];
+        dirs::home_dir().map(|home| {
+            let home = home.clone().into_os_string();
+            colors_dirs.push(
+                [home.clone(), ".ted".into(), "colors".into()]
+                    .iter()
+                    .collect(),
+            );
+        });
+        colors_dirs
+    };
+}
+
 /// Read ted configuration from:
 ///
 /// * default configuration.
 /// * ~/.ted.toml
-/// * ~/.ted/<ftype>/<ftype>.toml
+/// * ~/.ted/<ftypes>/<ftype>.toml
 /// * command line argument.
 ///
-pub fn read_config(toml_file: &str, ftype: Option<&str>) -> Result<toml::Value> {
-    let mut files: Vec<path::PathBuf> = vec![];
-    match dirs::home_dir() {
-        Some(home) => {
-            let home = home.clone().into_os_string();
-            // ~/.ted.toml
-            files.push({
-                let ted_toml: ConfigFile = ".ted".into();
-                [home.clone(), ted_toml.0].iter().collect()
-            });
-            // ~/.ted/ftype/<ftype>.toml
-            if let Some(ftype) = ftype {
-                let ftype_toml: ConfigFile = ftype.into();
-                files.push({
-                    [home.clone(), ".ted".into(), "ftype".into(), ftype_toml.0]
-                        .iter()
-                        .collect()
-                });
-            }
+pub fn read_config(toml_file: Option<String>, ftype: Option<String>) -> Result<toml::Value> {
+    let mut files: Vec<path::PathBuf> = TOML_FILES.clone();
+    if let Some(ftype) = ftype {
+        for ftypes_dir in FTYPES_DIRS.clone().into_iter() {
+            let cf: ConfigFile = ftype.clone().into();
+            files.push([ftypes_dir, cf.into()].iter().collect());
         }
-        None => (),
     }
 
-    if toml_file.len() > 0 {
-        files.push({
-            let toml_file: ffi::OsString = toml_file.clone().into();
-            err_at!(IOError, fs::canonicalize(&toml_file))?
-        });
+    if let Some(toml_file) = toml_file {
+        let toml_file: ffi::OsString = toml_file.into();
+        files.push(err_at!(IOError, fs::canonicalize(&toml_file))?);
     }
 
     let mut config: toml::map::Map<String, toml::Value> = Default::default();
-    for fname in files.into_iter() {
-        if !path::Path::new(&fname).exists() {
-            warn!("fail reading config from {:?}", fname);
+    for fl in files.into_iter() {
+        if !path::Path::new(&fl).exists() {
+            warn!("fail reading config from {:?}", fl);
             continue;
         }
 
         let conf: toml::Value = {
-            let cf = ConfigFile(fname.clone().into_os_string());
+            let cf = ConfigFile(fl.clone().into_os_string());
             cf.try_into()?
         };
         match conf.as_table() {
             Some(table) => config.extend(table.clone().into_iter()),
-            None => warn!("config file {:?} not valid", fname),
+            None => warn!("config file {:?} not valid", fl),
         };
-        info!("load configuration from {:?}", fname);
+        info!("load configuration from {:?}", fl);
     }
 
     Ok(toml::Value::Table(config))
 }
 
-/// Extract application configuration from `ted.toml`.
-pub fn to_app_config(config: &toml::Value, app: &str) -> toml::Value {
-    match config.get(app) {
-        Some(value) => value.clone(),
-        None => toml::Value::Table(Default::default()),
+/// Read ted color-schemes from:
+///
+/// * ~/.ted/colors/<scheme>.toml
+///
+pub fn read_color_schemes() -> Result<Vec<ColorScheme>> {
+    use std::str::from_utf8;
+
+    let mut schemes = vec![];
+    for colors_dir in COLORS_DIRS.clone().into_iter() {
+        let entries: Vec<fs::DirEntry> = {
+            let de = err_at!(IOError, fs::read_dir(&colors_dir))?;
+            de.filter_map(|de| de.ok()).collect()
+        };
+        for entry in entries.into_iter() {
+            let fp: path::PathBuf = {
+                let parts = [entry.path(), entry.file_name().into()];
+                parts.iter().collect()
+            };
+            let value: Option<toml::Value> = {
+                let bytes = err_at!(IOError, fs::read(&fp))?;
+                match from_utf8(&bytes) {
+                    Ok(s) => s.parse().ok(),
+                    Err(_) => {
+                        warn!("not a valid color-scheme {:?}", fp);
+                        None
+                    }
+                }
+            };
+            value.map(|val| {
+                let cs: Option<ColorScheme> = TryFrom::try_from(val).ok();
+                cs.map(|cs| schemes.push(cs))
+            });
+        }
     }
+
+    Ok(schemes)
+}
+
+/// Extract configuration for specified section. Section can be
+/// dot-separated.
+pub fn to_section(mut config: toml::Value, section: &str) -> toml::Value {
+    for sec in section.split(".") {
+        config = match config.get(sec) {
+            Some(value) => value.clone(),
+            None => toml::Value::Table(Default::default()),
+        };
+    }
+    config
 }

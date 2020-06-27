@@ -37,7 +37,7 @@ impl fmt::Display for WindowEdit {
 
 impl WindowEdit {
     #[inline]
-    pub fn new(app: &Code, coord: Coord, buf: &Buffer, config: &Config) -> WindowEdit {
+    pub fn new(coord: Coord, buf: &Buffer, config: Config) -> WindowEdit {
         use crate::code::view::{NoWrap, Wrap};
 
         let cursor = if config.wrap {

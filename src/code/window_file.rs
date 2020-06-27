@@ -25,7 +25,6 @@ use crate::{
 pub struct WindowFile {
     coord: Coord, // x window coord.
     we: WindowEdit,
-    // stsline: Option<WindowLine>, TODO: needed for split windows.
 }
 
 impl fmt::Display for WindowFile {
@@ -36,11 +35,10 @@ impl fmt::Display for WindowFile {
 
 impl WindowFile {
     #[inline]
-    pub fn new(app: &Code, coord: Coord, buf: &Buffer, config: &Config) -> WindowFile {
+    pub fn new(coord: Coord, buf: &Buffer, config: Config) -> WindowFile {
         WindowFile {
             coord,
-            we: WindowEdit::new(app, coord.clone(), buf, config),
-            // stsline: None,
+            we: WindowEdit::new(coord, buf, config),
         }
     }
 }

@@ -3,19 +3,21 @@
 //! but handled here, acts as the bridge between main.rs and the ted-library.
 
 use dirs;
-use log::{debug, trace};
+use log::{debug, error, trace};
 use simplelog;
 use structopt::StructOpt;
 
 use std::{
+    convert::{TryFrom, TryInto},
     fs, path,
     sync::mpsc,
     time::{Duration, SystemTime},
 };
 
 use crate::{
-    app::Application,
+    app::App,
     code,
+    colors::{self, ColorScheme},
     event::Event,
     pubsub::{Notify, PubSub},
     term::Terminal,
@@ -29,8 +31,8 @@ pub struct Opt {
     #[structopt(long = "app", default_value = "code")]
     pub app: String,
 
-    #[structopt(short = "u", long = "config", default_value = "")]
-    pub toml_file: String,
+    #[structopt(short = "u", long = "config")]
+    pub toml_file: Option<String>,
 
     #[structopt(long = "log", default_value = "")]
     pub log_file: String,
@@ -55,10 +57,42 @@ pub struct Opt {
 
 /// Application state
 pub struct State {
-    pub tm: Terminal,
+    pub opts: Opt,
     pub config: toml::Value,
-    pub app: code::Code,
+    pub tm: Terminal,
+    pub schemes: Vec<ColorScheme>,
     pub subscribers: PubSub,
+    pub app: App,
+}
+
+impl TryFrom<Opt> for State {
+    type Error = Error;
+
+    fn try_from(opts: Opt) -> Result<State> {
+        use crate::config;
+
+        // first the terminal
+        let tm = Terminal::init()?;
+        // then the logger
+        init_logger(&opts)?;
+        // then the configuration
+        let cnf = config::read_config(opts.toml_file.clone(), None)?;
+        // load the color schemes
+        let schemes = {
+            let mut schemes = colors::pkg_color_schemes();
+            schemes.extend(config::read_color_schemes()?);
+            schemes
+        };
+
+        Ok(State {
+            opts,
+            config: cnf,
+            tm,
+            schemes,
+            subscribers: Default::default(),
+            app: Default::default(),
+        })
+    }
 }
 
 impl AsMut<Terminal> for State {
@@ -70,43 +104,26 @@ impl AsMut<Terminal> for State {
 impl State {
     /// Create a new ted-state with command line opts.
     pub fn new(opts: Opt) -> Result<State> {
-        use crate::config;
+        let mut state: State = opts.clone().try_into()?;
 
-        let tm = Terminal::init()?;
-
-        // then the logger
-        init_logger(&opts)?;
-        // then the configuration
-        let cnf = config::read_config(&opts.toml_file, None)?;
-        // if there is any ted-level pub-sub to be done, do it here.
-        let subscribers: PubSub = Default::default();
+        // TODO: if there is any ted-level pub-sub to be done, do it here.
 
         // now we are ready to create the app.
-        let app = match opts.app.as_str() {
+        state.app = match opts.app.as_str() {
             "code" => {
-                let mut app = {
-                    let aconfig = config::to_app_config(&cnf, "code");
-                    let coord = Coord::new(1, 1, tm.rows, tm.cols);
-                    code::Code::new(aconfig, coord, opts.clone())?
+                let app: code::Code = {
+                    let opts = opts.clone();
+                    let coord = Coord::new(1, 1, state.tm.rows, state.tm.cols);
+                    (opts, &state, coord).into()
                 };
-                for (topic, chans) in subscribers.to_subscribers().into_iter() {
-                    for chan in chans.into_iter() {
-                        app.subscribe(&topic, chan)
-                    }
-                }
-                Ok(app)
+                Ok(App::Code(app))
             }
             _ => err_at!(Invalid, msg: format!("invalid app {:?}", &opts.app)),
         }?;
 
         // a new ted-state is created. make sure to call event_loop() to
         // launch the application.
-        Ok(State {
-            tm,
-            config: cnf,
-            app,
-            subscribers: Default::default(),
-        })
+        Ok(state)
     }
 }
 
@@ -120,15 +137,25 @@ impl State {
     /// Notify all subscribers for `topic` with `msg`. Refer [pubsub::PubSub]
     /// for more detail.
     pub fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
-        match self.subscribers.notify(topic, msg.clone()) {
-            Ok(_) => Ok(()),
-            Err(Error::NoTopic) => self.app.notify(topic, msg.clone()),
-            Err(err) => Err(err),
+        match self.app.notify(topic, msg.clone()) {
+            Ok(_) => (),
+            Err(err) => error!("state notification {}", err),
         }
+
+        Ok(())
     }
 
     pub fn as_config(&self) -> &toml::Value {
         &self.config
+    }
+
+    pub fn to_color_scheme(&self, name: &str) -> ColorScheme {
+        for scheme in self.schemes.iter() {
+            if scheme.name == name {
+                return scheme.clone();
+            }
+        }
+        self.to_color_scheme("default")
     }
 }
 

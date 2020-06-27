@@ -1,4 +1,5 @@
 use crossterm::queue;
+use lazy_static::lazy_static;
 #[allow(unused_imports)]
 use log::trace;
 use regex::Regex;
@@ -8,17 +9,20 @@ use std::{cmp, fmt, mem, result};
 
 use crate::{
     buffer::Buffer,
-    code::{keymap::Keymap, Code},
+    code::Code,
     event::Event,
     term::{Span, Spanline},
     window::{Coord, Cursor, Window},
     Error, Result,
 };
 
+lazy_static! {
+    static ref RE_ERROR: Regex = Regex::new(r"(?i)error");
+}
+
 pub struct WindowPrompt {
     coord: Coord,
     span_lines: Vec<Spanline>,
-    keymap: Keymap,
     buffer: Buffer,
     options: Vec<Regex>,
 }
@@ -31,11 +35,21 @@ impl fmt::Display for WindowPrompt {
 
 impl WindowPrompt {
     #[inline]
-    pub fn new(coord: Coord, lines: Vec<Spanline>) -> WindowPrompt {
+    pub fn new(coord: Coord, lines: Vec<String>, scheme: &ColorScheme) -> Self {
+        use crate::event::DP;
+
+        let style = Self::to_style(&lines, scheme);
+        let span_lines: Vec<Spanline> = {
+            let iter = lines.into_iter().map(|l| {
+                let span: Span = l.into();
+                let spl: Spanline = span.using(style.clone()).into();
+                spl
+            });
+            iter.collect()
+        };
         let mut w = WindowPrompt {
             coord,
             span_lines: lines,
-            keymap: Keymap::new_prompt(),
             buffer: Buffer::empty(),
             options: Default::default(),
         };
@@ -45,6 +59,13 @@ impl WindowPrompt {
 
     pub fn set_options(&mut self, options: Vec<Regex>) {
         self.options.extend(options.into_iter());
+    }
+
+    fn to_style(lines: &[String] scheme: &ColorScheme) -> Style {
+        match lines.iter().any(|l| RE_ERROR.find(l.as_str())) {
+            true => scheme.to_style(Highlight::Error),
+            false => scheme.to_style(Highlight::Canvas),
+        }
     }
 }
 
@@ -68,44 +89,31 @@ impl Window for WindowPrompt {
 
     #[inline]
     fn to_cursor(&self) -> Cursor {
-        let n = match self.span_lines.last() {
-            Some(line) => line.to_width(),
+        let col = match self.span_lines.last() {
+            Some(line) => {
+                let n = {
+                    let s = self.buffer.to_string();
+                    s.chars().filter_map(|ch| ch.width()).sum()
+                };
+                cmp::min(curz!(coord.col) + n + line.to_width(), curz!(wth))
+            }
             None => 0,
         };
-        let m: usize = {
-            let s = self.buffer.to_string();
-            s.chars().filter_map(|ch| ch.width()).sum()
-        };
-        let (hgt, wth) = self.coord.to_size();
-        let col = {
-            let (col, _) = self.coord.to_origin_cursor();
-            let good_col = (col as usize) + n + m;
-            cmp::min(good_col, wth.saturating_sub(1) as usize) as u16
-        };
-        Cursor::new(col, hgt - 1)
+        Cursor::new(col, curz!(coord.hgt))
     }
 
     fn on_event(&mut self, _: &mut Code, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Noop),
-            evnt => {
-                let mut km = mem::replace(&mut self.keymap, Default::default());
-                let evnt = km.fold(&self.buffer, evnt)?;
-                let evnt = self.buffer.on_event(evnt)?;
-                self.keymap = km;
-                Ok(evnt)
-            }
+            evnt => self.buffer.on_event(evnt),
         }
     }
 
     fn on_refresh(&mut self, _: &mut Code) -> Result<()> {
-        let (col, row_iter) = {
-            let (col, _) = self.coord.to_origin_cursor();
-            let (hgt, _) = self.coord.to_size();
-            let start = hgt.saturating_sub(self.span_lines.len() as u16);
-            (col, start..hgt)
-        };
-        for (row, line) in row_iter.zip(self.span_lines.iter_mut()) {
+        let col = curz!(self.coord.col);
+        let till = curz!(self.coord.hgt)
+        let rows = (till - self.span_lines.len())..till;
+        for (row, line) in rows.zip(self.span_lines.iter_mut()) {
             line.set_cursor(Cursor { col, row });
             err_at!(Fatal, termqu!(line))?;
         }

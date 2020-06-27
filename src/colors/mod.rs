@@ -9,11 +9,18 @@ use crate::{term::Style, Error, Result};
 /// Default color-scheme
 pub const DEFAULT: &'static str = include_str!("./default.toml");
 
-/// Colorscheme for ted applications.
+pub fn pkg_color_schemes() -> Vec<ColorScheme> {
+    vec![{
+        let value: toml::Value = DEFAULT.parse().unwrap();
+        TryFrom::try_from(value).unwrap()
+    }]
+}
+
+/// ColorScheme for ted applications.
 #[derive(Clone)]
 pub struct ColorScheme {
-    name: String,
-    hs: Vec<Style>,
+    pub name: String,
+    pub hs: Vec<Style>,
 }
 
 impl fmt::Display for ColorScheme {
