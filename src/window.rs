@@ -34,7 +34,7 @@ pub trait Window {
 /// This is a simple abstraction trait for [buffer::Buffer]. Gives an idea
 /// on window's api dependency with `Buffer`.
 pub trait WinBuffer<'a> {
-    type IterLine: Iterator<Item = &'a str>;
+    type IterLine: Iterator<Item = String>;
     type IterChar: Iterator<Item = char>;
 
     /// Return the cursor position, as (col, row) starting from (0,), within

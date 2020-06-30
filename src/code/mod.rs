@@ -275,8 +275,7 @@ impl Code {
             };
             files.into_iter().map(|f| Location::new_disk(&f)).collect()
         };
-        let mut buffers = vec![];
-        let mut prompts = vec![];
+        let (mut buffers, mut prompts) = (vec![], vec![]);
         for loc in locs.into_iter() {
             let items = loc.to_rw_file().map(|f| ("rw", Some(f))).unwrap_or(
                 loc.to_r_file()

@@ -10,13 +10,16 @@ use ropey::{self, Rope};
 use std::{
     borrow::Borrow,
     cell::{self, RefCell},
-    cmp, fmt, io,
+    cmp,
+    convert::{TryFrom, TryInto},
+    fmt, io,
     iter::FromIterator,
     mem,
     ops::Bound,
     rc::{self, Rc},
     result,
     sync::Mutex,
+    vec,
 };
 
 use crate::{
@@ -115,7 +118,7 @@ pub struct Buffer {
 
     // Last search command applied on this buffer.
     mto_pattern: Mto,
-    // Last find character (within the line) command  applied on this buffer.
+    // Last find character command (within the line) applied on this buffer.
     mto_find_char: Mto,
     // Number of times to repeat an insert operation.
     insert_repeat: usize,
@@ -1481,34 +1484,32 @@ pub fn mto_bracket(buf: &mut Buffer, e: Mto) -> Result<Event> {
 }
 
 pub fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
-    let (n, pattern, dp) = match evnt {
-        Mto::Pattern(n, Some(pattern), dp) => Ok((n, pattern, dp)),
+    let (n, patt, dp) = match evnt {
+        Mto::Pattern(n, Some(patt), dp) => Ok((n, patt, dp)),
         _ => err_at!(Fatal, msg: format!("unreachable")),
     }?;
 
-    let search = {
-        let text = buf.to_string();
-        Search::new(&pattern, &text, dp)?
-    };
-    let mut cursor = buf.to_cursor();
-    let byte_off = buf.char_to_byte(cursor);
+    let iter = {
+        let search: Search = patt.as_str().try_into()?;
+        let byte_off = buf.char_to_byte(buf.to_cursor());
+        match dp {
+            DP::Right => search.find_fwd(&buf.to_string(), byte_off),
+            DP::Left => search.find_rev(&buf.to_string(), byte_off),
+            _ => unreachable!(),
+        }
+    }
+    .into_iter();
 
     let n = n.saturating_sub(1);
-    cursor = match dp {
-        DP::Left => {
-            let item = search.rev(byte_off).skip(n).next();
-            match item {
-                Some((s, _)) => Ok(s),
-                None => Ok(cursor),
-            }
-        }
-        DP::Right => {
-            let item = search.iter(byte_off).skip(n).next();
-            match item {
-                Some((s, _)) => Ok(s),
-                None => Ok(cursor),
-            }
-        }
+    let cursor = match dp {
+        DP::Left => match iter.skip(n).next() {
+            Some((s, _)) => Ok(s),
+            None => Ok(buf.to_cursor()),
+        },
+        DP::Right => match iter.skip(n).next() {
+            Some((s, _)) => Ok(s),
+            None => Ok(buf.to_cursor()),
+        },
         _ => err_at!(Fatal, msg: format!("unreachable")),
     }?;
 
@@ -1523,13 +1524,13 @@ pub struct IterLine<'a> {
 }
 
 impl<'a> Iterator for IterLine<'a> {
-    type Item = &'a str;
+    type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.reverse {
-            self.iter.prev().map(|l| l.as_str().unwrap_or(""))
+            self.iter.prev().map(|l| l.to_string())
         } else {
-            self.iter.next().map(|l| l.as_str().unwrap_or(""))
+            self.iter.next().map(|l| l.to_string())
         }
     }
 }
@@ -1554,65 +1555,53 @@ impl<'a> Iterator for IterChar<'a> {
 
 #[derive(Clone)]
 struct Search {
-    re: Regex,
-    matches: Vec<(usize, usize)>, // byte (start, end)
-    dp: DP,
+    patt: Regex,
+}
+
+impl<'a> TryFrom<&'a str> for Search {
+    type Error = Error;
+
+    fn try_from(patt: &'a str) -> Result<Search> {
+        let patt = err_at!(BadPattern, Regex::new(patt), format!("{}", patt))?;
+        Ok(Search { patt })
+    }
 }
 
 impl Search {
-    fn new(patt: &str, text: &str, dp: DP) -> Result<Search> {
-        let re = err_at!(BadPattern, Regex::new(patt), format!("{}", patt))?;
-        let matches = re.find_iter(text).map(|m| (m.start(), m.end())).collect();
-        Ok(Search { re, matches, dp })
-    }
+    fn find_fwd(&self, text: &str, byte_off: usize) -> Vec<(usize, usize)> {
+        let matches: Vec<(usize, usize)> = {
+            let iter = self.patt.find_iter(text).map(|m| (m.start(), m.end()));
+            iter.collect()
+        };
 
-    fn iter(&self, byte_off: usize) -> impl Iterator<Item = (usize, usize)> {
-        match self.find(byte_off, &self.matches[..]) {
+        match Self::find(byte_off, &matches[..]) {
             Some(i) => {
-                let mut ms = self.matches[i..].to_vec();
-                ms.extend(&self.matches[..i]);
-                ms.into_iter()
+                let mut ms = matches[i..].to_vec();
+                ms.extend(&matches[..i]);
+                ms
             }
-            None => self.matches.clone().into_iter(),
+            None => matches,
         }
     }
 
-    fn rev(&self, byte_off: usize) -> impl Iterator<Item = (usize, usize)> {
-        match self.find(byte_off, &self.matches[..]) {
-            Some(i) => {
-                let mut ms = self.matches[i..].to_vec();
-                ms.extend(&self.matches[..i]);
-                ms.into_iter().rev()
-            }
-            None => self.matches.clone().into_iter().rev(),
-        }
+    fn find_rev(&self, text: &str, byte_off: usize) -> Vec<(usize, usize)> {
+        let mut matches = self.find_fwd(text, byte_off);
+        matches.reverse();
+        matches
     }
 
-    fn find(&self, byte_off: usize, rs: &[(usize, usize)]) -> Option<usize> {
-        if rs.len() < 8
-        /* TODO: no magic number */
-        {
-            let mut iter = rs
-                .iter()
-                .enumerate()
-                .skip_while(|(_, (_, e))| *e < byte_off)
-                .skip_while(|(_, (s, _))| byte_off >= *s);
-            match iter.next() {
-                None => None,
-                Some((i, _)) => Some(i),
-            }
-        } else {
-            let m = rs.len() / 2;
-            match &rs[m] {
-                (_, e) if *e < byte_off => match self.find(byte_off, &rs[m..]) {
-                    None => None,
-                    Some(i) => Some(m + i),
-                },
-                (s, _) if byte_off >= *s => match self.find(byte_off, &rs[m..]) {
-                    None => None,
-                    Some(i) => Some(m + i),
-                },
-                _ => self.find(byte_off, &rs[..m]),
+    fn find(off: usize, rs: &[(usize, usize)]) -> Option<usize> {
+        match rs.len() {
+            0 => None,
+            1 => Some(0),
+            _ => {
+                let m = rs.len() / 2;
+                let (s, e) = rs[m].clone();
+                if e < off || off >= s {
+                    Self::find(off, &rs[m..]).map(|i| m + i)
+                } else {
+                    Self::find(off, &rs[..m])
+                }
             }
         }
     }
