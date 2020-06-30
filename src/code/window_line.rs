@@ -182,9 +182,8 @@ impl Window for WindowLine {
                     err_at!(Fatal, termqu!(span))?;
                 }
                 let padding = {
-                    let (_, wth) = self.coord.to_size();
                     let n: usize = spans.iter().map(|span| span.to_width()).sum();
-                    let iter = repeat(' ').take((wth as usize) - n);
+                    let iter = repeat(' ').take((self.coord.wth as usize) - n);
                     let padding: Span = String::from_iter(iter).into();
                     padding.using(scheme.to_style(Highlight::StatusLine))
                 };
@@ -195,9 +194,8 @@ impl Window for WindowLine {
                     err_at!(Fatal, termqu!(span))?;
                 }
                 let padding = {
-                    let (_, wth) = self.coord.to_size();
                     let n: usize = spans.iter().map(|span| span.to_width()).sum();
-                    let iter = repeat(' ').take((wth as usize) - n);
+                    let iter = repeat(' ').take((self.coord.wth as usize) - n);
                     let padding: Span = String::from_iter(iter).into();
                     padding.using(scheme.to_style(Highlight::TabLine))
                 };

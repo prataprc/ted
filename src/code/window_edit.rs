@@ -12,7 +12,7 @@ use crate::{
     ftypes::{self, Page},
     term::Spanline,
     window::{Coord, Cursor, Render, WinBuffer, Window},
-    Result,
+    Error, Result,
 };
 
 pub struct WindowEdit {
@@ -37,7 +37,7 @@ impl fmt::Display for WindowEdit {
 
 impl WindowEdit {
     #[inline]
-    pub fn new(coord: Coord, buf: &Buffer, config: Config) -> WindowEdit {
+    pub fn new(coord: Coord, config: Config, buf: &Buffer, scheme: &ColorScheme) -> WindowEdit {
         use crate::code::view::{NoWrap, Wrap};
 
         let cursor = if config.wrap {
@@ -51,8 +51,8 @@ impl WindowEdit {
             cursor,
             obc_xy: (0, 0).into(),
             buffer_id: buf.to_id(),
-            page: ftypes::detect_page(buf, app.as_color_scheme()).unwrap(),
-            scheme: app.as_color_scheme().clone(),
+            page: ftypes::detect_page(buf, scheme).unwrap(),
+            scheme: scheme.clone(),
             keymap: Keymap::new_edit(),
         };
         debug!("{}", we);
@@ -107,6 +107,7 @@ impl Window for WindowEdit {
     fn on_refresh(&mut self, app: &mut Code) -> Result<()> {
         use crate::code::view::{NoWrap, Wrap};
 
+        let err = Error::Invalid(format!("buffer {}", self.buffer_id));
         self.cursor = if app.as_ref().wrap {
             let v = {
                 let (coord, cursor) = (self.coord, self.cursor);
@@ -115,7 +116,7 @@ impl Window for WindowEdit {
                 v.set_line_number(app.as_ref().line_number);
                 v
             };
-            let buf = app.as_buffer(&self.buffer_id);
+            let buf = err_at!(app.as_buffer(&self.buffer_id).ok_or(err))?;
             v.render(buf, self, &self.scheme)?
         } else {
             let v = {
@@ -125,10 +126,13 @@ impl Window for WindowEdit {
                 v.set_line_number(app.as_ref().line_number);
                 v
             };
-            let buf = app.as_buffer(&self.buffer_id);
+            let buf = err_at!(app.as_buffer(&self.buffer_id).ok_or(err))?;
             v.render(buf, self, &self.scheme)?
         };
-        self.obc_xy = app.as_buffer(&self.buffer_id).to_xy_cursor();
+        self.obc_xy = {
+            let err = Error::Invalid(format!("buffer {}", self.buffer_id));
+            err_at!(app.as_buffer(&self.buffer_id).ok_or(err))?.to_xy_cursor()
+        };
 
         Ok(())
     }

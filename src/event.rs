@@ -194,7 +194,6 @@ impl Mto {
 /// Event specific to application `code`.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Code {
-    Edit,
     Cmd(String, String), // (command-name, arguments)
     Less(String),
     Prompt(String),
@@ -204,10 +203,9 @@ pub enum Code {
 
 impl fmt::Display for Code {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Code::{Cmd, Edit, Less, Prompt, StatusCursor, StatusFile};
+        use Code::{Cmd, Less, Prompt, StatusCursor, StatusFile};
 
         match self {
-            Edit => write!(f, "edit"),
             Cmd(_, _) => write!(f, "cmd"),
             Less(_) => write!(f, "less"),
             Prompt(_) => write!(f, "prompt"),

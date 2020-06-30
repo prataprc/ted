@@ -876,7 +876,7 @@ impl Change {
     }
 
     fn insert(&mut self, char_idx: usize, text: &str) -> Result<()> {
-        self.buf.insert(char_idx, ch);
+        self.buf.insert(char_idx, text);
         Ok(())
     }
 

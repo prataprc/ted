@@ -5,19 +5,20 @@ use log::trace;
 use regex::Regex;
 use unicode_width::UnicodeWidthChar;
 
-use std::{cmp, fmt, mem, result};
+use std::{cmp, convert::TryInto, fmt, result};
 
 use crate::{
     buffer::Buffer,
     code::Code,
+    colors::{ColorScheme, Highlight},
     event::Event,
-    term::{Span, Spanline},
+    term::{Span, Spanline, Style},
     window::{Coord, Cursor, Window},
     Error, Result,
 };
 
 lazy_static! {
-    static ref RE_ERROR: Regex = Regex::new(r"(?i)error");
+    static ref RE_ERROR: Regex = Regex::new(r"(?i)error").unwrap();
 }
 
 pub struct WindowPrompt {
@@ -33,11 +34,8 @@ impl fmt::Display for WindowPrompt {
     }
 }
 
-impl WindowPrompt {
-    #[inline]
-    pub fn new(coord: Coord, lines: Vec<String>, scheme: &ColorScheme) -> Self {
-        use crate::event::DP;
-
+impl From<(Coord, Vec<String>, &ColorScheme)> for WindowPrompt {
+    fn from((coord, lines, scheme): (Coord, Vec<String>, &ColorScheme)) -> Self {
         let style = Self::to_style(&lines, scheme);
         let span_lines: Vec<Spanline> = {
             let iter = lines.into_iter().map(|l| {
@@ -49,20 +47,22 @@ impl WindowPrompt {
         };
         let mut w = WindowPrompt {
             coord,
-            span_lines: lines,
+            span_lines,
             buffer: Buffer::empty(),
             options: Default::default(),
         };
         w.buffer.mode_insert();
         w
     }
+}
 
+impl WindowPrompt {
     pub fn set_options(&mut self, options: Vec<Regex>) {
         self.options.extend(options.into_iter());
     }
 
-    fn to_style(lines: &[String] scheme: &ColorScheme) -> Style {
-        match lines.iter().any(|l| RE_ERROR.find(l.as_str())) {
+    fn to_style(lines: &[String], scheme: &ColorScheme) -> Style {
+        match lines.iter().any(|l| RE_ERROR.find(l.as_str()).is_some()) {
             true => scheme.to_style(Highlight::Error),
             false => scheme.to_style(Highlight::Canvas),
         }
@@ -89,17 +89,19 @@ impl Window for WindowPrompt {
 
     #[inline]
     fn to_cursor(&self) -> Cursor {
-        let col = match self.span_lines.last() {
+        let col: u16 = match self.span_lines.last() {
             Some(line) => {
-                let n = {
+                let n: usize = {
                     let s = self.buffer.to_string();
                     s.chars().filter_map(|ch| ch.width()).sum()
                 };
-                cmp::min(curz!(coord.col) + n + line.to_width(), curz!(wth))
+                let n: u16 = n.try_into().unwrap();
+                let m: u16 = line.to_width().try_into().unwrap();
+                cmp::min(curz!(self.coord.col) + n + m, curz!(self.coord.wth))
             }
             None => 0,
         };
-        Cursor::new(col, curz!(coord.hgt))
+        Cursor::new(col, curz!(self.coord.row) + self.coord.hgt)
     }
 
     fn on_event(&mut self, _: &mut Code, evnt: Event) -> Result<Event> {
@@ -111,8 +113,11 @@ impl Window for WindowPrompt {
 
     fn on_refresh(&mut self, _: &mut Code) -> Result<()> {
         let col = curz!(self.coord.col);
-        let till = curz!(self.coord.hgt)
-        let rows = (till - self.span_lines.len())..till;
+        let till = curz!(self.coord.row) + self.coord.hgt;
+        let rows = {
+            let n: u16 = err_at!(FailConvert, self.span_lines.len().try_into())?;
+            (till - n)..till
+        };
         for (row, line) in rows.zip(self.span_lines.iter_mut()) {
             line.set_cursor(Cursor { col, row });
             err_at!(Fatal, termqu!(line))?;

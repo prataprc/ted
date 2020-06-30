@@ -217,9 +217,12 @@ pub fn read_color_schemes() -> Result<Vec<ColorScheme>> {
 
     let mut schemes = vec![];
     for colors_dir in COLORS_DIRS.clone().into_iter() {
-        let entries: Vec<fs::DirEntry> = {
-            let de = err_at!(IOError, fs::read_dir(&colors_dir))?;
-            de.filter_map(|de| de.ok()).collect()
+        let entries: Vec<fs::DirEntry> = match fs::read_dir(&colors_dir) {
+            Ok(de) => de.filter_map(|de| de.ok()).collect(),
+            Err(err) => {
+                warn!("colors dir {:?} : {}", colors_dir, err);
+                vec![]
+            }
         };
         for entry in entries.into_iter() {
             let fp: path::PathBuf = {

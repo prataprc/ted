@@ -7,6 +7,7 @@ use crate::{
     buffer::Buffer,
     code::window_edit::WindowEdit,
     code::{config::Config, Code},
+    colors::ColorScheme,
     event::Event,
     term::Span,
     window::{Coord, Cursor, Window},
@@ -33,12 +34,11 @@ impl fmt::Display for WindowFile {
     }
 }
 
-impl WindowFile {
-    #[inline]
-    pub fn new(coord: Coord, buf: &Buffer, config: Config) -> WindowFile {
+impl From<(Coord, Config, &Buffer, &ColorScheme)> for WindowFile {
+    fn from((coord, config, buf, scheme): (Coord, Config, &Buffer, &ColorScheme)) -> WindowFile {
         WindowFile {
             coord,
-            we: WindowEdit::new(coord, buf, config),
+            we: WindowEdit::new(coord, config, buf, scheme),
         }
     }
 }
@@ -65,8 +65,11 @@ impl WindowFile {
 
     fn status_file(&self, app: &Code) -> Result<Span> {
         let alt: ffi::OsString = "--display-error--".into();
-        let (hgt, wth) = self.coord.to_size();
-        let b = app.as_buffer(&self.we.to_buffer_id());
+        let b = {
+            let id = self.we.to_buffer_id();
+            app.as_buffer(&id)
+                .ok_or(Error::Invalid(format!("buffer {}", id)))
+        }?;
 
         let l_name = {
             let loc = b.to_location();
@@ -87,24 +90,20 @@ impl WindowFile {
         };
         let ft = self.we.to_file_type();
 
-        let long_ver = format!("{:?} {} [{}]", l_name, fstt, ft);
-        let shrt_ver = format!("{:?} {} [{}]", s_name, fstt, ft);
-        let n = long_ver.chars().collect::<Vec<char>>().len();
+        let span: Span = {
+            let long_ver = format!("{:?} {} [{}]", l_name, fstt, ft);
+            let shrt_ver = format!("{:?} {} [{}]", s_name, fstt, ft);
+            let n = long_ver.chars().collect::<Vec<char>>().len();
+            let st = if_else!(n > (self.coord.wth as usize), shrt_ver, long_ver);
+            st.into()
+        };
 
-        Ok({
-            let (col, mut row) = self.coord.to_origin_cursor();
-            row += hgt - 1;
-            let st = if_else!(n > (wth as usize), shrt_ver, long_ver);
-            let mut span: Span = st.into();
-            span.set_cursor(Cursor { col, row });
-            span
-        })
+        Ok(span)
     }
 
     fn do_refresh(&mut self, app: &Code) -> Result<()> {
         use std::iter::repeat;
 
-        let (hgt, _) = self.coord.to_size();
         if self.is_top_margin() {
             let iter = repeat(app.as_ref().top_margin_char);
             let span = {
@@ -117,7 +116,7 @@ impl WindowFile {
         }
         if self.is_left_margin() {
             let st = app.as_ref().left_margin_char.to_string();
-            for _i in 0..hgt {
+            for _i in 0..self.coord.hgt {
                 let mut span: Span = st.clone().into();
                 span.set_cursor(self.coord.to_top_left());
                 err_at!(Fatal, termqu!(span))?;

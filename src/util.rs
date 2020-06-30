@@ -37,6 +37,24 @@ macro_rules! limite {
 
 #[macro_export]
 macro_rules! err_at {
+    ($e:expr) => {{
+        use Error::{BadPattern, Fatal, IOError, Invalid, NoTopic, IPC};
+        use Error::{FailBuffer, FailConvert, FailParse};
+
+        let prefix = format!("{}:{}", file!(), line!());
+        match $e {
+            Ok(val) => Ok(val),
+            Err(Fatal(s)) => Err(Fatal(format!("{} {}", prefix, s))),
+            Err(BadPattern(s)) => Err(BadPattern(format!("{} {}", prefix, s))),
+            Err(IOError(s)) => Err(IOError(format!("{} {}", prefix, s))),
+            Err(IPC(s)) => Err(IPC(format!("{} {}", prefix, s))),
+            Err(NoTopic) => Err(NoTopic),
+            Err(Invalid(s)) => Err(Invalid(format!("{} {}", prefix, s))),
+            Err(FailConvert(s)) => Err(FailConvert(format!("{} {}", prefix, s))),
+            Err(FailParse(s)) => Err(FailParse(format!("{} {}", prefix, s))),
+            Err(FailBuffer(s)) => Err(FailBuffer(format!("{} {}", prefix, s))),
+        }
+    }};
     ($v:ident, msg:$m:expr) => {
         //
         Err(Error::$v(format!("{}:{} {}", file!(), line!(), $m)))

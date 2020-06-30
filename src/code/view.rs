@@ -119,7 +119,7 @@ impl Wrap {
         for (row, (col_kind, bc_caret, n)) in iter {
             let nu_span = {
                 let mut nu_span = self.nu.to_span(col_kind);
-                nu_span.set_cursor(Cursor { col, row });
+                nu_span.set_cursor(Cursor { col: col, row });
                 nu_span
             };
             let mut line_span = {
@@ -148,17 +148,16 @@ impl Wrap {
 
     fn discount_nu(&mut self, nu_wth: u16) {
         if self.line_number {
-            self.coord = {
-                let (hgt, wth) = self.coord.to_size();
-                self.coord.resize_to(hgt, wth - nu_wth)
-            };
+            self.coord = self
+                .coord
+                .resize_to(self.coord.hgt, self.coord.wth - nu_wth);
             self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
         }
     }
 
     fn outer_coord(&self) -> Coord {
-        let (hgt, wth) = self.coord.to_size();
-        self.coord.resize_to(hgt, wth + self.nu.to_width())
+        self.coord
+            .resize_to(self.coord.hgt, self.coord.wth + self.nu.to_width())
     }
 }
 
@@ -328,16 +327,15 @@ impl NoWrap {
     }
 
     fn outer_coord(&self) -> Coord {
-        let (hgt, wth) = self.coord.to_size();
-        self.coord.resize_to(hgt, wth + self.nu.to_width())
+        self.coord
+            .resize_to(self.coord.hgt, self.coord.wth + self.nu.to_width())
     }
 
     fn discount_nu(&mut self, nu_wth: u16) {
         if self.line_number {
-            self.coord = {
-                let (hgt, wth) = self.coord.to_size();
-                self.coord.resize_to(hgt, wth - nu_wth)
-            };
+            self.coord = self
+                .coord
+                .resize_to(self.coord.hgt, self.coord.wth - nu_wth);
             self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
         }
     }
@@ -417,9 +415,10 @@ impl WrapView {
                 let coord = {
                     let old_nu = ColNu::new(self.bc_xy.row, self.line_number);
                     let nu = ColNu::new(nbc_xy.row, self.line_number);
-                    let (hgt, wth) = self.coord.to_size();
-                    self.coord
-                        .resize_to(hgt, wth + old_nu.to_width() - nu.to_width())
+                    self.coord.resize_to(
+                        self.coord.hgt,
+                        self.coord.wth + old_nu.to_width() - nu.to_width(),
+                    )
                 };
                 let cursor = {
                     let (hgt, wth) = coord.to_size();

@@ -46,13 +46,12 @@ impl Window for WindowLess {
 
     #[inline]
     fn to_cursor(&self) -> Cursor {
-        let (hgt, _) = self.coord.to_size();
         let col: usize = self
             .status_line
             .chars()
             .map(|ch| ch.width().unwrap_or(0))
             .sum();
-        Cursor::new(col.try_into().unwrap(), hgt - 1)
+        Cursor::new(col.try_into().unwrap(), curz!(self.coord.hgt))
     }
 
     fn on_event(&mut self, _: &mut Code, evnt: Event) -> Result<Event> {
@@ -75,9 +74,10 @@ impl Window for WindowLess {
 
         //let (col, row_iter) = {
         //    let (col, _) = self.coord.to_origin_cursor();
-        //    let (hgt, _) = self.coord.to_size();
-        //    let start = hgt.saturating_sub(self.span_lines.len() as u16);
-        //    (col, start..hgt)
+        //    let start = self.coord.hgt.saturating_sub(
+        //        self.span_lines.len() as u16
+        //    );
+        //    (col, start..self.coord.hgt)
         //};
         //for (row, line) in row_iter.zip(self.span_lines.iter_mut()) {
         //    line.set_cursor(Cursor { col, row });

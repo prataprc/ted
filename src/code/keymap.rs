@@ -4,7 +4,6 @@ use crate::{
     code::keymap_cmd::KeyCmd,
     code::keymap_edit::KeyEdit,
     code::keymap_less::KeyLess,
-    code::keymap_prompt::KeyPrompt,
     event::Event,
     Result,
 };
@@ -13,7 +12,6 @@ use crate::{
 pub enum Keymap {
     Edit(KeyEdit),
     Cmd(KeyCmd),
-    Prompt(KeyPrompt),
     Less(KeyLess),
 }
 
@@ -32,10 +30,6 @@ impl Keymap {
         Keymap::Cmd(Default::default())
     }
 
-    pub fn new_prompt() -> Keymap {
-        Keymap::Prompt(Default::default())
-    }
-
     pub fn new_less() -> Keymap {
         Keymap::Less(Default::default())
     }
@@ -46,7 +40,6 @@ impl Keymap {
         match self {
             Keymap::Edit(km) => km.fold(buf, evnt),
             Keymap::Cmd(km) => km.fold(buf, evnt),
-            Keymap::Prompt(km) => km.fold(buf, evnt),
             Keymap::Less(km) => km.fold(buf, evnt),
         }
     }

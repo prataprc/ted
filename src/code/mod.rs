@@ -10,7 +10,6 @@ mod keymap;
 mod keymap_cmd;
 mod keymap_edit;
 mod keymap_less;
-mod keymap_prompt;
 mod view;
 mod window_edit;
 mod window_file;
@@ -28,16 +27,15 @@ use crate::{
     app::Application,
     buffer::Buffer,
     code::window_prompt::WindowPrompt,
-    code::{cmd::Command, config::Config, window_file::WindowFile},
+    code::{config::Config, window_file::WindowFile},
     code::{window_less::WindowLess, window_line::WindowLine},
-    colors::{ColorScheme, Highlight},
+    colors::ColorScheme,
     event::{self, Event},
     location::Location,
     pubsub::{Notify, PubSub},
     state::{Opt, State},
-    term::{Span, Spanline},
     window::{Coord, Cursor, Window},
-    Error, Result,
+    Result,
 };
 
 pub struct Code {
@@ -52,25 +50,55 @@ pub struct Code {
 }
 
 enum Inner {
-    Edit {
-        wfile: WindowFile,
-        tbcline: WindowLine, // TODO: change this to `tabc`.
-        stsline: WindowLine,
-    },
-    Prompt {
-        edit: Box<Inner>,
-        prompts: Vec<WindowPrompt>,
-    },
-    Command {
-        edit: Box<Inner>,
-        tbcline: WindowLine, // TODO: change this to `tabc`.
-        cmdline: WindowLine,
-    },
-    Less {
-        edit: Box<Inner>,
-        less: WindowLess,
-    },
+    Edit(Edit),
+    Prompt(Prompt),
+    Command(Command),
+    Less(Less),
     None,
+}
+
+impl Inner {
+    fn into_edit(self) -> Edit {
+        match self {
+            Inner::Edit(edit) => edit,
+            Inner::Prompt(val) => val.edit,
+            Inner::Command(val) => val.edit,
+            Inner::Less(val) => val.edit,
+            Inner::None => unreachable!(),
+        }
+    }
+
+    fn new_command(coord: Coord, edit: Edit) -> Command {
+        let tbcline = Code::new_tbcline(coord);
+        let cmdline = Code::new_cmdline(coord);
+        Command {
+            edit,
+            tbcline,
+            cmdline,
+        }
+    }
+}
+
+struct Edit {
+    wfile: WindowFile,
+    tbcline: WindowLine, // TODO: change this to `tabc`.
+    stsline: WindowLine,
+}
+
+struct Prompt {
+    edit: Edit,
+    prompts: Vec<WindowPrompt>,
+}
+
+struct Command {
+    edit: Edit,
+    tbcline: WindowLine, // TODO: change this to `tabc`.
+    cmdline: WindowLine,
+}
+
+struct Less {
+    edit: Edit,
+    less: WindowLess,
 }
 
 impl Default for Inner {
@@ -107,10 +135,11 @@ impl<'a> From<(Opt, &'a State, Coord)> for Code {
             toml::to_string(&config).unwrap(),
         );
 
-        let scheme = state.to_color_scheme(&config.color_scheme),
-        let (buffers, prompts) = {
+        let scheme = state.to_color_scheme(&config.color_scheme);
+        let (mut buffers, prompts) = {
             let files = opts.files.clone();
-            open_cmd_files(Self::to_coord_prompt(coord), &config, &scheme, files)
+            let coord = Self::to_coord_prompt(coord);
+            Self::open_cmd_files(coord, &config, &scheme, files)
         };
         if buffers.len() == 0 {
             buffers.push(Buffer::empty());
@@ -121,9 +150,13 @@ impl<'a> From<(Opt, &'a State, Coord)> for Code {
             let tbcline = Code::new_tbcline(coord);
             let wfile = {
                 let buf = buffers.first().unwrap();
-                Code::new_window_file(coord, config.clone(), buf)
+                Code::new_window_file(coord, config.clone(), buf, &scheme)
             };
-            Inner::Edit { wfile, stsline, wfile }
+            Edit {
+                wfile,
+                stsline,
+                tbcline,
+            }
         };
 
         Code {
@@ -132,11 +165,11 @@ impl<'a> From<(Opt, &'a State, Coord)> for Code {
             coord,
             subscribers: state.subscribers.clone(),
             scheme,
-            buffers: Default::default(),
+            buffers,
             inner: if prompts.len() > 0 {
-                Inner::Prompt { prompts, edit: Box::new(edit)}
+                Inner::Prompt(Prompt { edit, prompts })
             } else {
-                edit
+                Inner::Edit(edit)
             },
         }
     }
@@ -161,14 +194,19 @@ impl Code {
         WindowLine::new_tab(coord)
     }
 
-    fn new_window_file(mut coo: Coord, cnf: Config, buf: &Buffer) -> WindowFile {
-        coo.hgt = coo.hgt.saturating_sub(1);
-        (coo, buf, config).into()
+    fn new_window_file(
+        mut coord: Coord,
+        config: Config,
+        buf: &Buffer,
+        scheme: &ColorScheme,
+    ) -> WindowFile {
+        coord.hgt = coord.hgt.saturating_sub(1);
+        (coord, config, buf, scheme).into()
     }
 
     #[inline]
     fn to_coord_prompt(mut coord: Coord) -> Coord {
-        coord.hgt = coord.hgt.saturating_sub(1)
+        coord.hgt = coord.hgt.saturating_sub(1);
         coord
     }
 }
@@ -179,17 +217,13 @@ impl Code {
     }
 
     pub fn take_buffer(&mut self, id: &str) -> Option<Buffer> {
-        let i = {
-            let mut iter = self.buffers.iter().enumerate();
-            loop {
-                match iter.next() {
-                    Some((i, b)) if b.to_id() == id => break Some(i),
-                    None => break None,
-                    _ => (),
-                }
-            }
-        };
-        match i {
+        let mut iter = self
+            .buffers
+            .iter()
+            .enumerate()
+            .filter_map(|(i, buf)| if buf.to_id() == id { Some(i) } else { None })
+            .take(1);
+        match iter.next() {
             Some(i) => Some(self.buffers.remove(i)),
             None => None,
         }
@@ -206,22 +240,20 @@ impl Code {
 }
 
 impl Code {
-    pub fn as_buffer(&self, id: &str) -> &Buffer {
-        for b in self.buffers.iter() {
-            if b.to_id() == id {
-                return b;
-            }
-        }
-        unreachable!()
+    pub fn as_buffer(&self, id: &str) -> Option<&Buffer> {
+        self.buffers
+            .iter()
+            .filter_map(|buf| if buf.to_id() == id { Some(buf) } else { None })
+            .take(1)
+            .next()
     }
 
-    pub fn as_mut_buffer(&mut self, id: &str) -> &mut Buffer {
-        for b in self.buffers.iter_mut() {
-            if b.to_id() == id {
-                return b;
-            }
-        }
-        unreachable!()
+    pub fn as_mut_buffer(&mut self, id: &str) -> Option<&mut Buffer> {
+        self.buffers
+            .iter_mut()
+            .filter_map(|buf| if buf.to_id() == id { Some(buf) } else { None })
+            .take(1)
+            .next()
     }
 
     fn as_color_scheme(&self) -> &ColorScheme {
@@ -235,12 +267,14 @@ impl Code {
         config: &Config,
         scheme: &ColorScheme,
         files: Vec<String>,
-    ) -> Result<(Vec<Buffer>, Vec<WindowPrompt>)> {
+    ) -> (Vec<Buffer>, Vec<WindowPrompt>) {
         let locs: Vec<Location> = {
-            let files: Vec<ffi::OsString> = files.into_iter().map(Into);
-            files.map(|f| Location::new_disk(&f)).collect()
+            let files: Vec<ffi::OsString> = {
+                let iter = files.into_iter().map(Into::into);
+                iter.collect()
+            };
+            files.into_iter().map(|f| Location::new_disk(&f)).collect()
         };
-        let mut efiles = vec![];
         let mut buffers = vec![];
         let mut prompts = vec![];
         for loc in locs.into_iter() {
@@ -249,34 +283,39 @@ impl Code {
                     .map(|f| ("r", Some(f)))
                     .unwrap_or(("err", None)),
             );
-            let buf = match items {
+            let mut buf = match &items {
                 ("rw", Some(f)) => {
                     debug!("opening {} in write-mode", loc);
-                    Buffer::from_reader(f, loc.clone()).unwrap(),
-                },
+                    Some(Buffer::from_reader(f, loc.clone()).unwrap())
+                }
                 ("r", Some(f)) => {
                     debug!("opening {} in read-mode", loc);
-                    Buffer::from_reader(f, loc.clone()).unwrap(),
-                },
+                    Some(Buffer::from_reader(f, loc.clone()).unwrap())
+                }
                 ("err", None) => {
                     debug!("error opening {}", loc);
                     let lines = vec![
                         format!("error opening {:?}", loc.to_long_string()),
-                        format!("-press any key to continue-")
+                        format!("-press any key to continue-"),
                     ];
-                    prompts.push((coord, lines, scheme).into())
-                },
+                    prompts.push((coord, lines, scheme).into());
+                    None
+                }
                 _ => unreachable!(),
             };
-            buffers.push(buf);
-            match items {
-                ("r", _) => buf.set_read_only(true),
-                ("rw", _) => buf.set_read_only(config.read_only),
+            match (items, buf.as_mut()) {
+                (("r", _), Some(buf)) => {
+                    buf.set_read_only(true);
+                }
+                (("rw", _), Some(buf)) => {
+                    buf.set_read_only(config.read_only);
+                }
                 _ => (),
             }
+            buf.map(|buf| buffers.push(buf));
         }
 
-        Ok((buffers, prompts))
+        (buffers, prompts)
     }
 }
 
@@ -291,123 +330,102 @@ impl Application for Code {
 
     fn to_cursor(&self) -> Cursor {
         match &self.inner {
-            Inner::Edit { .. } => self.wfile.as_ref().unwrap().to_cursor(),
-            Inner::Prompt { prompts, .. } => prompts[0].to_cursor(),
-            Inner::Command { cmdline } => cmdline.to_cursor(),
-            Inner::Less { less } => less.to_cursor(),
+            Inner::Edit(val) => val.wfile.to_cursor(),
+            Inner::Prompt(val) => val.prompts[0].to_cursor(),
+            Inner::Command(val) => val.cmdline.to_cursor(),
+            Inner::Less(val) => val.less.to_cursor(),
             Inner::None => Default::default(),
         }
     }
 
     fn on_event(&mut self, evnt: Event) -> Result<Event> {
-        let inner = mem::replace(&mut self.inner, Default::default());
-        let (inner, mut evnt) = inner.on_event(self, evnt)?;
-        self.inner = inner;
+        use Event::Esc;
 
-        loop {
-            match evnt {
-                Event::Code(event::Code::Cmd(name, args)) => {
-                    let mut cmd: Command = (name, args).into();
-                    evnt = cmd.on_command(self)?;
+        let noop = Event::Noop;
+        let inner = mem::replace(&mut self.inner, Default::default());
+        let (inner, evnt) = {
+            match (inner, evnt) {
+                (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
+                    let mut val = Inner::new_command(self.coord, edit);
+                    let evnt = val.cmdline.on_event(self, Event::Char(':', m))?;
+                    (Inner::Command(val), evnt)
                 }
-                Event::Code(event::Code::Less(ref content)) => {
-                    let less = WindowLess::new(self.coord, content);
-                    self.inner = Inner::Less { less };
+                (Inner::Edit(mut edit), evnt) => {
+                    let evnt = edit.wfile.on_event(self, evnt)?;
+                    (Inner::Edit(edit), evnt)
                 }
-                Event::Code(event::Code::Edit) => {
-                    let stsline = Code::new_stsline(self.coord);
-                    self.inner = Inner::Edit { stsline };
+                (Inner::Prompt(mut prompt), evnt) => {
+                    let evnt = prompt.prompts[0].on_event(self, evnt)?;
+                    if let Some(_) = prompt.prompts[0].prompt_match() {
+                        prompt.prompts.remove(0);
+                    }
+                    match prompt.prompts.len() {
+                        0 => (Inner::Edit(prompt.edit), evnt),
+                        _ => (Inner::Prompt(prompt), evnt),
+                    }
                 }
-                evnt => break Ok(evnt),
+                (Inner::Command(cmd), Esc) => (Inner::Edit(cmd.edit), noop),
+                (Inner::Command(mut cmd), evnt) => {
+                    let evnt = cmd.cmdline.on_event(self, evnt)?;
+                    (Inner::Command(cmd), evnt)
+                }
+                (Inner::Less(mut less), evnt) => {
+                    let evnt = less.less.on_event(self, evnt)?;
+                    (Inner::Less(less), evnt)
+                }
+                (Inner::None, _) => unreachable!(),
             }
-        }
+        };
+
+        let noop = Event::Noop;
+        let (inner, evnt) = match evnt {
+            Event::Esc => match inner {
+                inner @ Inner::Edit(_) => (inner, Event::Esc),
+                Inner::Prompt(val) => (Inner::Edit(val.edit), noop),
+                Inner::Command(val) => (Inner::Edit(val.edit), noop),
+                Inner::Less(val) => (Inner::Edit(val.edit), noop),
+                Inner::None => unreachable!(),
+            },
+            Event::Code(event::Code::Cmd(name, args)) => {
+                let mut cmd: cmd::Command = (name, args).into();
+                (inner, cmd.on_command(self)?)
+            }
+            Event::Code(event::Code::Less(ref content)) => {
+                let edit = inner.into_edit();
+                let inner = Inner::Less(Less {
+                    edit,
+                    less: WindowLess::new(self.coord, content),
+                });
+                (inner, noop)
+            }
+            evnt => (inner, evnt),
+        };
+
+        self.inner = inner;
+        Ok(evnt)
     }
 
     fn on_refresh(&mut self) -> Result<()> {
-        self.wfile = match self.wfile.take() {
-            Some(mut wfile) => {
-                wfile.on_refresh(self)?;
-                Some(wfile)
+        let mut inner = mem::replace(&mut self.inner, Default::default());
+        match &mut inner {
+            Inner::Edit(edit) => {
+                edit.wfile.on_refresh(self)?;
+                edit.stsline.on_refresh(self)?;
+                // TODO: edit.tbcline.on_refresh(self)?;
             }
-            None => unreachable!(),
-        };
-
-        let inner = mem::replace(&mut self.inner, Default::default());
-        self.inner = inner.on_refresh(self)?;
-
-        //let mut wline = mem::replace(&mut self.tbcline, Default::default());
-        //wline.on_refresh(self)?;
-        //self.tbcline = wline;
+            Inner::Prompt(prompt) => match prompt.prompts.first_mut() {
+                Some(p) => p.on_refresh(self)?,
+                None => (),
+            },
+            Inner::Command(cmd) => {
+                cmd.cmdline.on_refresh(self)?;
+                // TODO cmd.tbcline.on_refresh(self)?,
+            }
+            Inner::Less(less) => less.less.on_refresh(self)?,
+            Inner::None => unreachable!(),
+        }
+        self.inner = inner;
 
         Ok(())
-    }
-}
-
-impl Inner {
-    fn on_event(self, app: &mut Code, evnt: Event) -> Result<(Inner, Event)> {
-        match self {
-            Inner::Edit { stsline } => match evnt {
-                Event::Char(':', m) if m.is_empty() => {
-                    let mut cmdline = Code::new_cmdline(app.coord);
-                    cmdline.on_event(app, Event::Char(':', m))?;
-                    Ok((Inner::Command { cmdline }, Event::Noop))
-                }
-                evnt => match app.wfile.take() {
-                    Some(mut wfile) => {
-                        let evnt = wfile.on_event(app, evnt)?;
-                        app.wfile = Some(wfile);
-                        Ok((Inner::Edit { stsline }, evnt))
-                    }
-                    None => unreachable!(),
-                },
-            },
-            Inner::Prompt {
-                mut prompts,
-                stsline,
-            } => {
-                let evnt = prompts[0].on_event(app, evnt)?;
-                if prompts[0].prompt_match().is_some() {
-                    prompts.remove(0);
-                }
-                Ok(match prompts.len() {
-                    0 => (Inner::Edit { stsline }, evnt),
-                    _ => (Inner::Prompt { prompts, stsline }, evnt),
-                })
-            }
-            Inner::Command { mut cmdline } => {
-                let evnt = cmdline.on_event(app, evnt)?;
-                let (inner, evnt) = match evnt {
-                    Event::Esc => {
-                        let stsline = Code::new_stsline(app.coord);
-                        (Inner::Edit { stsline }, Event::Noop)
-                    }
-                    evnt @ Event::Code(event::Code::Cmd(_, _)) => {
-                        let stsline = Code::new_stsline(app.coord);
-                        (Inner::Edit { stsline }, evnt)
-                    }
-                    evnt => (Inner::Command { cmdline }, evnt),
-                };
-                Ok((inner, evnt))
-            }
-            Inner::Less { mut less } => {
-                let evnt = less.on_event(app, evnt)?;
-                Ok((Inner::Less { less }, evnt))
-            }
-            Inner::None => Ok((Inner::None, evnt)),
-        }
-    }
-
-    fn on_refresh(mut self, app: &mut Code) -> Result<Inner> {
-        match &mut self {
-            Inner::Edit { stsline } => stsline.on_refresh(app)?,
-            Inner::Prompt { prompts, stsline } => {
-                prompts[0].on_refresh(app)?;
-                stsline.on_refresh(app)?;
-            }
-            Inner::Command { cmdline } => cmdline.on_refresh(app)?,
-            Inner::Less { less } => less.on_refresh(app)?,
-            Inner::None => (),
-        }
-        Ok(self)
     }
 }
