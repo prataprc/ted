@@ -236,8 +236,12 @@ impl Buffer {
     pub fn to_id(&self) -> String {
         match self.to_location() {
             Location::Memory(s) => s,
-            Location::Disk(s) => s.to_str().unwrap().to_string(),
+            Location::Disk { path_file, .. } => match path_file.to_str() {
+                Some(s) => s.to_string(),
+                None => format!("{:?}", path_file),
+            },
             Location::Ted(s) => s,
+            Location::Err(err) => format!("invalid-buffer {}", err),
         }
     }
 

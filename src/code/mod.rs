@@ -137,7 +137,13 @@ impl<'a> From<(Opt, &'a State, Coord)> for Code {
 
         let scheme = state.to_color_scheme(&config.color_scheme);
         let (mut buffers, prompts) = {
-            let files = opts.files.clone();
+            let files = {
+                let iter = opts.files.iter().map(
+                    // TODO: encoding from cmd-line
+                    |f| (f.clone(), format!("utf-8")),
+                );
+                iter.collect()
+            };
             let coord = Self::to_coord_prompt(coord);
             Self::open_cmd_files(coord, &config, &scheme, files)
         };
@@ -266,52 +272,40 @@ impl Code {
         coord: Coord,
         config: &Config,
         scheme: &ColorScheme,
-        files: Vec<String>,
+        files: Vec<(String, String)>,
     ) -> (Vec<Buffer>, Vec<WindowPrompt>) {
-        let locs: Vec<Location> = {
-            let files: Vec<ffi::OsString> = {
-                let iter = files.into_iter().map(Into::into);
-                iter.collect()
-            };
-            files.into_iter().map(|f| Location::new_disk(&f)).collect()
-        };
+        let locs: Vec<Location> = files
+            .into_iter()
+            .map(|(f, e)| {
+                let f: ffi::OsString = f.into();
+                Location::new_disk(&f, &e)
+            })
+            .collect();
+
         let (mut buffers, mut prompts) = (vec![], vec![]);
         for loc in locs.into_iter() {
-            let items = loc.to_rw_file().map(|f| ("rw", Some(f))).unwrap_or(
-                loc.to_r_file()
-                    .map(|f| ("r", Some(f)))
-                    .unwrap_or(("err", None)),
-            );
-            let mut buf = match &items {
-                ("rw", Some(f)) => {
-                    debug!("opening {} in write-mode", loc);
-                    Some(Buffer::from_reader(f, loc.clone()).unwrap())
-                }
-                ("r", Some(f)) => {
+            match loc.read() {
+                Ok(s) if loc.is_read_only() => {
                     debug!("opening {} in read-mode", loc);
-                    Some(Buffer::from_reader(f, loc.clone()).unwrap())
+                    let mut buf = Buffer::from_reader(s.as_bytes(), loc).unwrap();
+                    buf.set_read_only(true);
+                    buffers.push(buf);
                 }
-                ("err", None) => {
-                    debug!("error opening {}", loc);
+                Ok(s) => {
+                    debug!("opening {} in write-mode", loc);
+                    let mut buf = Buffer::from_reader(s.as_bytes(), loc).unwrap();
+                    buf.set_read_only(config.read_only);
+                    buffers.push(buf);
+                }
+                Err(err) => {
+                    debug!("error opening {}", err);
                     let lines = vec![
-                        format!("error opening {:?}", loc.to_long_string()),
+                        format!("error opening {} : {}", loc, err),
                         format!("-press any key to continue-"),
                     ];
                     prompts.push((coord, lines, scheme).into());
-                    None
                 }
-                _ => unreachable!(),
-            };
-            match (items, buf.as_mut()) {
-                (("r", _), Some(buf)) => {
-                    buf.set_read_only(true);
-                }
-                (("rw", _), Some(buf)) => {
-                    buf.set_read_only(config.read_only);
-                }
-                _ => (),
             }
-            buf.map(|buf| buffers.push(buf));
         }
 
         (buffers, prompts)

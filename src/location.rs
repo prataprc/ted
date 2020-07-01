@@ -12,11 +12,16 @@ lazy_static! {
 }
 
 /// Location of buffer's content, typically a persistent medium.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub enum Location {
     Memory(String),
-    Disk(ffi::OsString),
+    Disk {
+        path_file: ffi::OsString,
+        enc: String,
+        read_only: bool,
+    },
     Ted(String),
+    Err(Error),
 }
 
 impl Location {
@@ -30,10 +35,20 @@ impl Location {
     /// Create a new Disk location for buffer. `loc` can be absolute path,
     /// relative path to current-directory or start with `~` relative to
     /// home-directory.
-    pub fn new_disk(loc: &ffi::OsStr) -> Location {
-        match loc.to_os_string().into_string() {
-            Ok(loc) => Location::Disk(Self::canonicalize(loc).into_os_string()),
-            Err(loc) => Location::Disk(loc),
+    pub fn new_disk(fp: &ffi::OsStr, enc: &str) -> Location {
+        match fp.to_os_string().into_string() {
+            Ok(fp) => {
+                let path_file = Self::canonicalize(fp).into_os_string();
+                match fs::metadata(&path_file) {
+                    Ok(m) => Location::Disk {
+                        path_file,
+                        enc: enc.to_string(),
+                        read_only: m.permissions().readonly(),
+                    },
+                    err => Location::Err(err_at!(IOError, err).unwrap_err()),
+                }
+            }
+            err => Location::Err(Error::Invalid(format!("{:?}", err))),
         }
     }
 
@@ -44,43 +59,59 @@ impl Location {
 }
 
 impl Location {
-    pub fn to_rw_file(&self) -> Option<fs::File> {
+    pub fn read(&self) -> Result<String> {
+        use crate::text::Encoded;
+
         match self {
-            Location::Memory(_) => None,
-            Location::Disk(f) => {
-                let mut oo = fs::OpenOptions::new();
-                oo.read(true).write(true).open(f).ok()
+            Location::Memory(_) => Ok("".to_string()),
+            Location::Disk { path_file, enc, .. } => {
+                let fd = {
+                    let mut oo = fs::OpenOptions::new();
+                    err_at!(IOError, oo.read(true).open(path_file))?
+                };
+                let enc = err_at!(IOError, Encoded::from_reader(fd, enc))?;
+                Ok(enc.into())
             }
-            Location::Ted(_) => None,
+            Location::Ted(_) => Ok("".to_string()),
+            Location::Err(err) => Err(err.clone()),
         }
     }
 
-    pub fn to_r_file(&self) -> Option<fs::File> {
+    pub fn is_read_only(&self) -> bool {
         match self {
-            Location::Memory(_) => None,
-            Location::Disk(f) => {
-                let mut oo = fs::OpenOptions::new();
-                oo.read(true).open(f).ok()
-            }
-            Location::Ted(_) => None,
+            Location::Memory(_) => false,
+            Location::Disk { read_only, .. } => *read_only,
+            Location::Ted(_) => false,
+            Location::Err(_) => true,
         }
     }
 
     /// Return full path of the location, for display purpose.
-    pub fn to_long_string(&self) -> Result<ffi::OsString> {
+    pub fn to_long_string(&self) -> Result<String> {
         match self {
             Location::Memory(_) => Ok("[mem-text]".to_string().into()),
-            Location::Disk(s) => Ok(s.to_os_string()),
-            Location::Ted(name) => Ok(format!("[{:?}]", name).into()),
+            Location::Disk { path_file, .. } => {
+                let s = path_file.to_str().map(|s| s.to_string());
+                Ok(s.unwrap_or(format!("invalid path {:?}", path_file)))
+            }
+            Location::Ted(name) => Ok(format!("[{:?}]", name)),
+            Location::Err(err) => Ok(format!("<err-{}>", err)),
         }
     }
 
     /// Return shrunk, but meaningful, version of path for display purpose.
-    pub fn to_short_string(&self) -> Result<ffi::OsString> {
+    pub fn to_short_string(&self) -> Result<String> {
         match self {
-            Location::Memory(_) => Ok("[mem-text]".to_string().into()),
-            Location::Disk(s) => Self::shrink_home(&Self::shrink_cwd(s)?),
-            Location::Ted(name) => Ok(format!("[{:?}]", name).into()),
+            Location::Memory(_) => Ok("[mem-text]".to_string()),
+            Location::Disk { path_file, .. } => {
+                let fp = Self::shrink_home(&Self::shrink_cwd(path_file)?)?;
+                Ok(fp
+                    .to_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or(format!("{:?}", fp)))
+            }
+            Location::Ted(name) => Ok(format!("[{:?}]", name)),
+            Location::Err(err) => Ok(format!("<err-{}>", err)),
         }
     }
 
@@ -147,11 +178,12 @@ impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
             Location::Memory(s) => write!(f, "{}", s),
-            Location::Disk(s) => {
-                let s = s.clone().into_string().unwrap();
-                write!(f, "{}", s)
-            }
+            Location::Disk { path_file, .. } => match path_file.to_str() {
+                Some(s) => write!(f, "{}", s),
+                None => write!(f, "{:?}", path_file),
+            },
             Location::Ted(name) => write!(f, "{}", name),
+            Location::Err(err) => write!(f, "<err-{}>", err),
         }
     }
 }

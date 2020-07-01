@@ -1,6 +1,6 @@
 use crossterm::queue;
 
-use std::{ffi, fmt, iter::FromIterator, result};
+use std::{fmt, iter::FromIterator, result};
 
 use crate::{
     app::Application,
@@ -64,7 +64,7 @@ impl WindowFile {
     }
 
     fn status_file(&self, app: &Code) -> Result<Span> {
-        let alt: ffi::OsString = "--display-error--".into();
+        let alt = format!("--display-error--");
         let b = {
             let id = self.we.to_buffer_id();
             app.as_buffer(&id)

@@ -75,9 +75,9 @@ ftype![
 pub fn detect_page(buf: &Buffer, scheme: &ColorScheme) -> Result<Page> {
     let loc = buf.to_location();
 
-    let ft = match loc {
-        Location::Disk(fpath) => {
-            let ext = path::Path::new(&fpath).extension();
+    let ft = match &loc {
+        Location::Disk { path_file, .. } => {
+            let ext = path::Path::new(path_file).extension();
             match ext.map(|ext| ext.to_str().unwrap_or("")) {
                 Some("toml") => Some("toml"),
                 Some("tss") => Some("tss"),
@@ -86,6 +86,7 @@ pub fn detect_page(buf: &Buffer, scheme: &ColorScheme) -> Result<Page> {
         }
         Location::Memory(_) => None,
         Location::Ted(_) => None,
+        Location::Err(_) => None,
     };
 
     // TODO: find other ways to detect the file's type.

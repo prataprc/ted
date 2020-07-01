@@ -24,6 +24,7 @@ pub mod location;
 pub mod pubsub;
 pub mod syntax;
 pub mod tabc;
+mod text;
 pub mod tss;
 
 pub mod app;
@@ -43,6 +44,7 @@ lazy_static! {
 pub type Result<T> = result::Result<T, Error>;
 
 /// Collection of all `Ted` errors.
+#[derive(Clone)]
 pub enum Error {
     Fatal(String),
     BadPattern(String),
