@@ -26,6 +26,7 @@ use crate::{
     event::{Event, Mto, DP},
     location::Location,
     term::{Span, Spanline},
+    text,
     window::WinBuffer,
     {err_at, Error, Result},
 };
@@ -110,6 +111,8 @@ pub struct Buffer {
     pub location: Location,
     /// Mark this buffer read-only, in which case insert ops are not allowed.
     pub read_only: bool,
+    /// File-format for this buffer.
+    pub format: text::Format,
 
     // Globally counting buffer number.
     num: usize, // buffer number
@@ -153,6 +156,7 @@ impl Buffer {
 
             num: *num,
             inner: Inner::Normal(NormalBuffer::new(buf)),
+            format: Default::default(),
 
             mto_pattern: Default::default(),
             mto_find_char: Default::default(),
@@ -187,6 +191,11 @@ impl Buffer {
 
     pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
         self.read_only = read_only;
+        self
+    }
+
+    pub fn set_format(&mut self, format: text::Format) -> &mut Self {
+        self.format = format;
         self
     }
 }

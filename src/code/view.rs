@@ -126,7 +126,7 @@ impl Wrap {
                 let to = bc_caret + (n as usize);
                 r.to_span_line(buf, bc_caret, to)?
             };
-            line_span.fix_trailing_new_line();
+            line_span.trim_newline();
             line_span.right_padding(
                 //
                 self.coord.wth.saturating_sub(n),
@@ -310,7 +310,7 @@ impl NoWrap {
                 };
                 let to = from + cmp::min(to - from, wth as usize);
                 let mut line_span = r.to_span_line(buf, from, to)?;
-                line_span.fix_trailing_new_line();
+                line_span.trim_newline();
                 line_span.right_padding(
                     self.coord.wth.saturating_sub((to - from) as u16),
                     s_canvas.clone(),

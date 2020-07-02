@@ -15,7 +15,7 @@ use std::{
     sync::Mutex,
 };
 
-use crate::{window::Cursor, Error, Result};
+use crate::{text, window::Cursor, Error, Result};
 
 lazy_static! {
     pub(crate) static ref TERM: Mutex<Terminal> = {
@@ -470,7 +470,7 @@ pub struct Span {
 
 impl fmt::Debug for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "S({:?})", self.to_content())
+        write!(f, "S({:?})", self.as_content())
     }
 }
 
@@ -533,8 +533,8 @@ impl Span {
 
     /// Return the span's content.
     #[inline]
-    pub fn to_content(&self) -> String {
-        self.content.content().to_string()
+    pub fn as_content(&self) -> &str {
+        self.content.content()
     }
 
     /// Return the display-width for this span.
@@ -553,15 +553,9 @@ impl Span {
         err_at!(FailConvert, self.to_width().try_into())
     }
 
-    fn fix_trailing_new_line(mut self) -> Span {
-        let mut content = self.to_content();
-        match content.pop() {
-            Some('\n') => content.push(' '),
-            Some(ch) => content.push(ch),
-            None => (),
-        }
-        let style = self.content.style().clone();
-        self.content = StyledContent::new(style, content);
+    fn trim_newline(mut self) -> Span {
+        let content = text::Format::trim_newline(self.as_content()).to_string();
+        self.content = StyledContent::new(self.content.style().clone(), content);
         self
     }
 }
@@ -682,9 +676,9 @@ impl Spanline {
         self
     }
 
-    pub fn fix_trailing_new_line(&mut self) {
+    pub fn trim_newline(&mut self) {
         match self.spans.pop() {
-            Some(span) => self.spans.push(span.fix_trailing_new_line()),
+            Some(span) => self.spans.push(span.trim_newline()),
             None => (),
         }
     }

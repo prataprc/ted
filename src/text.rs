@@ -48,3 +48,38 @@ impl Encoded {
         }
     }
 }
+
+pub enum Format {
+    Dos,
+    Mac,
+    Unix,
+}
+
+impl Default for Format {
+    fn default() -> Format {
+        Format::Unix
+    }
+}
+
+impl Format {
+    pub fn newline(&self) -> &'static str {
+        match self {
+            Format::Dos => "\r\n",
+            Format::Mac => "\r",
+            Format::Unix => "\n",
+        }
+    }
+
+    pub fn trim_newline(text: &str) -> &str {
+        use std::{slice::from_raw_parts, str::from_utf8_unchecked};
+
+        let mut chars = text.chars();
+        let len = match (chars.next(), chars.next()) {
+            (Some('\n'), Some('\r')) => text.len() - 2,
+            (Some('\n'), None) | (Some('\n'), Some(_)) => text.len() - 1,
+            (Some('\r'), None) | (Some('\r'), Some(_)) => text.len() - 1,
+            (_, _) => text.len(),
+        };
+        unsafe { from_utf8_unchecked(from_raw_parts(text.as_ptr(), len)) }
+    }
+}
