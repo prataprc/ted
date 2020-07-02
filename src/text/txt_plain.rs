@@ -4,9 +4,8 @@ use crate::{
     buffer::{self, Buffer},
     colors::{ColorScheme, Highlight},
     event::Event,
-    ftypes,
     term::{Span, Spanline},
-    Error, Result,
+    text, Error, Result,
 };
 
 extern "C" {
@@ -21,13 +20,8 @@ pub struct PlainText {
 impl PlainText {
     pub fn new(buf: &Buffer, _: &ColorScheme) -> Result<PlainText> {
         let lang = unsafe { tree_sitter_txt_plain() };
-        let (parser, tree) = ftypes::new_parser(&buf.to_string(), lang)?;
+        let (parser, tree) = text::new_parser(&buf.to_string(), lang)?;
         Ok(PlainText { parser, tree })
-    }
-
-    #[inline]
-    pub fn to_name() -> String {
-        "txt-plain".to_string()
     }
 }
 

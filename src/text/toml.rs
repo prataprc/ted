@@ -6,8 +6,9 @@ use crate::{
     buffer::Buffer,
     colors::ColorScheme,
     event::Event,
-    ftypes, syntax,
+    syntax,
     term::Spanline,
+    text,
     tss::{self, Automata},
     Error, Result,
 };
@@ -25,17 +26,12 @@ pub struct Toml {
 impl Toml {
     pub fn new(buf: &Buffer, scheme: &ColorScheme) -> Result<Toml> {
         let lang = unsafe { tree_sitter_toml() };
-        let (parser, tree) = ftypes::new_parser(&buf.to_string(), lang)?;
+        let (parser, tree) = text::new_parser(&buf.to_string(), lang)?;
         let atmt = Automata::from_str("toml", tss::TOML, scheme)?;
 
         debug!("{}", atmt);
 
         Ok(Toml { parser, tree, atmt })
-    }
-
-    #[inline]
-    pub fn to_name() -> String {
-        "toml".to_string()
     }
 }
 

@@ -116,7 +116,7 @@ impl Wrap {
         };
         let iter = (row..full_coord.hgt).zip(view_rows.into_iter());
         let s_canvas = scheme.to_style(Highlight::Canvas);
-        for (row, (col_kind, bc_caret, n)) in iter {
+        for (row, (col_kind, bc_caret, mut n)) in iter {
             let nu_span = {
                 let mut nu_span = self.nu.to_span(col_kind);
                 nu_span.set_cursor(Cursor { col: col, row });
@@ -126,7 +126,7 @@ impl Wrap {
                 let to = bc_caret + (n as usize);
                 r.to_span_line(buf, bc_caret, to)?
             };
-            line_span.trim_newline();
+            n = n.saturating_sub(line_span.trim_newline() as u16);
             line_span.right_padding(
                 //
                 self.coord.wth.saturating_sub(n),
@@ -135,7 +135,7 @@ impl Wrap {
             err_at!(Fatal, termqu!(nu_span, line_span))?;
 
             trace!(
-                "  to_span_line row:{} {} {:?} {:?}",
+                "  to_span_line row:{} {} {} {:?}",
                 row,
                 line_span.to_width(),
                 line_span,
@@ -308,9 +308,9 @@ impl NoWrap {
                 } else {
                     buf.n_chars()
                 };
-                let to = from + cmp::min(to - from, wth as usize);
+                let mut to = from + cmp::min(to - from, wth as usize);
                 let mut line_span = r.to_span_line(buf, from, to)?;
-                line_span.trim_newline();
+                to = to.saturating_sub(line_span.trim_newline());
                 line_span.right_padding(
                     self.coord.wth.saturating_sub((to - from) as u16),
                     s_canvas.clone(),

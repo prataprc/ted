@@ -6,8 +6,9 @@ use crate::{
     buffer::Buffer,
     colors::ColorScheme,
     event::Event,
-    ftypes, syntax,
+    syntax,
     term::Spanline,
+    text,
     tss::{self, Automata},
     Error, Result,
 };
@@ -25,17 +26,12 @@ pub struct Tss {
 impl Tss {
     pub fn new(buf: &Buffer, scheme: &ColorScheme) -> Result<Tss> {
         let lang = unsafe { tree_sitter_tss() };
-        let (parser, tree) = ftypes::new_parser(&buf.to_string(), lang)?;
+        let (parser, tree) = text::new_parser(&buf.to_string(), lang)?;
         let atmt = Automata::from_str("tss", tss::TSS, scheme)?;
 
         debug!("{}", atmt);
 
         Ok(Tss { parser, tree, atmt })
-    }
-
-    #[inline]
-    pub fn to_name() -> String {
-        "tss".to_string()
     }
 }
 

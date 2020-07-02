@@ -474,6 +474,12 @@ impl fmt::Debug for Span {
     }
 }
 
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(f, "S({})", self.as_content())
+    }
+}
+
 impl From<StyledContent<String>> for Span {
     fn from(content: StyledContent<String>) -> Span {
         Span {
@@ -553,10 +559,11 @@ impl Span {
         err_at!(FailConvert, self.to_width().try_into())
     }
 
-    fn trim_newline(mut self) -> Span {
-        let content = text::Format::trim_newline(self.as_content()).to_string();
+    fn trim_newline(mut self) -> (Span, usize) {
+        let (content, n) = text::Format::trim_newline(self.as_content());
+        let content = content.to_string();
         self.content = StyledContent::new(self.content.style().clone(), content);
-        self
+        (self, n)
     }
 }
 
@@ -640,6 +647,16 @@ impl fmt::Debug for Spanline {
     }
 }
 
+impl fmt::Display for Spanline {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        let spans: Vec<String> = {
+            let iter = self.spans.iter().map(|s| format!("{:?}", s));
+            iter.collect()
+        };
+        write!(f, "L({})", spans.join(","))
+    }
+}
+
 impl Spanline {
     /// Set the cursor position for this span-line, this is optional.
     #[inline]
@@ -676,10 +693,14 @@ impl Spanline {
         self
     }
 
-    pub fn trim_newline(&mut self) {
+    pub fn trim_newline(&mut self) -> usize {
         match self.spans.pop() {
-            Some(span) => self.spans.push(span.trim_newline()),
-            None => (),
+            Some(span) => {
+                let (span, n) = span.trim_newline();
+                self.spans.push(span);
+                n
+            }
+            None => 0,
         }
     }
 }

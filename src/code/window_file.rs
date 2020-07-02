@@ -88,7 +88,7 @@ impl WindowFile {
             }
             ss.join(", ")
         };
-        let ft = self.we.to_file_type();
+        let ft = self.we.to_text_type();
 
         let span: Span = {
             let long_ver = format!("{:?} {} [{}]", l_name, fstt, ft);

@@ -24,13 +24,12 @@ pub mod location;
 pub mod pubsub;
 pub mod syntax;
 pub mod tabc;
-mod text;
 pub mod tss;
 
 pub mod app;
 mod code;
 
-mod ftypes;
+mod text;
 
 lazy_static! {
     /// Global collection of all pre-packaged color-schemes.
