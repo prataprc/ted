@@ -1610,3 +1610,7 @@ impl Search {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "buffer_test.rs"]
+mod buffer_test;
