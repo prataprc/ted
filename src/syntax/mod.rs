@@ -1,19 +1,150 @@
+use lazy_static::lazy_static;
 #[allow(unused_imports)]
-use log::trace;
+use log::{debug, trace};
 use tree_sitter as ts;
 
-use std::{cmp, fmt, iter::FromIterator, result};
+use std::{
+    cmp,
+    convert::{TryFrom, TryInto},
+    fmt,
+    iter::FromIterator,
+    path, result,
+};
 
 use crate::{
     buffer::Buffer,
     colors::{ColorScheme, Highlight},
-    event::DP,
-    term::Style,
-    term::{Span, Spanline},
+    event::{Event, DP},
+    location::Location,
+    term::{Span, Spanline, Style},
     tss::{Automata, Token},
     window::WinBuffer,
     Error, Result,
 };
+
+mod toml;
+mod tss;
+mod txt_plain;
+
+pub use crate::syntax::toml::Toml;
+pub use crate::syntax::tss::Tss;
+pub use crate::syntax::txt_plain::PlainText;
+
+macro_rules! syntax_for {
+    ($(($variant:ident, $t:ident, $name:expr)),*) => {
+        lazy_static! {
+            static ref FILE_TYPES: Vec<String> = vec![
+                $($name.to_string(),)*
+            ];
+        }
+
+        pub enum Type {
+            $($variant($t),)*
+        }
+
+        impl TryFrom<(String, &Buffer, &ColorScheme)> for Type {
+            type Error = Error;
+
+            fn try_from((typ, buf, scheme): (String, &Buffer, &ColorScheme)) -> Result<Self> {
+                let val = match typ.as_str() {
+                    $($name => Type::$variant($t::new(buf, scheme)?),)*
+                    _ => Type::PlainText(PlainText::new(buf, scheme)?),
+                };
+                Ok(val)
+            }
+        }
+
+        impl Type {
+            pub fn to_name(&self) -> &'static str {
+                match self {
+                    $(Type::$variant(_) => $name,)*
+                }
+            }
+
+            pub fn to_language(&self) -> Option<ts::Language> {
+                match self {
+                    $(Type::$variant(val) => val.to_language(),)*
+                }
+            }
+
+            pub fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
+                match self {
+                    $(Type::$variant(val) => val.on_edit(buf, evnt),)*
+                }
+            }
+
+            pub fn to_span_line(
+                &self,
+                buf: &Buffer,
+                scheme: &ColorScheme,
+                from: usize,
+                to: usize,
+            ) -> Result<Spanline> {
+                match self {
+                    $(Type::$variant(val) => {
+                        //
+                        val.to_span_line(buf, scheme, from, to)
+                    },)*
+                }
+            }
+        }
+    };
+}
+
+syntax_for![
+    (Toml, Toml, "toml"),
+    (Tss, Tss, "tss"),
+    (PlainText, PlainText, "txt-plain")
+];
+
+trait Syntax {
+    fn to_language(&self) -> Option<ts::Language>;
+
+    fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event>;
+
+    fn to_span_line(
+        &self,
+        buf: &Buffer,
+        scheme: &ColorScheme,
+        from: usize,
+        to: usize,
+    ) -> Result<Spanline>;
+}
+
+pub fn detect(buf: &Buffer, scheme: &ColorScheme) -> Result<Type> {
+    let loc = buf.to_location();
+
+    let tt = match &loc {
+        Location::Disk { path_file, .. } => {
+            let ext = path::Path::new(path_file).extension();
+            match ext.map(|ext| ext.to_str().unwrap_or("")) {
+                Some("toml") => "toml".to_string(),
+                Some("tss") => "tss".to_string(),
+                Some(_) | None => "".to_string(),
+            }
+        }
+        Location::Memory(_) => "".to_string(),
+        Location::Ted(_) => "".to_string(),
+        Location::Err(_) => "".to_string(),
+    };
+
+    // TODO: find other ways to detect the file's type.
+
+    (tt, buf, scheme).try_into()
+}
+
+pub fn new_parser(content: &str, lang: ts::Language) -> Result<(ts::Parser, ts::Tree)> {
+    let mut parser = {
+        let mut parser = ts::Parser::new();
+        err_at!(FailParse, parser.set_language(lang))?;
+        parser
+    };
+    let tree = parser.parse(content, None).unwrap();
+
+    debug!("lang:{:?}\n{}", lang, tree.root_node().to_sexp());
+
+    Ok((parser, tree))
+}
 
 /// Syntax highlighting using tree-sitter and ted-style-sheet automata.
 pub fn highlight(

@@ -4,8 +4,9 @@ use crate::{
     buffer::{self, Buffer},
     colors::{ColorScheme, Highlight},
     event::Event,
+    syntax,
     term::{Span, Spanline},
-    text, Error, Result,
+    Error, Result,
 };
 
 extern "C" {
@@ -20,7 +21,7 @@ pub struct PlainText {
 impl PlainText {
     pub fn new(buf: &Buffer, _: &ColorScheme) -> Result<PlainText> {
         let lang = unsafe { tree_sitter_txt_plain() };
-        let (parser, tree) = text::new_parser(&buf.to_string(), lang)?;
+        let (parser, tree) = syntax::new_parser(&buf.to_string(), lang)?;
         Ok(PlainText { parser, tree })
     }
 }
@@ -31,7 +32,7 @@ impl PlainText {
         Some(unsafe { tree_sitter_txt_plain() })
     }
 
-    pub fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    pub fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
             "insert" => self.on_i_event(buf, evnt),
             "normal" => self.on_n_event(buf, evnt),
@@ -52,7 +53,7 @@ impl PlainText {
 }
 
 impl PlainText {
-    fn on_n_event(&mut self, _: &mut Buffer, evnt: Event) -> Result<Event> {
+    fn on_n_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
         use crate::event::Code;
 
         Ok(match evnt {
@@ -62,7 +63,7 @@ impl PlainText {
         })
     }
 
-    fn on_i_event(&mut self, _buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    fn on_i_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
         Ok(evnt)
     }
 

@@ -8,7 +8,6 @@ use crate::{
     event::Event,
     syntax,
     term::Spanline,
-    text,
     tss::{self, Automata},
     Error, Result,
 };
@@ -26,7 +25,7 @@ pub struct Toml {
 impl Toml {
     pub fn new(buf: &Buffer, scheme: &ColorScheme) -> Result<Toml> {
         let lang = unsafe { tree_sitter_toml() };
-        let (parser, tree) = text::new_parser(&buf.to_string(), lang)?;
+        let (parser, tree) = syntax::new_parser(&buf.to_string(), lang)?;
         let atmt = Automata::from_str("toml", tss::TOML, scheme)?;
 
         debug!("{}", atmt);
@@ -41,7 +40,7 @@ impl Toml {
         Some(unsafe { tree_sitter_toml() })
     }
 
-    pub fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    pub fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
             "insert" => self.on_i_event(buf, evnt),
             "normal" => self.on_n_event(buf, evnt),
@@ -62,7 +61,7 @@ impl Toml {
 }
 
 impl Toml {
-    fn on_n_event(&mut self, _: &mut Buffer, evnt: Event) -> Result<Event> {
+    fn on_n_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
         use crate::event::Code;
 
         Ok(match evnt {
@@ -72,7 +71,7 @@ impl Toml {
         })
     }
 
-    fn on_i_event(&mut self, _buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    fn on_i_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
         Ok(evnt)
     }
 

@@ -8,7 +8,6 @@ use crate::{
     event::Event,
     syntax,
     term::Spanline,
-    text,
     tss::{self, Automata},
     Error, Result,
 };
@@ -26,7 +25,7 @@ pub struct Tss {
 impl Tss {
     pub fn new(buf: &Buffer, scheme: &ColorScheme) -> Result<Tss> {
         let lang = unsafe { tree_sitter_tss() };
-        let (parser, tree) = text::new_parser(&buf.to_string(), lang)?;
+        let (parser, tree) = syntax::new_parser(&buf.to_string(), lang)?;
         let atmt = Automata::from_str("tss", tss::TSS, scheme)?;
 
         debug!("{}", atmt);
@@ -41,7 +40,7 @@ impl Tss {
         Some(unsafe { tree_sitter_tss() })
     }
 
-    pub fn on_event(&mut self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    pub fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
             "insert" => self.on_i_event(buf, evnt),
             "normal" => self.on_n_event(buf, evnt),
@@ -62,7 +61,7 @@ impl Tss {
 }
 
 impl Tss {
-    fn on_n_event(&mut self, _: &mut Buffer, evnt: Event) -> Result<Event> {
+    fn on_n_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
         use crate::event::Code;
 
         Ok(match evnt {
@@ -72,7 +71,7 @@ impl Tss {
         })
     }
 
-    fn on_i_event(&mut self, _buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    fn on_i_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
         Ok(evnt)
     }
 }

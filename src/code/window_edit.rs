@@ -9,8 +9,8 @@ use crate::{
     code::{config::Config, keymap::Keymap, Code},
     colors::ColorScheme,
     event::Event,
+    syntax,
     term::Spanline,
-    text,
     window::{Coord, Cursor, Render, WinBuffer, Window},
     Error, Result,
 };
@@ -20,7 +20,7 @@ pub struct WindowEdit {
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     buffer_id: String,
-    tt: text::Types,
+    syn: syntax::Type,
     scheme: ColorScheme,
     keymap: Keymap,
 }
@@ -51,7 +51,7 @@ impl WindowEdit {
             cursor,
             obc_xy: (0, 0).into(),
             buffer_id: buf.to_id(),
-            tt: text::detect(buf, scheme).unwrap(),
+            syn: syntax::detect(buf, scheme).unwrap(),
             scheme: scheme.clone(),
             keymap: Keymap::new_edit(),
         };
@@ -68,7 +68,7 @@ impl WindowEdit {
 
     #[inline]
     pub fn to_text_type(&self) -> String {
-        self.tt.to_name().to_string()
+        self.syn.to_name().to_string()
     }
 }
 
@@ -88,7 +88,7 @@ impl Window for WindowEdit {
                 let mut evnt = self.keymap.fold(&mut buf, evnt)?;
                 evnt = buf.on_event(evnt)?;
                 // after handling the event for buffer, handle for its file-type.
-                evnt = self.tt.on_event(&mut buf, evnt)?;
+                evnt = self.syn.on_edit(&buf, evnt)?;
                 app.add_buffer(buf);
                 Ok(evnt)
             }
@@ -140,6 +140,6 @@ impl Window for WindowEdit {
 
 impl Render for WindowEdit {
     fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
-        self.tt.to_span_line(buf, &self.scheme, a, z)
+        self.syn.to_span_line(buf, &self.scheme, a, z)
     }
 }

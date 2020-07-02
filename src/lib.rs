@@ -22,13 +22,13 @@ pub mod colors;
 pub mod event;
 pub mod location;
 pub mod pubsub;
-pub mod syntax;
 pub mod tabc;
 pub mod tss;
 
 pub mod app;
 mod code;
 
+mod syntax;
 mod text;
 
 lazy_static! {
