@@ -2,28 +2,26 @@
 use log::{debug, error, trace};
 
 use crate::{
-    code::cmd::Command,
     code::{config::Config, Code},
     event::Event,
-    syntax, Result,
+    Result,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Set {
-    line: String,
-    syn: syntax::CodeCmd,
+    param: String,
 }
 
 impl Set {
-    pub fn new(line: String, syn: syntax::CodeCmd) -> Self {
-        Set { line, syn }
+    pub fn new(param: String) -> Self {
+        Set { param }
     }
 }
 
-impl Command for Set {
+impl Set {
     pub fn on_command(&mut self, app: &mut Code) -> Result<Event> {
         let config: &mut Config = app.as_mut();
-        match self.args.as_str() {
+        match self.param.as_str() {
             "wrap" => {
                 config.wrap = true;
                 debug!("set all windows to wrap text");
@@ -41,7 +39,7 @@ impl Command for Set {
                 debug!("set default file open to read-write mode");
             }
             _ => {
-                error!("invalid configuration command {}", self.args);
+                error!("invalid configuration command {}", self.param);
             }
         }
 

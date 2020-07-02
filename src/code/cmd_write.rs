@@ -17,12 +17,3 @@ impl Default for Write {
         }
     }
 }
-
-impl Write {
-    pub fn to_name(&self) -> String {
-        match self {
-            Write::Initial { name } => name.clone(),
-            Write::TabComp { name, .. } => name.clone(),
-        }
-    }
-}

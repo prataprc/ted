@@ -19,9 +19,9 @@ pub struct PlainText {
 }
 
 impl PlainText {
-    pub fn new(buf: &Buffer, _: &ColorScheme) -> Result<PlainText> {
+    pub fn new(s: &str, _: &ColorScheme) -> Result<PlainText> {
         let lang = unsafe { tree_sitter_txt_plain() };
-        let (parser, tree) = syntax::new_parser(&buf.to_string(), lang)?;
+        let (parser, tree) = syntax::new_parser(s, lang)?;
         Ok(PlainText { parser, tree })
     }
 }

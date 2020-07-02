@@ -17,6 +17,9 @@ pub const TOML: &'static str = include_str!("toml.tss");
 /// Ted style sheet for `tss` format, tss stands for ted-style-sheet.
 pub const TSS: &'static str = include_str!("tss.tss");
 
+/// Ted style sheet for `tss` format, tss stands for ted-style-sheet.
+pub const CODE_CMD: &'static str = include_str!("code_cmd.tss");
+
 macro_rules! wrap_edge {
     ($edge:expr, $varn:ident) => {{
         *$edge = match mem::replace($edge, Default::default()) {

@@ -8,22 +8,27 @@ use crate::{
     Result,
 };
 
+trait Keymapper {
+    fn fold(&mut self, buf: &Buffer, evnt: Event) -> Result<Event>;
+}
+
 #[derive(Clone)]
 pub enum Keymap {
     Edit(KeyEdit),
     Cmd(KeyCmd),
     Less(KeyLess),
+    None,
 }
 
 impl Default for Keymap {
     fn default() -> Keymap {
-        Keymap::Edit(Default::default())
+        Keymap::None,
     }
 }
 
 impl Keymap {
     pub fn new_edit() -> Keymap {
-        Default::default()
+        Keymap::Edit(Default::default())
     }
 
     pub fn new_cmd() -> Keymap {
@@ -41,6 +46,7 @@ impl Keymap {
             Keymap::Edit(km) => km.fold(buf, evnt),
             Keymap::Cmd(km) => km.fold(buf, evnt),
             Keymap::Less(km) => km.fold(buf, evnt),
+            Keymap::None => unreachable!(),
         }
     }
 }

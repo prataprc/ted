@@ -23,9 +23,9 @@ pub struct Tss {
 }
 
 impl Tss {
-    pub fn new(buf: &Buffer, scheme: &ColorScheme) -> Result<Tss> {
+    pub fn new(s: &str, scheme: &ColorScheme) -> Result<Tss> {
         let lang = unsafe { tree_sitter_tss() };
-        let (parser, tree) = syntax::new_parser(&buf.to_string(), lang)?;
+        let (parser, tree) = syntax::new_parser(s, lang)?;
         let atmt = Automata::from_str("tss", tss::TSS, scheme)?;
 
         debug!("{}", atmt);

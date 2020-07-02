@@ -17,12 +17,3 @@ impl Default for Edit {
         }
     }
 }
-
-impl Edit {
-    pub fn to_name(&self) -> String {
-        match self {
-            Edit::Initial { name } => name.clone(),
-            Edit::TabComp { name, .. } => name.clone(),
-        }
-    }
-}

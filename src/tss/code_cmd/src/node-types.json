@@ -1,0 +1,49 @@
+[
+  {
+    "type": "s",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "set",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "set",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "set_flags",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "set_flags",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "nowrap",
+    "named": false
+  },
+  {
+    "type": "set",
+    "named": false
+  },
+  {
+    "type": "wrap",
+    "named": false
+  }
+]

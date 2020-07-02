@@ -1,0 +1,59 @@
+{
+  "name": "tss",
+  "rules": {
+    "s": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "set"
+        }
+      ]
+    },
+    "newline": {
+      "type": "PATTERN",
+      "value": "\\r?\\n"
+    },
+    "set": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "set"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "set_flags"
+        }
+      ]
+    },
+    "set_flags": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "wrap"
+        },
+        {
+          "type": "STRING",
+          "value": "nowrap"
+        }
+      ]
+    }
+  },
+  "extras": [
+    {
+      "type": "PATTERN",
+      "value": "[ \\t]"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "newline"
+    }
+  ],
+  "conflicts": [],
+  "externals": [],
+  "inline": [],
+  "supertypes": []
+}
+

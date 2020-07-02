@@ -22,10 +22,12 @@ use crate::{
     Error, Result,
 };
 
+mod code_cmd;
 mod toml;
 mod tss;
 mod txt_plain;
 
+pub use crate::syntax::code_cmd::CodeCmd;
 pub use crate::syntax::toml::Toml;
 pub use crate::syntax::tss::Tss;
 pub use crate::syntax::txt_plain::PlainText;
@@ -46,8 +48,9 @@ macro_rules! syntax_for {
             type Error = Error;
 
             fn try_from((typ, buf, scheme): (String, &Buffer, &ColorScheme)) -> Result<Self> {
+                let s = buf.to_string();
                 let val = match typ.as_str() {
-                    $($name => Type::$variant($t::new(buf, scheme)?),)*
+                    $($name => Type::$variant($t::new(&s, scheme)?),)*
                     _ => Type::PlainText(PlainText::new(buf, scheme)?),
                 };
                 Ok(val)
@@ -55,7 +58,7 @@ macro_rules! syntax_for {
         }
 
         impl Type {
-            pub fn to_name(&self) -> &'static str {
+            pub fn as_name(&self) -> &'static str {
                 match self {
                     $(Type::$variant(_) => $name,)*
                 }
@@ -94,6 +97,7 @@ macro_rules! syntax_for {
 syntax_for![
     (Toml, Toml, "toml"),
     (Tss, Tss, "tss"),
+    (CodeCmd, CodeCmd, "code_cmd"),
     (PlainText, PlainText, "txt-plain")
 ];
 

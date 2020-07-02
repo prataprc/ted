@@ -68,7 +68,7 @@ impl WindowEdit {
 
     #[inline]
     pub fn to_text_type(&self) -> String {
-        self.syn.to_name().to_string()
+        self.syn.as_name().to_string()
     }
 }
 

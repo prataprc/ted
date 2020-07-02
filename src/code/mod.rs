@@ -27,7 +27,7 @@ use crate::{
     app::Application,
     buffer::Buffer,
     code::window_prompt::WindowPrompt,
-    code::{config::Config, window_file::WindowFile},
+    code::{config::Config, window_cmd::WindowCmd, window_file::WindowFile},
     code::{window_less::WindowLess, window_line::WindowLine},
     colors::ColorScheme,
     event::{self, Event},
@@ -70,11 +70,10 @@ impl Inner {
 
     fn new_command(coord: Coord, edit: Edit) -> Command {
         let tbcline = Code::new_tbcline(coord);
-        let cmdline = Code::new_cmdline(coord);
         Command {
             edit,
             tbcline,
-            cmdline,
+            cmd: Default::default(),
         }
     }
 }
@@ -93,7 +92,7 @@ struct Prompt {
 struct Command {
     edit: Edit,
     tbcline: WindowLine, // TODO: change this to `tabc`.
-    cmdline: WindowLine,
+    wcmd: window_cmd::WindowCmd,
 }
 
 struct Less {
@@ -325,13 +324,14 @@ impl Application for Code {
         match &self.inner {
             Inner::Edit(val) => val.wfile.to_cursor(),
             Inner::Prompt(val) => val.prompts[0].to_cursor(),
-            Inner::Command(val) => val.cmdline.to_cursor(),
+            Inner::Command(val) => val.cmd.to_cursor(),
             Inner::Less(val) => val.less.to_cursor(),
             Inner::None => Default::default(),
         }
     }
 
     fn on_event(&mut self, evnt: Event) -> Result<Event> {
+        use cmd::Command;
         use Event::Esc;
 
         let noop = Event::Noop;
@@ -359,7 +359,7 @@ impl Application for Code {
                 }
                 (Inner::Command(cmd), Esc) => (Inner::Edit(cmd.edit), noop),
                 (Inner::Command(mut cmd), evnt) => {
-                    let evnt = cmd.cmdline.on_event(self, evnt)?;
+                    let evnt = cmd.cmd.on_event(self, evnt)?;
                     (Inner::Command(cmd), evnt)
                 }
                 (Inner::Less(mut less), evnt) => {
@@ -380,7 +380,7 @@ impl Application for Code {
                 Inner::None => unreachable!(),
             },
             Event::Code(event::Code::Cmd(name, args)) => {
-                let mut cmd: cmd::Command = (name, args).into();
+                let mut cmd: cmd::Cmd = (name, args).into();
                 (inner, cmd.on_command(self)?)
             }
             Event::Code(event::Code::Less(ref content)) => {
