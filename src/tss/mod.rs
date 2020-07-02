@@ -656,7 +656,3 @@ impl Node {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "tss_test.rs"]
-mod tss_test;
