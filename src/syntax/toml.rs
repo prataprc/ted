@@ -1,13 +1,13 @@
 #[allow(unused_imports)]
-use log::{debug, trace};
+use log::{debug, error, trace};
 use tree_sitter as ts;
 
 use crate::{
     buffer::Buffer,
     colors::ColorScheme,
     event::Event,
-    syntax,
-    term::Spanline,
+    syntax::{self, Syntax},
+    term::{Span, Spanline},
     tss::{self, Automata},
     Error, Result,
 };
@@ -25,30 +25,56 @@ pub struct Toml {
 impl Toml {
     pub fn new(s: &str, scheme: &ColorScheme) -> Result<Toml> {
         let lang = unsafe { tree_sitter_toml() };
-        let (parser, tree) = syntax::new_parser(s, lang)?;
-        let atmt = Automata::from_str("toml", tss::TOML, scheme)?;
-
-        debug!("{}", atmt);
-
+        let mut parser = {
+            let mut parser = ts::Parser::new();
+            err_at!(FailParse, parser.set_language(lang))?;
+            parser
+        };
+        let tree = match parser.parse(s, None) {
+            Some(tree) => {
+                debug!("lang:{:?}\n{}", lang, tree.root_node().to_sexp());
+                Some(tree)
+            }
+            None => {
+                error!("tree sitter parse failed lang:{:?}", lang);
+                None
+            }
+        };
+        let atmt = {
+            let atmt = Automata::from_str("toml", tss::TOML, scheme)?;
+            debug!("{}", atmt);
+            atmt
+        };
         Ok(Toml { parser, tree, atmt })
     }
 }
 
-impl Toml {
+impl Syntax for Toml {
     #[inline]
-    pub fn to_language(&self) -> Option<ts::Language> {
+    fn to_language(&self) -> Option<ts::Language> {
         Some(unsafe { tree_sitter_toml() })
     }
 
-    pub fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
-        match buf.to_mode() {
-            "insert" => self.on_i_event(buf, evnt),
-            "normal" => self.on_n_event(buf, evnt),
-            _ => err_at!(Fatal, msg: format!("unreachable")),
+    fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
+        let new_evnt: Event = Default::default();
+        for evnt in evnt.into_iter() {
+            match evnt {
+                Event::Edit(val) => match self.tree.take() {
+                    Some(old_tree) => {
+                        old_tree.edit(&val.into());
+                        let s = buf.to_string();
+                        self.tree = self.parser.parse(&s, Some(&old_tree));
+                    }
+                    None => {
+                        self.tree = self.parser.parse(&buf.to_string(), None);
+                    }
+                },
+                evnt => new_evnt.push(evnt),
+            }
         }
     }
 
-    pub fn to_span_line(
+    fn to_span_line(
         &self,
         buf: &Buffer,
         scheme: &ColorScheme,
@@ -58,42 +84,8 @@ impl Toml {
         let mut atmt = self.atmt.clone();
         syntax::highlight(buf, scheme, &self.tree, &mut atmt, from, to)
     }
-}
 
-impl Toml {
-    fn on_n_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
-        use crate::event::Code;
-
-        Ok(match evnt {
-            Event::Noop => Event::Noop,
-            Event::Code(Code::StatusCursor) => self.to_status_cursor()?,
-            evnt => evnt,
-        })
-    }
-
-    fn on_i_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
-        Ok(evnt)
-    }
-
-    fn to_status_cursor(&mut self) -> Result<Event> {
-        todo!()
-        //let (mut ws, mut ss, mut ls, mut ps) = (0, 0, 0, 0);
-        //let mut prev_kind: Option<&str> = None;
-        //let mut tc = self.tree.walk();
-        //for node in self.tree.root_node().children(&mut tc) {
-        //    match (prev_kind, node.kind()) {
-        //        (_, "word") | (_, "wword") => ws += 1,
-        //        (_, "dot") => ss += 1,
-        //        (Some("nl"), "nl") => {
-        //            ls += 1;
-        //            ps += 1;
-        //        }
-        //        (_, "nl") => ls += 1,
-        //        _ => err_at!(Fatal, msg: format!("unreachable"))?,
-        //    }
-        //    prev_kind = Some(node.kind());
-        //}
-        //let span: Span = format!("{} {} {} {}", ws, ls, ss, ps).into();
-        //Ok(Event::Notify(Notify::Status(vec![span])))
+    fn to_status_cursor(&self) -> Result<Span> {
+        Ok(format!("").into())
     }
 }

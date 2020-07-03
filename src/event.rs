@@ -4,11 +4,234 @@
 //! components.
 
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
+use tree_sitter as ts;
 
 use std::{fmt, mem, result};
 
 use crate::{pubsub::Notify, Error, Result};
 
+/// Events
+#[derive(Clone, Eq, PartialEq)]
+pub enum Event {
+    // Insert events
+    Backspace,
+    Enter,
+    Tab,
+    Delete,
+    Esc,
+    Char(char, KeyModifiers),
+    FKey(u8, KeyModifiers),
+    BackTab,
+    // folded events for buffer management.
+    B(usize, DP),   // (n, Left/Right)
+    G(usize),       // (n,)
+    F(usize, DP),   // (n, Left/Right)
+    T(usize, DP),   // (n, Left/Right)
+    N(usize),       // (n,)
+    Op(usize, Opr), // (n, op-event)
+    Md(Mod),        // (n, mode-event)
+    Mt(Mto),        // (n, motion-event)
+    // other events
+    Edit(Input),
+    List(Vec<Event>),
+    Notify(Notify),
+    Code(Code),
+    Ted(Ted),
+    Noop,
+}
+
+impl Event {
+    /// Return the keystroke modifiers like ctrl, alt, etc.. or empty if the
+    /// keystore do not contain any modifiers.
+    pub fn to_modifiers(&self) -> KeyModifiers {
+        match self {
+            Event::FKey(_, m) => m.clone(),
+            Event::Char(_, m) => m.clone(),
+            _ => KeyModifiers::empty(),
+        }
+    }
+
+    /// Return whether control modifier is part of the keystroke.
+    pub fn is_control(&self) -> bool {
+        match self {
+            Event::FKey(_, m) => m.contains(KeyModifiers::CONTROL),
+            Event::Char(_, m) => m.contains(KeyModifiers::CONTROL),
+            _ => false,
+        }
+    }
+
+    /// Return whether the event is to enter insert/append/open mode. In short,
+    /// whether shift to insert-mode.
+    pub fn is_insert(&self) -> bool {
+        use {
+            Event::Md,
+            Mod::{Append, Insert, Open},
+        };
+
+        match self {
+            Md(Insert(_, _)) | Md(Append(_, _)) | Md(Open(_, _)) => true,
+            _ => false,
+        }
+    }
+
+    /// Push another event into the current event. Events can also act as a
+    /// FIFO. This is useful when more events are accumulated as it gets
+    /// processed across the pipeline.
+    pub fn push(&mut self, evnt: Event) {
+        match self {
+            Event::List(events) => events.push(evnt),
+            Event::Noop => *self = evnt,
+            _ => {
+                let event = mem::replace(self, Default::default());
+                *self = Event::List(vec![event, evnt]);
+            }
+        }
+    }
+}
+
+impl Iterator for Event {
+    type Item = Event;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Event::Noop => None,
+            Event::List(evnts) if evnts.len() > 0 => Some(evnts.remove(0)),
+            Event::List(_) => None,
+            _ => {
+                let evnt = mem::replace(self, Event::Noop);
+                Some(evnt)
+            }
+        }
+    }
+}
+
+impl Extend<Event> for Event {
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = Event>,
+    {
+        let mut evnts: Vec<Event> = iter.into_iter().collect();
+        let evnts = match mem::replace(self, Default::default()) {
+            Event::List(mut events) => {
+                events.extend(evnts);
+                events
+            }
+            Event::Noop => evnts,
+            evnt => {
+                evnts.insert(0, evnt);
+                evnts
+            }
+        };
+        *self = if evnts.len() > 0 {
+            Event::List(evnts)
+        } else {
+            Event::Noop
+        };
+    }
+}
+
+impl fmt::Display for Event {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        use Event::{BackTab, Code, FKey, List, Md, Mt, Noop, Notify, Op, Ted};
+        use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
+
+        match self {
+            // insert events
+            Backspace => write!(f, "backspace"),
+            Enter => write!(f, "enter"),
+            Tab => write!(f, "tab"),
+            Delete => write!(f, "delete"),
+            Esc => write!(f, "esc"),
+            Char(ch, _) => write!(f, "char({:?})", ch),
+            FKey(ch, _) => write!(f, "fkey({})", ch),
+            BackTab => write!(f, "backtab"),
+            // folded events for buffer management
+            B(n, dp) => write!(f, "b({},{})", n, dp),
+            G(n) => write!(f, "g({})", n),
+            F(n, dp) => write!(f, "f({},{})", n, dp),
+            T(n, dp) => write!(f, "t({},{})", n, dp),
+            N(n) => write!(f, "b({}", n),
+            Op(n, opr) => write!(f, "op({},{})", n, opr),
+            Md(md) => write!(f, "md({})", md),
+            Mt(mt) => write!(f, "mt({})", mt),
+            // other events
+            List(es) => write!(f, "list({})", es.len()),
+            Notify(notf) => write!(f, "notify({})", notf),
+            Code(cd) => write!(f, "Code({})", cd),
+            Ted(td) => write!(f, "Ted({})", td),
+            Noop => write!(f, "noop"),
+        }
+    }
+}
+
+impl From<TermEvent> for Event {
+    fn from(evnt: TermEvent) -> Event {
+        use crate::buffer::NL;
+        use Event::{BackTab, Backspace, Char, Delete, Enter, Esc, FKey};
+        use Event::{Md, Mt, Tab};
+
+        match evnt {
+            TermEvent::Key(KeyEvent { code, modifiers: m }) => {
+                let ctrl = m.contains(KeyModifiers::CONTROL);
+                let empty = m.is_empty();
+                match code {
+                    //
+                    KeyCode::Backspace if empty => Backspace,
+                    KeyCode::Enter if empty => Enter,
+                    KeyCode::Tab if empty => Tab,
+                    KeyCode::Delete if empty => Delete,
+                    KeyCode::Char('[') if ctrl => Esc,
+                    KeyCode::Char(NL) if empty => Enter,
+                    KeyCode::Char(ch) => Char(ch, m),
+                    //
+                    KeyCode::BackTab if empty => BackTab,
+                    KeyCode::F(f) if empty => FKey(f, m),
+                    //
+                    KeyCode::Esc if empty => Esc,
+                    KeyCode::Insert => Md(Mod::Insert(1, DP::Nope)),
+                    //
+                    KeyCode::Left if empty => Mt(Mto::Left(1, DP::LineBound)),
+                    KeyCode::Right if empty => Mt(Mto::Right(1, DP::LineBound)),
+                    KeyCode::Up if empty => Mt(Mto::Up(1, DP::Nope)),
+                    KeyCode::Down if empty => Mt(Mto::Down(1, DP::Nope)),
+                    KeyCode::Home if empty => Mt(Mto::Home(DP::Nope)),
+                    KeyCode::End if empty => Mt(Mto::End),
+                    KeyCode::Null => Event::Noop,
+                    _ => Event::Noop,
+                }
+            }
+            _ => Event::Noop,
+        }
+    }
+}
+
+impl Default for Event {
+    fn default() -> Event {
+        Event::Noop
+    }
+}
+
+impl From<Vec<Event>> for Event {
+    fn from(evnts: Vec<Event>) -> Event {
+        let mut out: Vec<Event> = vec![];
+        for evnt in evnts.into_iter() {
+            match evnt {
+                Event::List(es) => out.extend(es.into_iter()),
+                e => out.push(e),
+            }
+        }
+        Event::List(out)
+    }
+}
+
+impl From<Event> for Vec<Event> {
+    fn from(evnt: Event) -> Vec<Event> {
+        match evnt {
+            Event::List(evnts) => evnts,
+            evnt => vec![evnt],
+        }
+    }
+}
 /// Event argument, specify the direction or position.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DP {
@@ -231,223 +454,83 @@ impl fmt::Display for Ted {
     }
 }
 
-/// Events
 #[derive(Clone, Eq, PartialEq)]
-pub enum Event {
-    // Insert events
-    Backspace,
-    Enter,
-    Tab,
-    Delete,
-    Esc,
-    Char(char, KeyModifiers),
-    FKey(u8, KeyModifiers),
-    BackTab,
-    // folded events for buffer management.
-    B(usize, DP),   // (n, Left/Right)
-    G(usize),       // (n,)
-    F(usize, DP),   // (n, Left/Right)
-    T(usize, DP),   // (n, Left/Right)
-    N(usize),       // (n,)
-    Op(usize, Opr), // (n, op-event)
-    Md(Mod),        // (n, mode-event)
-    Mt(Mto),        // (n, motion-event)
-    // other events
-    List(Vec<Event>),
-    Notify(Notify),
-    Code(Code),
-    Ted(Ted),
-    Noop,
+pub struct Input {
+    start_byte: usize,
+    old_end_byte: usize,
+    new_end_byte: usize,
+    start_position: (usize, usize),   // (row, column) starts from ZERO
+    old_end_position: (usize, usize), // (row, column) starts from ZERO
+    new_end_position: (usize, usize), // (row, column) starts from ZERO
 }
 
-impl Event {
-    /// Return the keystroke modifiers like ctrl, alt, etc.. or empty if the
-    /// keystore do not contain any modifiers.
-    pub fn to_modifiers(&self) -> KeyModifiers {
-        match self {
-            Event::FKey(_, m) => m.clone(),
-            Event::Char(_, m) => m.clone(),
-            _ => KeyModifiers::empty(),
-        }
-    }
-
-    /// Return whether control modifier is part of the keystroke.
-    pub fn is_control(&self) -> bool {
-        match self {
-            Event::FKey(_, m) => m.contains(KeyModifiers::CONTROL),
-            Event::Char(_, m) => m.contains(KeyModifiers::CONTROL),
-            _ => false,
-        }
-    }
-
-    /// Return whether the event is to enter insert/append/open mode. In short,
-    /// whether shift to insert-mode.
-    pub fn is_insert(&self) -> bool {
-        use {
-            Event::Md,
-            Mod::{Append, Insert, Open},
-        };
-
-        match self {
-            Md(Insert(_, _)) | Md(Append(_, _)) | Md(Open(_, _)) => true,
-            _ => false,
-        }
-    }
-
-    /// Push another event into the current event. Events can also act as a
-    /// FIFO. This is useful when more events are accumulated as it gets
-    /// processed across the pipeline.
-    pub fn push(&mut self, evnt: Event) {
-        match self {
-            Event::List(events) => events.push(evnt),
-            _ => {
-                let event = mem::replace(self, Default::default());
-                *self = Event::List(vec![event, evnt]);
-            }
-        }
-    }
-}
-
-impl Iterator for Event {
-    type Item = Event;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Event::Noop => None,
-            Event::List(evnts) if evnts.len() > 0 => Some(evnts.remove(0)),
-            Event::List(_) => None,
-            _ => {
-                let evnt = mem::replace(self, Event::Noop);
-                Some(evnt)
-            }
-        }
-    }
-}
-
-impl Extend<Event> for Event {
-    fn extend<I>(&mut self, iter: I)
-    where
-        I: IntoIterator<Item = Event>,
-    {
-        let mut evnts: Vec<Event> = iter.into_iter().collect();
-        let evnts = match mem::replace(self, Default::default()) {
-            Event::List(mut events) => {
-                events.extend(evnts);
-                events
-            }
-            Event::Noop => evnts,
-            evnt => {
-                evnts.insert(0, evnt);
-                evnts
-            }
-        };
-        *self = if evnts.len() > 0 {
-            Event::List(evnts)
-        } else {
-            Event::Noop
-        };
-    }
-}
-
-impl fmt::Display for Event {
+impl fmt::Display for Input {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Event::{BackTab, Code, FKey, List, Md, Mt, Noop, Notify, Op, Ted};
-        use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
+        write!(
+            f,
+            "Input<{},({}->{})",
+            self.start_byte, self.old_end_byte, self.new_end_byte
+        )
+    }
+}
 
-        match self {
-            // insert events
-            Backspace => write!(f, "backspace"),
-            Enter => write!(f, "enter"),
-            Tab => write!(f, "tab"),
-            Delete => write!(f, "delete"),
-            Esc => write!(f, "esc"),
-            Char(ch, _) => write!(f, "char({:?})", ch),
-            FKey(ch, _) => write!(f, "fkey({})", ch),
-            BackTab => write!(f, "backtab"),
-            // folded events for buffer management
-            B(n, dp) => write!(f, "b({},{})", n, dp),
-            G(n) => write!(f, "g({})", n),
-            F(n, dp) => write!(f, "f({},{})", n, dp),
-            T(n, dp) => write!(f, "t({},{})", n, dp),
-            N(n) => write!(f, "b({}", n),
-            Op(n, opr) => write!(f, "op({},{})", n, opr),
-            Md(md) => write!(f, "md({})", md),
-            Mt(mt) => write!(f, "mt({})", mt),
-            // other events
-            List(es) => write!(f, "list({})", es.len()),
-            Notify(notf) => write!(f, "notify({})", notf),
-            Code(cd) => write!(f, "Code({})", cd),
-            Ted(td) => write!(f, "Ted({})", td),
-            Noop => write!(f, "noop"),
+impl fmt::Debug for Input {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(
+            f,
+            "Input<{},({}->{}):{:?},({:?}->{:?})",
+            self.start_byte,
+            self.old_end_byte,
+            self.new_end_byte,
+            self.start_position,
+            self.old_end_position,
+            self.new_end_position
+        )
+    }
+}
+
+impl Input {
+    pub fn start_edit(
+        start_byte: usize,
+        old_end_byte: usize,
+        start_position: (usize, usize),
+        old_end_position: (usize, usize),
+    ) -> Input {
+        Input {
+            start_byte,
+            old_end_byte,
+            new_end_byte: Default::default(),
+            start_position,
+            old_end_position,
+            new_end_position: Default::default(),
         }
     }
-}
 
-impl From<TermEvent> for Event {
-    fn from(evnt: TermEvent) -> Event {
-        use crate::buffer::NL;
-        use Event::{BackTab, Backspace, Char, Delete, Enter, Esc, FKey};
-        use Event::{Md, Mt, Tab};
-
-        match evnt {
-            TermEvent::Key(KeyEvent { code, modifiers: m }) => {
-                let ctrl = m.contains(KeyModifiers::CONTROL);
-                let empty = m.is_empty();
-                match code {
-                    //
-                    KeyCode::Backspace if empty => Backspace,
-                    KeyCode::Enter if empty => Enter,
-                    KeyCode::Tab if empty => Tab,
-                    KeyCode::Delete if empty => Delete,
-                    KeyCode::Char('[') if ctrl => Esc,
-                    KeyCode::Char(NL) if empty => Enter,
-                    KeyCode::Char(ch) => Char(ch, m),
-                    //
-                    KeyCode::BackTab if empty => BackTab,
-                    KeyCode::F(f) if empty => FKey(f, m),
-                    //
-                    KeyCode::Esc if empty => Esc,
-                    KeyCode::Insert => Md(Mod::Insert(1, DP::Nope)),
-                    //
-                    KeyCode::Left if empty => Mt(Mto::Left(1, DP::LineBound)),
-                    KeyCode::Right if empty => Mt(Mto::Right(1, DP::LineBound)),
-                    KeyCode::Up if empty => Mt(Mto::Up(1, DP::Nope)),
-                    KeyCode::Down if empty => Mt(Mto::Down(1, DP::Nope)),
-                    KeyCode::Home if empty => Mt(Mto::Home(DP::Nope)),
-                    KeyCode::End if empty => Mt(Mto::End),
-                    KeyCode::Null => Event::Noop,
-                    _ => Event::Noop,
-                }
-            }
-            _ => Event::Noop,
-        }
+    pub fn finish(self, new_eb: usize, new_ep: (usize, usize)) -> Event {
+        self.new_end_byte = new_eb;
+        self.new_end_position = new_ep;
+        Event::Edit(self)
     }
 }
 
-impl Default for Event {
-    fn default() -> Event {
-        Event::Noop
-    }
-}
-
-impl From<Vec<Event>> for Event {
-    fn from(evnts: Vec<Event>) -> Event {
-        let mut out: Vec<Event> = vec![];
-        for evnt in evnts.into_iter() {
-            match evnt {
-                Event::List(es) => out.extend(es.into_iter()),
-                e => out.push(e),
-            }
-        }
-        Event::List(out)
-    }
-}
-
-impl From<Event> for Vec<Event> {
-    fn from(evnt: Event) -> Vec<Event> {
-        match evnt {
-            Event::List(evnts) => evnts,
-            evnt => vec![evnt],
+impl From<Input> for ts::InputEdit {
+    fn from(val: Input) -> Self {
+        ts::InputEdit {
+            start_byte: val.start_byte,
+            old_end_byte: val.old_end_byte,
+            new_end_byte: val.new_end_byte,
+            start_position: ts::Point {
+                row: val.start_position.0,
+                column: val.start_position.1,
+            },
+            old_end_position: ts::Point {
+                row: val.old_end_position.0,
+                column: val.old_end_position.1,
+            },
+            new_end_position: ts::Point {
+                row: val.new_end_position.0,
+                column: val.new_end_position.1,
+            },
         }
     }
 }

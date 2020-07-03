@@ -11,6 +11,7 @@ mod keymap_cmd;
 mod keymap_edit;
 mod keymap_less;
 mod view;
+mod window_cmd;
 mod window_edit;
 mod window_file;
 mod window_less;
@@ -73,7 +74,7 @@ impl Inner {
         Command {
             edit,
             tbcline,
-            cmd: Default::default(),
+            wcmd: Default::default(),
         }
     }
 }
@@ -92,7 +93,7 @@ struct Prompt {
 struct Command {
     edit: Edit,
     tbcline: WindowLine, // TODO: change this to `tabc`.
-    wcmd: window_cmd::WindowCmd,
+    wcmd: WindowCmd,
 }
 
 struct Less {

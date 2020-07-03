@@ -2,16 +2,16 @@ use crossterm::{cursor as term_cursor, queue};
 #[allow(unused_imports)]
 use log::trace;
 
-use std::{fmt, iter::FromIterator, mem, result};
+use std::{fmt, mem, result};
 
 use crate::{
     buffer::{self, Buffer},
     code::{keymap::Keymap, Code},
-    colors::Highlight,
+    colors::ColorScheme,
     event::Event,
-    syntax,
     location::Location,
-    term::{Span, Spanline},
+    syntax,
+    term::Spanline,
     window::{Coord, Cursor, Render, WinBuffer, Window},
     Error, Result,
 };
@@ -21,14 +21,18 @@ pub struct WindowCmd {
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     buffer: Buffer,
-    syn: syntax::Types,
+    syn: syntax::Type,
     scheme: ColorScheme,
     keymap: Keymap,
 }
 
 impl fmt::Display for WindowCmd {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(f, "WindowCmd<{}@{} {}>", self.cursor, self.coord, self.obc_xy)
+        write!(
+            f,
+            "WindowCmd<{}@{} {}>",
+            self.cursor, self.coord, self.obc_xy
+        )
     }
 }
 
@@ -45,7 +49,7 @@ impl WindowCmd {
         };
         let cursor = NoWrap::initial_cursor(false /*line_number*/);
         let obc_xy = (0, 0).into();
-        WindowLine {
+        WindowCmd {
             coord,
             cursor,
             obc_xy,
@@ -66,74 +70,36 @@ impl Window for WindowCmd {
     }
 
     fn on_event(&mut self, _app: &mut Code, mut evnt: Event) -> Result<Event> {
-        use crate::event::Code;
-
-        evnt = {
-            let keymap = mem::replace(&mut self.keymap, Default::default());
-            let evnt = keymap.fold(&mut self.buffer, evnt)?;
-            self.keymap = keymap
-            evnt
+        let mut buf = mem::replace(&mut self.buffer, Default::default());
+        evnt = self.keymap.fold(&mut buf, evnt)?;
+        evnt = match evnt {
+            Event::Enter => todo!(),
+            evnt => {
+                evnt = buf.on_event(evnt)?;
+                self.syn.on_edit(&buf, evnt)?
+            }
         };
-        evnt = self.buffer.on_event(evnt)?;
+        self.buffer = buf;
+        Ok(evnt)
     }
 
     fn on_refresh(&mut self, app: &mut Code) -> Result<()> {
         use crate::code::view::NoWrap;
-        use std::iter::repeat;
-
-        let scheme = app.as_color_scheme();
 
         let (col, row) = self.coord.to_origin_cursor();
         err_at!(Fatal, termqu!(term_cursor::MoveTo(col, row)))?;
 
-        let mut inner = mem::replace(&mut self.inner, Default::default());
-        match &mut inner {
-            Inner::Cmd {
-                buffer,
-                obc_xy,
-                cursor,
-                ..
-            } => {
-                let (name, coord) = (&self.name, self.coord);
-                let mut v = NoWrap::new(name, coord, *cursor, *obc_xy);
-                v.set_scroll_off(0).set_line_number(false);
-                *cursor = v.render(buffer, self, scheme)?;
-                *obc_xy = buffer.to_xy_cursor();
-            }
-            Inner::Status { spans } => {
-                for span in spans.iter() {
-                    err_at!(Fatal, termqu!(span))?;
-                }
-                let padding = {
-                    let n: usize = spans.iter().map(|span| span.to_width()).sum();
-                    let iter = repeat(' ').take((self.coord.wth as usize) - n);
-                    let padding: Span = String::from_iter(iter).into();
-                    padding.using(scheme.to_style(Highlight::StatusLine))
-                };
-                err_at!(Fatal, termqu!(padding))?;
-            }
-            Inner::Tab { spans } => {
-                for span in spans.iter() {
-                    err_at!(Fatal, termqu!(span))?;
-                }
-                let padding = {
-                    let n: usize = spans.iter().map(|span| span.to_width()).sum();
-                    let iter = repeat(' ').take((self.coord.wth as usize) - n);
-                    let padding: Span = String::from_iter(iter).into();
-                    padding.using(scheme.to_style(Highlight::TabLine))
-                };
-                err_at!(Fatal, termqu!(padding))?;
-            }
-            Inner::None => (),
-        };
-        self.inner = inner;
+        let mut v = NoWrap::new("cmd", self.coord, self.cursor, self.obc_xy);
+        v.set_scroll_off(0).set_line_number(false);
+        self.cursor = v.render(&self.buffer, self, &self.scheme)?;
+        self.obc_xy = self.buffer.to_xy_cursor();
 
         Ok(())
     }
 }
 
-impl Render for WindowLine {
+impl Render for WindowCmd {
     fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
-        buffer::to_span_line(buf, a, z)
+        self.syn.to_span_line(buf, &self.scheme, a, z)
     }
 }

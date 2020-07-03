@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
 #[allow(unused_imports)]
-use log::{debug, trace};
+use log::{debug, error, trace};
 use tree_sitter as ts;
 
 use std::{
@@ -32,75 +32,6 @@ pub use crate::syntax::toml::Toml;
 pub use crate::syntax::tss::Tss;
 pub use crate::syntax::txt_plain::PlainText;
 
-macro_rules! syntax_for {
-    ($(($variant:ident, $t:ident, $name:expr)),*) => {
-        lazy_static! {
-            static ref FILE_TYPES: Vec<String> = vec![
-                $($name.to_string(),)*
-            ];
-        }
-
-        pub enum Type {
-            $($variant($t),)*
-        }
-
-        impl TryFrom<(String, &Buffer, &ColorScheme)> for Type {
-            type Error = Error;
-
-            fn try_from((typ, buf, scheme): (String, &Buffer, &ColorScheme)) -> Result<Self> {
-                let s = buf.to_string();
-                let val = match typ.as_str() {
-                    $($name => Type::$variant($t::new(&s, scheme)?),)*
-                    _ => Type::PlainText(PlainText::new(buf, scheme)?),
-                };
-                Ok(val)
-            }
-        }
-
-        impl Type {
-            pub fn as_name(&self) -> &'static str {
-                match self {
-                    $(Type::$variant(_) => $name,)*
-                }
-            }
-
-            pub fn to_language(&self) -> Option<ts::Language> {
-                match self {
-                    $(Type::$variant(val) => val.to_language(),)*
-                }
-            }
-
-            pub fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
-                match self {
-                    $(Type::$variant(val) => val.on_edit(buf, evnt),)*
-                }
-            }
-
-            pub fn to_span_line(
-                &self,
-                buf: &Buffer,
-                scheme: &ColorScheme,
-                from: usize,
-                to: usize,
-            ) -> Result<Spanline> {
-                match self {
-                    $(Type::$variant(val) => {
-                        //
-                        val.to_span_line(buf, scheme, from, to)
-                    },)*
-                }
-            }
-        }
-    };
-}
-
-syntax_for![
-    (Toml, Toml, "toml"),
-    (Tss, Tss, "tss"),
-    (CodeCmd, CodeCmd, "code_cmd"),
-    (PlainText, PlainText, "txt-plain")
-];
-
 trait Syntax {
     fn to_language(&self) -> Option<ts::Language>;
 
@@ -113,7 +44,85 @@ trait Syntax {
         from: usize,
         to: usize,
     ) -> Result<Spanline>;
+
+    fn to_status_cursor(&self) -> Result<Span>;
 }
+
+macro_rules! syntax_for {
+    ($(($variant:ident, $t:ident, $name:expr)),*) => {
+        lazy_static! {
+            static ref FILE_TYPES: Vec<String> = vec![
+                $($name.to_string(),)*
+            ];
+        }
+
+        pub enum Type {
+            $($variant($t),)*
+        }
+
+        impl<'a, 'b> TryFrom<(String, &'a str, &'b ColorScheme)> for Type {
+            type Error = Error;
+
+            fn try_from(args: (String, &'a str, &'b ColorScheme)) -> Result<Self> {
+                let (typ, s, scheme) = args;
+                let val = match typ.as_str() {
+                    $($name => Type::$variant($t::new(s, scheme)?),)*
+                    _ => Type::PlainText(PlainText::new(s, scheme)?),
+                };
+                Ok(val)
+            }
+        }
+
+        impl Type {
+            pub fn as_name(&self) -> &'static str {
+                match self {
+                    $(Type::$variant(_) => $name,)*
+                }
+            }
+        }
+
+        impl Syntax for Type {
+            fn to_language(&self) -> Option<ts::Language> {
+                match self {
+                    $(Type::$variant(val) => val.to_language(),)*
+                }
+            }
+
+            fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
+                match self {
+                    $(Type::$variant(val) => val.on_edit(buf, evnt),)*
+                }
+            }
+
+            fn to_span_line(
+                &self,
+                buf: &Buffer,
+                scheme: &ColorScheme,
+                from: usize,
+                to: usize,
+            ) -> Result<Spanline> {
+                match self {
+                    $(Type::$variant(val) => {
+                        val.to_span_line(buf, scheme, from, to)
+                    },)*
+                }
+            }
+
+            fn to_status_cursor(&self) -> Result<Span> {
+                match self {
+                    $(Type::$variant(val) => val.to_status_cursor(),)*
+                }
+            }
+        }
+    };
+}
+
+syntax_for![
+    (Toml, Toml, "toml"),
+    (Tss, Tss, "tss"),
+    (CodeCmd, CodeCmd, "code_cmd"),
+    (PlainText, PlainText, "txt-plain")
+];
 
 pub fn detect(buf: &Buffer, scheme: &ColorScheme) -> Result<Type> {
     let loc = buf.to_location();
@@ -137,15 +146,26 @@ pub fn detect(buf: &Buffer, scheme: &ColorScheme) -> Result<Type> {
     (tt, buf, scheme).try_into()
 }
 
-pub fn new_parser(content: &str, lang: ts::Language) -> Result<(ts::Parser, ts::Tree)> {
+pub fn new_parser(
+    //
+    content: &str,
+    lang: ts::Language,
+) -> Result<(ts::Parser, Option<ts::Tree>)> {
     let mut parser = {
         let mut parser = ts::Parser::new();
         err_at!(FailParse, parser.set_language(lang))?;
         parser
     };
-    let tree = parser.parse(content, None).unwrap();
-
-    debug!("lang:{:?}\n{}", lang, tree.root_node().to_sexp());
+    let tree = match parser.parse(content, None) {
+        Some(tree) => {
+            debug!("lang:{:?}\n{}", lang, tree.root_node().to_sexp());
+            Some(tree)
+        }
+        None => {
+            error!("tree sitter parse failed lang:{:?}", lang);
+            None
+        }
+    };
 
     Ok((parser, tree))
 }

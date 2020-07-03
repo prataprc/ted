@@ -141,6 +141,22 @@ impl Default for Inner {
     }
 }
 
+impl Default for Buffer {
+    fn default() -> Self {
+        Buffer {
+            location: Default::default(),
+            read_only: Default::default(),
+            format: Default::default(),
+            num: Default::default(),
+            inner: Default::default(),
+            mto_pattern: Default::default(),
+            mto_find_char: Default::default(),
+            insert_repeat: Default::default(),
+            last_inserts: Default::default(),
+        }
+    }
+}
+
 /// Create and configure a text buffer.
 impl Buffer {
     pub fn from_reader<R>(data: R, loc: Location) -> Result<Buffer>

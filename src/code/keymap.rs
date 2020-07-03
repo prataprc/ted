@@ -22,7 +22,7 @@ pub enum Keymap {
 
 impl Default for Keymap {
     fn default() -> Keymap {
-        Keymap::None,
+        Keymap::None
     }
 }
 

@@ -1,10 +1,12 @@
+#[allow(unused_imports)]
+use log::{debug, error, trace};
 use tree_sitter as ts;
 
 use crate::{
     buffer::{self, Buffer},
     colors::{ColorScheme, Highlight},
     event::Event,
-    syntax,
+    syntax::Syntax,
     term::{Span, Spanline},
     Error, Result,
 };
@@ -15,32 +17,57 @@ extern "C" {
 
 pub struct PlainText {
     parser: ts::Parser,
-    tree: ts::Tree,
+    tree: Option<ts::Tree>,
 }
 
 impl PlainText {
     pub fn new(s: &str, _: &ColorScheme) -> Result<PlainText> {
         let lang = unsafe { tree_sitter_txt_plain() };
-        let (parser, tree) = syntax::new_parser(s, lang)?;
+        let mut parser = {
+            let mut parser = ts::Parser::new();
+            err_at!(FailParse, parser.set_language(lang))?;
+            parser
+        };
+        let tree = match parser.parse(s, None) {
+            Some(tree) => {
+                debug!("lang:{:?}\n{}", lang, tree.root_node().to_sexp());
+                Some(tree)
+            }
+            None => {
+                error!("tree sitter parse failed lang:{:?}", lang);
+                None
+            }
+        };
         Ok(PlainText { parser, tree })
     }
 }
 
-impl PlainText {
+impl Syntax for PlainText {
     #[inline]
-    pub fn to_language(&self) -> Option<ts::Language> {
+    fn to_language(&self) -> Option<ts::Language> {
         Some(unsafe { tree_sitter_txt_plain() })
     }
 
-    pub fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
-        match buf.to_mode() {
-            "insert" => self.on_i_event(buf, evnt),
-            "normal" => self.on_n_event(buf, evnt),
-            _ => err_at!(Fatal, msg: format!("unreachable")),
+    fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
+        let new_evnt: Event = Default::default();
+        for evnt in evnt.into_iter() {
+            match evnt {
+                Event::Edit(val) => match self.tree.take() {
+                    Some(old_tree) => {
+                        old_tree.edit(&val.into());
+                        let s = buf.to_string();
+                        self.tree = self.parser.parse(&s, Some(&old_tree));
+                    }
+                    None => {
+                        self.tree = self.parser.parse(&buf.to_string(), None);
+                    }
+                },
+                evnt => new_evnt.push(evnt),
+            }
         }
     }
 
-    pub fn to_span_line(
+    fn to_span_line(
         &self,
         buf: &Buffer,
         scheme: &ColorScheme,
@@ -50,26 +77,8 @@ impl PlainText {
         let spl = buffer::to_span_line(buf, a, z)?;
         Ok(spl.using(scheme.to_style(Highlight::Canvas)))
     }
-}
 
-impl PlainText {
-    fn on_n_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
-        use crate::event::Code;
-
-        Ok(match evnt {
-            Event::Noop => Event::Noop,
-            Event::Code(Code::StatusCursor) => self.to_status_cursor()?,
-            evnt => evnt,
-        })
-    }
-
-    fn on_i_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
-        Ok(evnt)
-    }
-
-    fn to_status_cursor(&mut self) -> Result<Event> {
-        use crate::pubsub::Notify;
-
+    fn to_status_cursor(&self) -> Result<Span> {
         let (mut ws, mut ss, mut ls, mut ps) = (0, 0, 0, 0);
         let mut prev_kind: Option<&str> = None;
         let mut tc = self.tree.walk();
@@ -86,7 +95,6 @@ impl PlainText {
             }
             prev_kind = Some(node.kind());
         }
-        let span: Span = format!("{} {} {} {}", ws, ls, ss, ps).into();
-        Ok(Event::Notify(Notify::Status(vec![span])))
+        Ok(format!("{} {} {} {}", ws, ls, ss, ps).into())
     }
 }

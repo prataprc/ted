@@ -88,7 +88,7 @@ impl PubSub {
 /// Notification messages for `PubSub` topics.
 #[derive(Clone)]
 pub enum Notify {
-    Status(Vec<Span>),
+    Status(Vec<Span>), // TODO: rename this to StatusCursor
     None,
 }
 

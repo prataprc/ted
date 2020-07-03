@@ -3,22 +3,16 @@ use lazy_static::lazy_static;
 use log::{debug, trace};
 use tree_sitter as ts;
 
-use std::mem;
+use std::convert::TryFrom;
 
-use crate::{
-    app::App,
-    code::{cmd_set::Set, Code},
-    colors::ColorScheme,
-    event::Event,
-    syntax,
-    term::{Span, Spanline},
-    text,
-    tss::{self, Automata},
-    Error, Result,
-};
+use crate::{app::App, code::cmd_set::Set, event::Event, syntax, Error, Result};
 
 extern "C" {
     fn tree_sitter_code_cmd() -> ts::Language;
+}
+
+pub trait Command {
+    fn on_command(&mut self, app: &mut Code) -> Result<Event>;
 }
 
 macro_rules! commands {
@@ -37,15 +31,15 @@ macro_rules! commands {
         impl TryFrom<(String, String, syntax::Type)> for Cmd {
             type Error = Error;
 
-            fn try_from((name, s, syn): (String, String, syntax::Type)) -> Self {
+            fn try_from((name, s, syn): (String, String, syntax::Type)) -> Result<Self> {
                 match name.as_str() {
-                    $($name => Cmd::$var($t::new(s, syn))),
+                    $($name => Cmd::$var($t::new(s, syn)),)*
                 }
             }
         }
 
         impl Command for Cmd {
-            fn on_command(&mut self, app: &mut App) -> Result<Event> {
+            fn on_command(&mut self, app: &mut Code) -> Result<Event> {
                 match self {
                     $(Cmd::$var(val) => val.on_command(app),)*
                 }
@@ -55,10 +49,6 @@ macro_rules! commands {
 }
 
 commands![(Set, Set, "set")];
-
-pub trait Command {
-    fn on_command(&mut self, app: &mut App) -> Result<Event>;
-}
 
 //pub fn on_tab(&mut self, s: &mut State) -> Result<()> {
 //    let span = Self::to_command_name(s);

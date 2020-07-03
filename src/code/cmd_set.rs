@@ -21,7 +21,7 @@ impl Set {
 }
 
 impl Command for Set {
-    pub fn on_command(&mut self, app: &mut Code) -> Result<Event> {
+    fn on_command(&mut self, app: &mut Code) -> Result<Event> {
         let config: &mut Config = app.as_mut();
         match self.args.as_str() {
             "wrap" => {

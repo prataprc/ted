@@ -96,8 +96,9 @@ impl Window for WindowEdit {
         }?;
 
         match evnt {
-            Event::Notify(msg @ Notify::Status(_)) => {
-                app.notify("code", msg)?;
+            Event::Code(Code::StatusCursor) => {
+                let msg = vec![self.syn.to_status_cursor()?];
+                app.notify("code", Notify::Status(msg));
                 Ok(Event::Noop)
             }
             evnt => Ok(evnt),

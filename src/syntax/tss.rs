@@ -1,13 +1,13 @@
 #[allow(unused_imports)]
-use log::{debug, trace};
+use log::{debug, error, trace};
 use tree_sitter as ts;
 
 use crate::{
     buffer::Buffer,
     colors::ColorScheme,
     event::Event,
-    syntax,
-    term::Spanline,
+    syntax::{self, Syntax},
+    term::{Span, Spanline},
     tss::{self, Automata},
     Error, Result,
 };
@@ -25,30 +25,56 @@ pub struct Tss {
 impl Tss {
     pub fn new(s: &str, scheme: &ColorScheme) -> Result<Tss> {
         let lang = unsafe { tree_sitter_tss() };
-        let (parser, tree) = syntax::new_parser(s, lang)?;
-        let atmt = Automata::from_str("tss", tss::TSS, scheme)?;
-
-        debug!("{}", atmt);
-
+        let mut parser = {
+            let mut parser = ts::Parser::new();
+            err_at!(FailParse, parser.set_language(lang))?;
+            parser
+        };
+        let tree = match parser.parse(s, None) {
+            Some(tree) => {
+                debug!("lang:{:?}\n{}", lang, tree.root_node().to_sexp());
+                Some(tree)
+            }
+            None => {
+                error!("tree sitter parse failed lang:{:?}", lang);
+                None
+            }
+        };
+        let atmt = {
+            let atmt = Automata::from_str("tss", tss::TSS, scheme)?;
+            debug!("{}", atmt);
+            atmt
+        };
         Ok(Tss { parser, tree, atmt })
     }
 }
 
-impl Tss {
+impl Syntax for Tss {
     #[inline]
-    pub fn to_language(&self) -> Option<ts::Language> {
+    fn to_language(&self) -> Option<ts::Language> {
         Some(unsafe { tree_sitter_tss() })
     }
 
-    pub fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
-        match buf.to_mode() {
-            "insert" => self.on_i_event(buf, evnt),
-            "normal" => self.on_n_event(buf, evnt),
-            _ => err_at!(Fatal, msg: format!("unreachable")),
+    fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
+        let new_evnt: Event = Default::default();
+        for evnt in evnt.into_iter() {
+            match evnt {
+                Event::Edit(val) => match self.tree.take() {
+                    Some(old_tree) => {
+                        old_tree.endit(&val.into());
+                        let s = buf.to_string();
+                        self.tree = self.parse.parse(&s, Some(&old_tree));
+                    }
+                    None => {
+                        self.tree = self.parse.parse(&buf.to_string(), None);
+                    }
+                },
+                evnt => new_evnt.push(evnt),
+            }
         }
     }
 
-    pub fn to_span_line(
+    fn to_span_line(
         &self,
         buf: &Buffer,
         scheme: &ColorScheme,
@@ -58,20 +84,8 @@ impl Tss {
         let mut atmt = self.atmt.clone();
         syntax::highlight(buf, scheme, &self.tree, &mut atmt, from, to)
     }
-}
 
-impl Tss {
-    fn on_n_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
-        use crate::event::Code;
-
-        Ok(match evnt {
-            Event::Noop => Event::Noop,
-            Event::Code(Code::StatusCursor) => todo!(),
-            evnt => evnt,
-        })
-    }
-
-    fn on_i_event(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
-        Ok(evnt)
+    fn to_status_cursor(&self) -> Result<Span> {
+        Ok(format!("").into())
     }
 }
