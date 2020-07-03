@@ -67,6 +67,12 @@ fn main() {
                 "src/tss/toml/src/scanner.c".into(),
             ],
         },
+        Parser {
+            name: "code_cmd".to_string(),
+            dir: "src/tss/code_cmd".into(),
+            grammar: "src/tss/code_cmd/grammar.js".into(),
+            sources: vec!["src/tss/code_cmd/src/parser.c".into()],
+        },
     ];
     for parser in parsers.into_iter() {
         check_exit!(build_parser(parser), 3);
