@@ -6,10 +6,10 @@ use std::{fmt, result};
 use crate::{
     app::Application,
     buffer::{self, Buffer},
-    code::{config::Config, keymap::Keymap, Code},
+    code::{self, config::Config, keymap::Keymap},
     colors::ColorScheme,
-    event::Event,
-    syntax,
+    event::{self, Event},
+    syntax::{self, Syntax},
     term::Spanline,
     window::{Coord, Cursor, Render, WinBuffer, Window},
     Error, Result,
@@ -73,14 +73,14 @@ impl WindowEdit {
 }
 
 impl Window for WindowEdit {
-    type App = Code;
+    type App = code::Code;
 
     #[inline]
     fn to_cursor(&self) -> Cursor {
         self.coord.to_top_left() + self.cursor
     }
 
-    fn on_event(&mut self, app: &mut Code, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, app: &mut code::Code, evnt: Event) -> Result<Event> {
         use crate::pubsub::Notify;
 
         let evnt = match app.take_buffer(&self.buffer_id) {
@@ -96,16 +96,16 @@ impl Window for WindowEdit {
         }?;
 
         match evnt {
-            Event::Code(Code::StatusCursor) => {
+            Event::Code(event::Code::StatusCursor) => {
                 let msg = vec![self.syn.to_status_cursor()?];
-                app.notify("code", Notify::Status(msg));
+                app.notify("code", Notify::Status(msg))?;
                 Ok(Event::Noop)
             }
             evnt => Ok(evnt),
         }
     }
 
-    fn on_refresh(&mut self, app: &mut Code) -> Result<()> {
+    fn on_refresh(&mut self, app: &mut code::Code) -> Result<()> {
         use crate::code::view::{NoWrap, Wrap};
 
         let err = Error::Invalid(format!("buffer {}", self.buffer_id));
@@ -141,6 +141,6 @@ impl Window for WindowEdit {
 
 impl Render for WindowEdit {
     fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
-        self.syn.to_span_line(buf, &self.scheme, a, z)
+        self.syn.to_span_line(buf, a, z)
     }
 }

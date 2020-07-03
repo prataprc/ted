@@ -68,15 +68,6 @@ impl Inner {
             Inner::None => unreachable!(),
         }
     }
-
-    fn new_command(coord: Coord, edit: Edit) -> Command {
-        let tbcline = Code::new_tbcline(coord);
-        Command {
-            edit,
-            tbcline,
-            wcmd: Default::default(),
-        }
-    }
 }
 
 struct Edit {
@@ -152,8 +143,8 @@ impl<'a> From<(Opt, &'a State, Coord)> for Code {
         }
 
         let edit = {
-            let stsline = Code::new_stsline(coord);
-            let tbcline = Code::new_tbcline(coord);
+            let stsline = Code::new_window_line("status-line", coord);
+            let tbcline = Code::new_window_line("tab-compl-line", coord);
             let wfile = {
                 let buf = buffers.first().unwrap();
                 Code::new_window_file(coord, config.clone(), buf, &scheme)
@@ -182,22 +173,39 @@ impl<'a> From<(Opt, &'a State, Coord)> for Code {
 }
 
 impl Code {
-    fn new_stsline(mut coord: Coord) -> WindowLine {
-        coord.row = coord.hgt;
-        coord.hgt = 1;
-        WindowLine::new_status(coord)
+    fn new_window_line(what: &str, mut coord: Coord) -> WindowLine {
+        match what {
+            "status-line" => {
+                coord.row = coord.hgt;
+                coord.hgt = 1;
+                WindowLine::new_status(coord)
+            }
+            "tab-compl-line" => {
+                coord.row = coord.hgt.saturating_sub(1);
+                coord.hgt = 1;
+                WindowLine::new_tab(coord)
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn new_cmdline(mut coord: Coord) -> WindowLine {
-        coord.row = coord.hgt;
-        coord.hgt = 1;
-        WindowLine::new_cmd(coord)
-    }
-
-    fn new_tbcline(mut coord: Coord) -> WindowLine {
-        coord.row = coord.hgt.saturating_sub(1);
-        coord.hgt = 1;
-        WindowLine::new_tab(coord)
+    fn new_window_cmd(
+        //
+        mut coord: Coord,
+        edit: Edit,
+        scheme: &ColorScheme,
+    ) -> Command {
+        let tbcline = Code::new_window_line("tab-compl-line", coord);
+        let wcmd = {
+            coord.row = coord.hgt;
+            coord.hgt = 1;
+            WindowCmd::new(coord, scheme)
+        };
+        Command {
+            edit,
+            tbcline,
+            wcmd,
+        }
     }
 
     fn new_window_file(
@@ -325,78 +333,65 @@ impl Application for Code {
         match &self.inner {
             Inner::Edit(val) => val.wfile.to_cursor(),
             Inner::Prompt(val) => val.prompts[0].to_cursor(),
-            Inner::Command(val) => val.cmd.to_cursor(),
+            Inner::Command(val) => val.wcmd.to_cursor(),
             Inner::Less(val) => val.less.to_cursor(),
             Inner::None => Default::default(),
         }
     }
 
     fn on_event(&mut self, evnt: Event) -> Result<Event> {
-        use cmd::Command;
-        use Event::Esc;
-
-        let noop = Event::Noop;
         let inner = mem::replace(&mut self.inner, Default::default());
-        let (inner, evnt) = {
-            match (inner, evnt) {
-                (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
-                    let mut val = Inner::new_command(self.coord, edit);
-                    let evnt = val.cmdline.on_event(self, Event::Char(':', m))?;
-                    (Inner::Command(val), evnt)
-                }
-                (Inner::Edit(mut edit), evnt) => {
-                    let evnt = edit.wfile.on_event(self, evnt)?;
-                    (Inner::Edit(edit), evnt)
-                }
-                (Inner::Prompt(mut prompt), evnt) => {
-                    let evnt = prompt.prompts[0].on_event(self, evnt)?;
-                    if let Some(_) = prompt.prompts[0].prompt_match() {
-                        prompt.prompts.remove(0);
-                    }
-                    match prompt.prompts.len() {
-                        0 => (Inner::Edit(prompt.edit), evnt),
-                        _ => (Inner::Prompt(prompt), evnt),
-                    }
-                }
-                (Inner::Command(cmd), Esc) => (Inner::Edit(cmd.edit), noop),
-                (Inner::Command(mut cmd), evnt) => {
-                    let evnt = cmd.cmd.on_event(self, evnt)?;
-                    (Inner::Command(cmd), evnt)
-                }
-                (Inner::Less(mut less), evnt) => {
-                    let evnt = less.less.on_event(self, evnt)?;
-                    (Inner::Less(less), evnt)
-                }
-                (Inner::None, _) => unreachable!(),
+        let (mut inner, evnt) = match (inner, evnt) {
+            (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
+                let mut val = {
+                    let coord = self.coord;
+                    Code::new_window_cmd(coord, edit, &self.scheme)
+                };
+                let evnt = val.wcmd.on_event(self, Event::Char(':', m))?;
+                (Inner::Command(val), evnt)
             }
+            (Inner::Edit(mut edit), evnt) => {
+                let evnt = edit.wfile.on_event(self, evnt)?;
+                (Inner::Edit(edit), evnt)
+            }
+            (Inner::Prompt(mut prompt), evnt) => {
+                let evnt = prompt.prompts[0].on_event(self, evnt)?;
+                if let Some(_) = prompt.prompts[0].prompt_match() {
+                    prompt.prompts.remove(0);
+                }
+                match prompt.prompts.len() {
+                    0 => (Inner::Edit(prompt.edit), evnt),
+                    _ => (Inner::Prompt(prompt), evnt),
+                }
+            }
+            (Inner::Command(mut cmd), evnt) => {
+                let evnt = cmd.wcmd.on_event(self, evnt)?;
+                (Inner::Command(cmd), evnt)
+            }
+            (Inner::Less(mut less), evnt) => {
+                let evnt = less.less.on_event(self, evnt)?;
+                (Inner::Less(less), evnt)
+            }
+            (Inner::None, _) => unreachable!(),
         };
 
-        let noop = Event::Noop;
-        let (inner, evnt) = match evnt {
-            Event::Esc => match inner {
-                inner @ Inner::Edit(_) => (inner, Event::Esc),
-                Inner::Prompt(val) => (Inner::Edit(val.edit), noop),
-                Inner::Command(val) => (Inner::Edit(val.edit), noop),
-                Inner::Less(val) => (Inner::Edit(val.edit), noop),
-                Inner::None => unreachable!(),
-            },
-            Event::Code(event::Code::Cmd(name, args)) => {
-                let mut cmd: cmd::Cmd = (name, args).into();
-                (inner, cmd.on_command(self)?)
+        let mut new_evnt: Event = Default::default();
+        for evnt in evnt.into_iter() {
+            match evnt {
+                Event::Code(event::Code::Less(ref content)) => {
+                    let edit = inner.into_edit();
+                    let less = WindowLess::new(self.coord, content);
+                    inner = Inner::Less(Less { edit, less });
+                }
+                Event::Esc => {
+                    inner = Inner::Edit(inner.into_edit());
+                }
+                evnt => new_evnt.push(evnt),
             }
-            Event::Code(event::Code::Less(ref content)) => {
-                let edit = inner.into_edit();
-                let inner = Inner::Less(Less {
-                    edit,
-                    less: WindowLess::new(self.coord, content),
-                });
-                (inner, noop)
-            }
-            evnt => (inner, evnt),
-        };
+        }
 
         self.inner = inner;
-        Ok(evnt)
+        Ok(new_evnt)
     }
 
     fn on_refresh(&mut self) -> Result<()> {
@@ -412,8 +407,7 @@ impl Application for Code {
                 None => (),
             },
             Inner::Command(cmd) => {
-                cmd.cmdline.on_refresh(self)?;
-                // TODO cmd.tbcline.on_refresh(self)?,
+                cmd.wcmd.on_refresh(self)?;
             }
             Inner::Less(less) => less.less.on_refresh(self)?,
             Inner::None => unreachable!(),

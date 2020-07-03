@@ -6,12 +6,11 @@ use std::{fmt, iter::FromIterator, mem, result};
 
 use crate::{
     buffer::{self, Buffer},
-    code::{keymap::Keymap, Code},
+    code,
     colors::Highlight,
     event::Event,
-    location::Location,
     term::{Span, Spanline},
-    window::{Coord, Cursor, Render, WinBuffer, Window},
+    window::{Coord, Cursor, Render, Window},
     Error, Result,
 };
 
@@ -22,18 +21,8 @@ pub struct WindowLine {
 }
 
 enum Inner {
-    Cmd {
-        cursor: Cursor,
-        obc_xy: buffer::Cursor,
-        buffer: Buffer,
-        keymap: Keymap,
-    },
-    Status {
-        spans: Vec<Span>,
-    },
-    Tab {
-        spans: Vec<Span>,
-    },
+    Status { spans: Vec<Span> },
+    Tab { spans: Vec<Span> },
     None,
 }
 
@@ -46,7 +35,6 @@ impl Default for Inner {
 impl fmt::Display for Inner {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
-            Inner::Cmd { .. } => write!(f, "cmd"),
             Inner::Status { .. } => write!(f, "status"),
             Inner::Tab { .. } => write!(f, "tab"),
             Inner::None => write!(f, "none"),
@@ -61,32 +49,6 @@ impl fmt::Display for WindowLine {
 }
 
 impl WindowLine {
-    #[inline]
-    pub fn new_cmd(coord: Coord) -> WindowLine {
-        use crate::code::view::NoWrap;
-
-        let name = "cmdline".to_string();
-        let buffer = {
-            let loc = Location::new_ted(&name);
-            let bs = vec![];
-            let mut buffer = Buffer::from_reader(bs.as_slice(), loc).unwrap();
-            buffer.mode_insert();
-            buffer
-        };
-        let cursor = NoWrap::initial_cursor(false /*line_number*/);
-        let obc_xy = (0, 0).into();
-        WindowLine {
-            name,
-            coord,
-            inner: Inner::Cmd {
-                cursor,
-                obc_xy,
-                keymap: Keymap::new_cmd(),
-                buffer,
-            },
-        }
-    }
-
     #[inline]
     pub fn new_status(coord: Coord) -> WindowLine {
         let spans = vec![];
@@ -109,53 +71,26 @@ impl WindowLine {
 }
 
 impl Window for WindowLine {
-    type App = Code;
+    type App = code::Code;
 
     #[inline]
     fn to_cursor(&self) -> Cursor {
         match self.inner {
-            Inner::Cmd { cursor, .. } => self.coord.to_top_left() + cursor,
             Inner::Status { .. } => unreachable!(),
             Inner::Tab { .. } => unreachable!(),
             Inner::None => unreachable!(),
         }
     }
 
-    fn on_event(&mut self, _app: &mut Code, evnt: Event) -> Result<Event> {
-        use crate::event::Code;
-
+    fn on_event(&mut self, _app: &mut code::Code, evnt: Event) -> Result<Event> {
         match &mut self.inner {
-            Inner::Cmd { buffer, keymap, .. } => match evnt {
-                Event::Esc => Ok(Event::Esc),
-                Event::Enter => {
-                    let s = buffer.to_string().trim().to_string();
-                    let parts: Vec<&str> = s.splitn(2, ' ').collect();
-                    Ok(match parts.as_slice() {
-                        [nm] if nm.len() == 0 => Event::Noop,
-                        [nm] => {
-                            let cevnt = Code::Cmd(nm.to_string(), "".to_string());
-                            Event::Code(cevnt)
-                        }
-                        [nm, ars] => {
-                            let cevnt = Code::Cmd(nm.to_string(), ars.to_string());
-                            Event::Code(cevnt)
-                        }
-                        _ => unreachable!(),
-                    })
-                }
-                evnt => {
-                    let evnt = keymap.fold(buffer, evnt)?;
-                    buffer.on_event(evnt)
-                }
-            },
             Inner::Status { .. } => Ok(evnt),
             Inner::Tab { .. } => Ok(evnt),
             Inner::None => Ok(evnt),
         }
     }
 
-    fn on_refresh(&mut self, app: &mut Code) -> Result<()> {
-        use crate::code::view::NoWrap;
+    fn on_refresh(&mut self, app: &mut code::Code) -> Result<()> {
         use std::iter::repeat;
 
         let scheme = app.as_color_scheme();
@@ -165,18 +100,6 @@ impl Window for WindowLine {
 
         let mut inner = mem::replace(&mut self.inner, Default::default());
         match &mut inner {
-            Inner::Cmd {
-                buffer,
-                obc_xy,
-                cursor,
-                ..
-            } => {
-                let (name, coord) = (&self.name, self.coord);
-                let mut v = NoWrap::new(name, coord, *cursor, *obc_xy);
-                v.set_scroll_off(0).set_line_number(false);
-                *cursor = v.render(buffer, self, scheme)?;
-                *obc_xy = buffer.to_xy_cursor();
-            }
             Inner::Status { spans } => {
                 for span in spans.iter() {
                     err_at!(Fatal, termqu!(span))?;

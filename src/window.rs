@@ -81,7 +81,7 @@ pub trait WinBuffer<'a> {
 
 /// Render trait for window objects.
 pub trait Render {
-    fn to_span_line(&self, buf: &Buffer, from: usize, to: usize) -> Result<Spanline>;
+    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline>;
 }
 
 // Terminal coordinates, describes the four corners of a window.

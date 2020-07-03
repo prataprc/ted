@@ -592,6 +592,13 @@ pub struct Spanline {
     cursor: Option<Cursor>,
 }
 
+impl From<String> for Spanline {
+    fn from(s: String) -> Spanline {
+        let span: Span = s.into();
+        span.into()
+    }
+}
+
 impl From<Span> for Spanline {
     fn from(span: Span) -> Spanline {
         Spanline {

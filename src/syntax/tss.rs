@@ -3,7 +3,7 @@ use log::{debug, error, trace};
 use tree_sitter as ts;
 
 use crate::{
-    buffer::Buffer,
+    buffer::{self, Buffer},
     colors::ColorScheme,
     event::Event,
     syntax::{self, Syntax},
@@ -18,8 +18,9 @@ extern "C" {
 
 pub struct Tss {
     parser: ts::Parser,
-    tree: ts::Tree,
+    tree: Option<ts::Tree>,
     atmt: Automata,
+    scheme: ColorScheme,
 }
 
 impl Tss {
@@ -45,7 +46,12 @@ impl Tss {
             debug!("{}", atmt);
             atmt
         };
-        Ok(Tss { parser, tree, atmt })
+        Ok(Tss {
+            parser,
+            tree,
+            atmt,
+            scheme: scheme.clone(),
+        })
     }
 }
 
@@ -56,33 +62,33 @@ impl Syntax for Tss {
     }
 
     fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
-        let new_evnt: Event = Default::default();
+        let mut new_evnt: Event = Default::default();
         for evnt in evnt.into_iter() {
             match evnt {
                 Event::Edit(val) => match self.tree.take() {
-                    Some(old_tree) => {
-                        old_tree.endit(&val.into());
+                    Some(mut old_tree) => {
+                        old_tree.edit(&val.into());
                         let s = buf.to_string();
-                        self.tree = self.parse.parse(&s, Some(&old_tree));
+                        self.tree = self.parser.parse(&s, Some(&old_tree));
                     }
                     None => {
-                        self.tree = self.parse.parse(&buf.to_string(), None);
+                        self.tree = self.parser.parse(&buf.to_string(), None);
                     }
                 },
                 evnt => new_evnt.push(evnt),
             }
         }
+        Ok(new_evnt)
     }
 
-    fn to_span_line(
-        &self,
-        buf: &Buffer,
-        scheme: &ColorScheme,
-        from: usize,
-        to: usize,
-    ) -> Result<Spanline> {
-        let mut atmt = self.atmt.clone();
-        syntax::highlight(buf, scheme, &self.tree, &mut atmt, from, to)
+    fn to_span_line(&self, b: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+        match self.tree.as_ref() {
+            Some(tree) => {
+                let mut atmt = self.atmt.clone();
+                syntax::highlight(b, &self.scheme, tree, &mut atmt, a, z)
+            }
+            None => buffer::to_span_line(b, a, z),
+        }
     }
 
     fn to_status_cursor(&self) -> Result<Span> {

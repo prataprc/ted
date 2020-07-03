@@ -1,15 +1,14 @@
 use lazy_static::lazy_static;
 #[allow(unused_imports)]
 use log::{debug, trace};
-use tree_sitter as ts;
 
 use std::convert::TryFrom;
 
-use crate::{app::App, code::cmd_set::Set, event::Event, syntax, Error, Result};
-
-extern "C" {
-    fn tree_sitter_code_cmd() -> ts::Language;
-}
+use crate::{
+    code::{cmd_set::Set, Code},
+    event::Event,
+    syntax, Error, Result,
+};
 
 pub trait Command {
     fn on_command(&mut self, app: &mut Code) -> Result<Event>;
@@ -23,17 +22,18 @@ macro_rules! commands {
             ];
         }
 
-        #[derive(Clone)]
         pub enum Cmd {
             $($var($t),)*
         }
 
+        // generate the cmd from (cmd-name, :full-cmd-line, syntax-type)
         impl TryFrom<(String, String, syntax::Type)> for Cmd {
             type Error = Error;
 
             fn try_from((name, s, syn): (String, String, syntax::Type)) -> Result<Self> {
                 match name.as_str() {
-                    $($name => Cmd::$var($t::new(s, syn)),)*
+                    $($name => Ok(Cmd::$var($t::new(s, syn)?)),)*
+                    _ => err_at!(Invalid, msg: format!("command {}", name)),
                 }
             }
         }

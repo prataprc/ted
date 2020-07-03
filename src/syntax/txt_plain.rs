@@ -18,10 +18,11 @@ extern "C" {
 pub struct PlainText {
     parser: ts::Parser,
     tree: Option<ts::Tree>,
+    scheme: ColorScheme,
 }
 
 impl PlainText {
-    pub fn new(s: &str, _: &ColorScheme) -> Result<PlainText> {
+    pub fn new(s: &str, scheme: &ColorScheme) -> Result<PlainText> {
         let lang = unsafe { tree_sitter_txt_plain() };
         let mut parser = {
             let mut parser = ts::Parser::new();
@@ -38,7 +39,11 @@ impl PlainText {
                 None
             }
         };
-        Ok(PlainText { parser, tree })
+        Ok(PlainText {
+            parser,
+            tree,
+            scheme: scheme.clone(),
+        })
     }
 }
 
@@ -49,11 +54,11 @@ impl Syntax for PlainText {
     }
 
     fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
-        let new_evnt: Event = Default::default();
+        let mut new_evnt: Event = Default::default();
         for evnt in evnt.into_iter() {
             match evnt {
                 Event::Edit(val) => match self.tree.take() {
-                    Some(old_tree) => {
+                    Some(mut old_tree) => {
                         old_tree.edit(&val.into());
                         let s = buf.to_string();
                         self.tree = self.parser.parse(&s, Some(&old_tree));
@@ -65,24 +70,26 @@ impl Syntax for PlainText {
                 evnt => new_evnt.push(evnt),
             }
         }
+        Ok(new_evnt)
     }
 
-    fn to_span_line(
-        &self,
-        buf: &Buffer,
-        scheme: &ColorScheme,
-        a: usize,
-        z: usize,
-    ) -> Result<Spanline> {
-        let spl = buffer::to_span_line(buf, a, z)?;
-        Ok(spl.using(scheme.to_style(Highlight::Canvas)))
+    fn to_span_line(&self, b: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+        let spl = buffer::to_span_line(b, a, z)?;
+        Ok(spl.using(self.scheme.to_style(Highlight::Canvas)))
     }
 
     fn to_status_cursor(&self) -> Result<Span> {
+        let nodes: Vec<ts::Node> = match self.tree.as_ref() {
+            Some(tree) => {
+                let mut tc = tree.walk();
+                tree.root_node().children(&mut tc).collect()
+            }
+            None => vec![],
+        };
+
         let (mut ws, mut ss, mut ls, mut ps) = (0, 0, 0, 0);
         let mut prev_kind: Option<&str> = None;
-        let mut tc = self.tree.walk();
-        for node in self.tree.root_node().children(&mut tc) {
+        for node in nodes.into_iter() {
             match (prev_kind, node.kind()) {
                 (_, "word") | (_, "wword") => ws += 1,
                 (_, "dot") => ss += 1,

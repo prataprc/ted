@@ -32,18 +32,12 @@ pub use crate::syntax::toml::Toml;
 pub use crate::syntax::tss::Tss;
 pub use crate::syntax::txt_plain::PlainText;
 
-trait Syntax {
+pub trait Syntax {
     fn to_language(&self) -> Option<ts::Language>;
 
     fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event>;
 
-    fn to_span_line(
-        &self,
-        buf: &Buffer,
-        scheme: &ColorScheme,
-        from: usize,
-        to: usize,
-    ) -> Result<Spanline>;
+    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline>;
 
     fn to_status_cursor(&self) -> Result<Span>;
 }
@@ -58,6 +52,7 @@ macro_rules! syntax_for {
 
         pub enum Type {
             $($variant($t),)*
+            None,
         }
 
         impl<'a, 'b> TryFrom<(String, &'a str, &'b ColorScheme)> for Type {
@@ -77,7 +72,14 @@ macro_rules! syntax_for {
             pub fn as_name(&self) -> &'static str {
                 match self {
                     $(Type::$variant(_) => $name,)*
+                    Type::None => "invalid-syntax-type"
                 }
+            }
+        }
+
+        impl Default for Type {
+            fn default() -> Type {
+                Type::None
             }
         }
 
@@ -85,32 +87,28 @@ macro_rules! syntax_for {
             fn to_language(&self) -> Option<ts::Language> {
                 match self {
                     $(Type::$variant(val) => val.to_language(),)*
+                    Type::None => None,
                 }
             }
 
             fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
                 match self {
                     $(Type::$variant(val) => val.on_edit(buf, evnt),)*
+                    Type::None => Ok(evnt)
                 }
             }
 
-            fn to_span_line(
-                &self,
-                buf: &Buffer,
-                scheme: &ColorScheme,
-                from: usize,
-                to: usize,
-            ) -> Result<Spanline> {
+            fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
                 match self {
-                    $(Type::$variant(val) => {
-                        val.to_span_line(buf, scheme, from, to)
-                    },)*
+                    $(Type::$variant(val) => val.to_span_line(buf, a, z),)*
+                    Type::None => Ok("".to_string().into())
                 }
             }
 
             fn to_status_cursor(&self) -> Result<Span> {
                 match self {
                     $(Type::$variant(val) => val.to_status_cursor(),)*
+                    Type::None => Ok("".to_string().into())
                 }
             }
         }
@@ -143,31 +141,7 @@ pub fn detect(buf: &Buffer, scheme: &ColorScheme) -> Result<Type> {
 
     // TODO: find other ways to detect the file's type.
 
-    (tt, buf, scheme).try_into()
-}
-
-pub fn new_parser(
-    //
-    content: &str,
-    lang: ts::Language,
-) -> Result<(ts::Parser, Option<ts::Tree>)> {
-    let mut parser = {
-        let mut parser = ts::Parser::new();
-        err_at!(FailParse, parser.set_language(lang))?;
-        parser
-    };
-    let tree = match parser.parse(content, None) {
-        Some(tree) => {
-            debug!("lang:{:?}\n{}", lang, tree.root_node().to_sexp());
-            Some(tree)
-        }
-        None => {
-            error!("tree sitter parse failed lang:{:?}", lang);
-            None
-        }
-    };
-
-    Ok((parser, tree))
+    (tt, buf.to_string().as_str(), scheme).try_into()
 }
 
 /// Syntax highlighting using tree-sitter and ted-style-sheet automata.

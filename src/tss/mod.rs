@@ -114,13 +114,6 @@ impl Span {
         }
     }
 
-    fn to_position(&self) -> Result<(usize, usize)> {
-        match self {
-            Span::Pos(a, z) => Ok((*a, *z)),
-            Span::Text(_) => err_at!(Fatal, msg: format!("unexpected span")),
-        }
-    }
-
     fn as_text(&self) -> Result<&str> {
         match self {
             Span::Pos(_, _) => err_at!(Fatal, msg: format!("unexpected span")),
@@ -314,19 +307,6 @@ impl Edge {
             Descendant(_) => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
-
-    fn pos_to_text(&mut self, tss: &str) -> Result<()> {
-        use Edge::{Child, Descendant, Kind, Sibling, Twin};
-
-        match self {
-            Kind(cnt) => cnt.pos_to_text(tss)?,
-            Twin(edge) => edge.as_mut().pos_to_text(tss)?,
-            Sibling(edge) => edge.as_mut().pos_to_text(tss)?,
-            Child(edge) => edge.as_mut().pos_to_text(tss)?,
-            Descendant(edge) => edge.as_mut().pos_to_text(tss)?,
-        }
-        Ok(())
-    }
 }
 
 #[derive(Clone)]
@@ -510,19 +490,6 @@ impl Node {
             Child { edge, .. } => edge,
             Descendant { edge, .. } => edge,
             End(_) => unreachable!(),
-        }
-    }
-
-    fn pos_to_text(&mut self, tss: &str) -> Result<()> {
-        use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
-
-        match self {
-            Pattern(edge, _) => edge.pos_to_text(tss),
-            Twin { edge, .. } => edge.pos_to_text(tss),
-            Sibling { edge, .. } => edge.pos_to_text(tss),
-            Child { edge, .. } => edge.pos_to_text(tss),
-            Descendant { edge, .. } => edge.pos_to_text(tss),
-            End(_) => Ok(()),
         }
     }
 }

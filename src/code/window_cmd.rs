@@ -2,15 +2,15 @@ use crossterm::{cursor as term_cursor, queue};
 #[allow(unused_imports)]
 use log::trace;
 
-use std::{fmt, mem, result};
+use std::{convert::TryInto, fmt, mem, result};
 
 use crate::{
     buffer::{self, Buffer},
-    code::{keymap::Keymap, Code},
+    code::{cmd, keymap::Keymap, Code},
     colors::ColorScheme,
     event::Event,
     location::Location,
-    syntax,
+    syntax::{self, Syntax},
     term::Spanline,
     window::{Coord, Cursor, Render, WinBuffer, Window},
     Error, Result,
@@ -49,13 +49,14 @@ impl WindowCmd {
         };
         let cursor = NoWrap::initial_cursor(false /*line_number*/);
         let obc_xy = (0, 0).into();
+        let syn_code_cmd = syntax::CodeCmd::new("", scheme).unwrap();
         WindowCmd {
             coord,
             cursor,
             obc_xy,
             buffer: buf,
-            syn: syntax::CodeCmd::new("".to_string(), scheme).unwrap(),
-            scheme,
+            syn: syntax::Type::CodeCmd(syn_code_cmd),
+            scheme: scheme.clone(),
             keymap: Keymap::new_cmd(),
         }
     }
@@ -69,13 +70,27 @@ impl Window for WindowCmd {
         self.coord.to_top_left() + self.cursor
     }
 
-    fn on_event(&mut self, _app: &mut Code, mut evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, app: &mut Code, mut evnt: Event) -> Result<Event> {
+        use crate::code::cmd::Command;
+
         let mut buf = mem::replace(&mut self.buffer, Default::default());
-        evnt = self.keymap.fold(&mut buf, evnt)?;
-        evnt = match evnt {
-            Event::Enter => todo!(),
+        evnt = match self.keymap.fold(&mut buf, evnt)? {
+            Event::Enter => {
+                let line = buf.to_string();
+                let syn = mem::replace(&mut self.syn, Default::default());
+                match line.split(' ').next() {
+                    Some(name) => {
+                        let name = name.to_string();
+                        let mut val: cmd::Cmd = (name, line, syn).try_into()?;
+                        let mut evnt = val.on_command(app)?;
+                        evnt.push(Event::Esc);
+                        evnt
+                    }
+                    None => Event::Esc,
+                }
+            }
             evnt => {
-                evnt = buf.on_event(evnt)?;
+                let evnt = buf.on_event(evnt)?;
                 self.syn.on_edit(&buf, evnt)?
             }
         };
@@ -83,7 +98,7 @@ impl Window for WindowCmd {
         Ok(evnt)
     }
 
-    fn on_refresh(&mut self, app: &mut Code) -> Result<()> {
+    fn on_refresh(&mut self, _app: &mut Code) -> Result<()> {
         use crate::code::view::NoWrap;
 
         let (col, row) = self.coord.to_origin_cursor();
@@ -100,6 +115,6 @@ impl Window for WindowCmd {
 
 impl Render for WindowCmd {
     fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
-        self.syn.to_span_line(buf, &self.scheme, a, z)
+        self.syn.to_span_line(buf, a, z)
     }
 }

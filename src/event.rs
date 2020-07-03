@@ -132,6 +132,7 @@ impl Extend<Event> for Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        use Event::Edit;
         use Event::{BackTab, Code, FKey, List, Md, Mt, Noop, Notify, Op, Ted};
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
 
@@ -155,6 +156,7 @@ impl fmt::Display for Event {
             Md(md) => write!(f, "md({})", md),
             Mt(mt) => write!(f, "mt({})", mt),
             // other events
+            Edit(val) => write!(f, "edit({})", val),
             List(es) => write!(f, "list({})", es.len()),
             Notify(notf) => write!(f, "notify({})", notf),
             Code(cd) => write!(f, "Code({})", cd),
@@ -417,7 +419,6 @@ impl Mto {
 /// Event specific to application `code`.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Code {
-    Cmd(String, String), // (command-name, arguments)
     Less(String),
     Prompt(String),
     StatusFile,
@@ -426,10 +427,9 @@ pub enum Code {
 
 impl fmt::Display for Code {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Code::{Cmd, Less, Prompt, StatusCursor, StatusFile};
+        use Code::{Less, Prompt, StatusCursor, StatusFile};
 
         match self {
-            Cmd(_, _) => write!(f, "cmd"),
             Less(_) => write!(f, "less"),
             Prompt(_) => write!(f, "prompt"),
             StatusFile => write!(f, "status_file"),
@@ -506,7 +506,7 @@ impl Input {
         }
     }
 
-    pub fn finish(self, new_eb: usize, new_ep: (usize, usize)) -> Event {
+    pub fn finish(mut self, new_eb: usize, new_ep: (usize, usize)) -> Event {
         self.new_end_byte = new_eb;
         self.new_end_position = new_ep;
         Event::Edit(self)
