@@ -1,5 +1,5 @@
 {
-  "name": "tss",
+  "name": "code_cmd",
   "rules": {
     "s": {
       "type": "CHOICE",
