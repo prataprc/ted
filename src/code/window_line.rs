@@ -50,7 +50,7 @@ impl fmt::Display for WindowLine {
 
 impl WindowLine {
     #[inline]
-    pub fn new_status(coord: Coord) -> WindowLine {
+    pub fn new_status(coord: Coord, _: &code::Code) -> WindowLine {
         let spans = vec![];
         WindowLine {
             name: "stsline".to_string(),
@@ -60,7 +60,7 @@ impl WindowLine {
     }
 
     #[inline]
-    pub fn new_tab(coord: Coord) -> WindowLine {
+    pub fn new_tab(coord: Coord, _: &code::Code) -> WindowLine {
         let spans = vec![];
         WindowLine {
             name: "tbcline".to_string(),
@@ -93,7 +93,7 @@ impl Window for WindowLine {
     fn on_refresh(&mut self, app: &mut code::Code) -> Result<()> {
         use std::iter::repeat;
 
-        let scheme = app.as_color_scheme();
+        let scheme = app.to_color_scheme(None);
 
         let (col, row) = self.coord.to_origin_cursor();
         err_at!(Fatal, termqu!(term_cursor::MoveTo(col, row)))?;

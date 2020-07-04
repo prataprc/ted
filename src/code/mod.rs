@@ -34,7 +34,7 @@ use crate::{
     event::{self, Event},
     location::Location,
     pubsub::{Notify, PubSub},
-    state::{Opt, State},
+    state::State,
     window::{Coord, Cursor, Window},
     Result,
 };
@@ -44,7 +44,7 @@ pub struct Code {
     config: Config,
     coord: Coord,
     subscribers: PubSub,
-    scheme: ColorScheme,
+    schemes: Vec<ColorScheme>,
     buffers: Vec<Buffer>,
 
     inner: Inner,
@@ -110,12 +110,15 @@ impl AsMut<Config> for Code {
     }
 }
 
-impl<'a> From<(Opt, &'a State, Coord)> for Code {
-    fn from((opts, state, coord): (Opt, &'a State, Coord)) -> Code {
+impl<'a> From<(&'a State, Coord)> for Code {
+    fn from((state, coord): (&'a State, Coord)) -> Code {
         use crate::config as mod_config;
 
         let config: Config = {
-            let value = mod_config::to_section(state.config.clone(), "code");
+            let value = {
+                let toml_value = state.config_value.clone();
+                mod_config::to_section(toml_value, "code")
+            };
             let cnf: Config = Default::default();
             cnf.mixin(value.try_into().unwrap())
         };
@@ -126,28 +129,36 @@ impl<'a> From<(Opt, &'a State, Coord)> for Code {
             toml::to_string(&config).unwrap(),
         );
 
-        let scheme = state.to_color_scheme(&config.color_scheme);
+        let mut app = Code {
+            config_value: state.config_value.clone(),
+            config: config.clone(),
+            coord,
+            schemes: state.schemes.clone(),
+            subscribers: state.subscribers.clone(),
+            buffers: Default::default(),
+            inner: Default::default(),
+        };
+
         let (mut buffers, prompts) = {
             let files = {
-                let iter = opts.files.iter().map(
+                let iter = state.opts.files.iter().map(
                     // TODO: encoding from cmd-line
                     |f| (f.clone(), format!("utf-8")),
                 );
                 iter.collect()
             };
             let coord = Self::to_coord_prompt(coord);
-            Self::open_cmd_files(coord, &config, &scheme, files)
+            app.open_cmd_files(coord, files)
         };
         if buffers.len() == 0 {
             buffers.push(Buffer::empty());
         }
-
         let edit = {
-            let stsline = Code::new_window_line("status-line", coord);
-            let tbcline = Code::new_window_line("tab-compl-line", coord);
+            let stsline = app.new_window_line("status-line", coord);
+            let tbcline = app.new_window_line("tab-compl-line", coord);
             let wfile = {
                 let buf = buffers.first().unwrap();
-                Code::new_window_file(coord, config.clone(), buf, &scheme)
+                app.new_window_file(coord, buf)
             };
             Edit {
                 wfile,
@@ -156,50 +167,39 @@ impl<'a> From<(Opt, &'a State, Coord)> for Code {
             }
         };
 
-        Code {
-            config_value: state.config.clone(),
-            config: config.clone(),
-            coord,
-            subscribers: state.subscribers.clone(),
-            scheme,
-            buffers,
-            inner: if prompts.len() > 0 {
-                Inner::Prompt(Prompt { edit, prompts })
-            } else {
-                Inner::Edit(edit)
-            },
-        }
+        app.buffers = buffers;
+        app.inner = if prompts.len() > 0 {
+            Inner::Prompt(Prompt { edit, prompts })
+        } else {
+            Inner::Edit(edit)
+        };
+        app
     }
 }
 
 impl Code {
-    fn new_window_line(what: &str, mut coord: Coord) -> WindowLine {
+    fn new_window_line(&self, what: &str, mut coord: Coord) -> WindowLine {
         match what {
             "status-line" => {
                 coord.row = coord.hgt;
                 coord.hgt = 1;
-                WindowLine::new_status(coord)
+                WindowLine::new_status(coord, self)
             }
             "tab-compl-line" => {
                 coord.row = coord.hgt.saturating_sub(1);
                 coord.hgt = 1;
-                WindowLine::new_tab(coord)
+                WindowLine::new_tab(coord, self)
             }
             _ => unreachable!(),
         }
     }
 
-    fn new_window_cmd(
-        //
-        mut coord: Coord,
-        edit: Edit,
-        scheme: &ColorScheme,
-    ) -> Command {
-        let tbcline = Code::new_window_line("tab-compl-line", coord);
+    fn new_window_cmd(&self, mut coord: Coord, edit: Edit) -> Command {
+        let tbcline = self.new_window_line("tab-compl-line", coord);
         let wcmd = {
             coord.row = coord.hgt;
             coord.hgt = 1;
-            WindowCmd::new(coord, scheme)
+            WindowCmd::new(coord, self)
         };
         Command {
             edit,
@@ -208,14 +208,9 @@ impl Code {
         }
     }
 
-    fn new_window_file(
-        mut coord: Coord,
-        config: Config,
-        buf: &Buffer,
-        scheme: &ColorScheme,
-    ) -> WindowFile {
+    fn new_window_file(&self, mut coord: Coord, buf: &Buffer) -> WindowFile {
         coord.hgt = coord.hgt.saturating_sub(1);
-        (coord, config, buf, scheme).into()
+        WindowFile::new(coord, buf, self)
     }
 
     #[inline]
@@ -270,16 +265,21 @@ impl Code {
             .next()
     }
 
-    fn as_color_scheme(&self) -> &ColorScheme {
-        &self.scheme
+    pub fn to_color_scheme(&self, name: Option<&str>) -> ColorScheme {
+        let name = name.unwrap_or(self.config.color_scheme.as_str());
+        for scheme in self.schemes.iter() {
+            if scheme.name == name {
+                return scheme.clone();
+            }
+        }
+        self.to_color_scheme(Some("default"))
     }
 }
 
 impl Code {
     fn open_cmd_files(
+        &self,
         coord: Coord,
-        config: &Config,
-        scheme: &ColorScheme,
         files: Vec<(String, String)>,
     ) -> (Vec<Buffer>, Vec<WindowPrompt>) {
         let mut locs: Vec<Location> = vec![];
@@ -300,7 +300,7 @@ impl Code {
                 Ok(s) => {
                     debug!("opening {} in write-mode", loc);
                     let mut buf = Buffer::from_reader(s.as_bytes(), loc).unwrap();
-                    buf.set_read_only(config.read_only);
+                    buf.set_read_only(self.config.read_only);
                     buffers.push(buf);
                 }
                 Err(err) => {
@@ -309,7 +309,7 @@ impl Code {
                         format!("error opening {} : {}", loc, err),
                         format!("-press any key to continue-"),
                     ];
-                    prompts.push((coord, lines, scheme).into());
+                    prompts.push(WindowPrompt::new(coord, lines, self));
                 }
             }
         }
@@ -343,7 +343,7 @@ impl Application for Code {
             (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
                 let mut val = {
                     let coord = self.coord;
-                    Code::new_window_cmd(coord, edit, &self.scheme)
+                    self.new_window_cmd(coord, edit)
                 };
                 let evnt = val.wcmd.on_event(self, Event::Char(':', m))?;
                 (Inner::Command(val), evnt)
@@ -378,7 +378,7 @@ impl Application for Code {
             match evnt {
                 Event::Code(event::Code::Less(ref content)) => {
                     let edit = inner.into_edit();
-                    let less = WindowLess::new(self.coord, content);
+                    let less = WindowLess::new(self.coord, content, self);
                     inner = Inner::Less(Less { edit, less });
                 }
                 Event::Esc => {

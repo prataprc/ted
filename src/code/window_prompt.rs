@@ -9,7 +9,7 @@ use std::{cmp, convert::TryInto, fmt, result};
 
 use crate::{
     buffer::Buffer,
-    code::Code,
+    code,
     colors::{ColorScheme, Highlight},
     event::Event,
     term::{Span, Spanline, Style},
@@ -34,9 +34,10 @@ impl fmt::Display for WindowPrompt {
     }
 }
 
-impl From<(Coord, Vec<String>, &ColorScheme)> for WindowPrompt {
-    fn from((coord, lines, scheme): (Coord, Vec<String>, &ColorScheme)) -> Self {
-        let style = Self::to_style(&lines, scheme);
+impl WindowPrompt {
+    pub fn new(coord: Coord, lines: Vec<String>, app: &code::Code) -> Self {
+        let scheme = app.to_color_scheme(None);
+        let style = Self::to_style(&lines, &scheme);
         let span_lines: Vec<Spanline> = {
             let iter = lines.into_iter().map(|l| {
                 let span: Span = l.into();
@@ -85,7 +86,7 @@ impl WindowPrompt {
 }
 
 impl Window for WindowPrompt {
-    type App = Code;
+    type App = code::Code;
 
     #[inline]
     fn to_cursor(&self) -> Cursor {
@@ -104,14 +105,14 @@ impl Window for WindowPrompt {
         Cursor::new(col, curz!(self.coord.row) + self.coord.hgt)
     }
 
-    fn on_event(&mut self, _: &mut Code, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, _: &mut code::Code, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Noop),
             evnt => self.buffer.on_event(evnt),
         }
     }
 
-    fn on_refresh(&mut self, _: &mut Code) -> Result<()> {
+    fn on_refresh(&mut self, _: &mut code::Code) -> Result<()> {
         let col = curz!(self.coord.col);
         let till = curz!(self.coord.row) + self.coord.hgt;
         let rows = {

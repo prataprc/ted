@@ -6,7 +6,7 @@ use std::{convert::TryInto, fmt, io, mem, result};
 
 use crate::{
     buffer::{self, Buffer},
-    code::{cmd, keymap::Keymap, Code},
+    code::{self, cmd, keymap::Keymap},
     colors::ColorScheme,
     event::Event,
     location::Location,
@@ -38,7 +38,7 @@ impl fmt::Display for WindowCmd {
 
 impl WindowCmd {
     #[inline]
-    pub fn new(coord: Coord, scheme: &ColorScheme) -> WindowCmd {
+    pub fn new(coord: Coord, app: &code::Code) -> WindowCmd {
         use crate::code::view::NoWrap;
 
         let buf = {
@@ -49,28 +49,29 @@ impl WindowCmd {
         };
         let cursor = NoWrap::initial_cursor(false /*line_number*/);
         let obc_xy = (0, 0).into();
-        let syn_code_cmd = syntax::CodeCmd::new("", scheme).unwrap();
+        let scheme = app.to_color_scheme(None);
+        let syn_code_cmd = syntax::CodeCmd::new("", &scheme).unwrap();
         WindowCmd {
             coord,
             cursor,
             obc_xy,
             buffer: buf,
             syn: syntax::Type::CodeCmd(syn_code_cmd),
-            scheme: scheme.clone(),
+            scheme,
             keymap: Keymap::new_cmd(),
         }
     }
 }
 
 impl Window for WindowCmd {
-    type App = Code;
+    type App = code::Code;
 
     #[inline]
     fn to_cursor(&self) -> Cursor {
         self.coord.to_top_left() + self.cursor
     }
 
-    fn on_event(&mut self, app: &mut Code, mut evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, app: &mut code::Code, mut evnt: Event) -> Result<Event> {
         use crate::code::cmd::Command;
 
         let mut buf = mem::replace(&mut self.buffer, Default::default());
@@ -98,7 +99,7 @@ impl Window for WindowCmd {
         Ok(evnt)
     }
 
-    fn on_refresh(&mut self, _app: &mut Code) -> Result<()> {
+    fn on_refresh(&mut self, _app: &mut code::Code) -> Result<()> {
         use crate::code::view::NoWrap;
 
         let (col, row) = self.coord.to_origin_cursor();

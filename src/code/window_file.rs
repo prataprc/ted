@@ -5,9 +5,8 @@ use std::{fmt, iter::FromIterator, result};
 use crate::{
     app::Application,
     buffer::Buffer,
+    code,
     code::window_edit::WindowEdit,
-    code::{config::Config, Code},
-    colors::ColorScheme,
     event::Event,
     term::Span,
     window::{Coord, Cursor, Window},
@@ -34,11 +33,11 @@ impl fmt::Display for WindowFile {
     }
 }
 
-impl From<(Coord, Config, &Buffer, &ColorScheme)> for WindowFile {
-    fn from((coord, config, buf, scheme): (Coord, Config, &Buffer, &ColorScheme)) -> WindowFile {
+impl WindowFile {
+    pub fn new(coord: Coord, buf: &Buffer, app: &code::Code) -> WindowFile {
         WindowFile {
             coord,
-            we: WindowEdit::new(coord, config, buf, scheme),
+            we: WindowEdit::new(coord, buf, app),
         }
     }
 }
@@ -63,7 +62,7 @@ impl WindowFile {
         self.coord.to_origin()
     }
 
-    fn status_file(&self, app: &Code) -> Result<Span> {
+    fn status_file(&self, app: &code::Code) -> Result<Span> {
         let alt = format!("--display-error--");
         let b = {
             let id = self.we.to_buffer_id();
@@ -101,7 +100,7 @@ impl WindowFile {
         Ok(span)
     }
 
-    fn do_refresh(&mut self, app: &Code) -> Result<()> {
+    fn do_refresh(&mut self, app: &code::Code) -> Result<()> {
         use std::iter::repeat;
 
         if self.is_top_margin() {
@@ -128,14 +127,14 @@ impl WindowFile {
 }
 
 impl Window for WindowFile {
-    type App = Code;
+    type App = code::Code;
 
     #[inline]
     fn to_cursor(&self) -> Cursor {
         self.we.to_cursor()
     }
 
-    fn on_event(&mut self, app: &mut Code, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, app: &mut code::Code, evnt: Event) -> Result<Event> {
         use crate::{event::Code::StatusFile, pubsub::Notify};
 
         match self.we.on_event(app, evnt)? {
@@ -148,7 +147,7 @@ impl Window for WindowFile {
         }
     }
 
-    fn on_refresh(&mut self, app: &mut Code) -> Result<()> {
+    fn on_refresh(&mut self, app: &mut code::Code) -> Result<()> {
         self.do_refresh(app)?;
         self.we.on_refresh(app)
     }

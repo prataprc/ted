@@ -6,7 +6,7 @@ use std::{fmt, result};
 use crate::{
     app::Application,
     buffer::{self, Buffer},
-    code::{self, config::Config, keymap::Keymap},
+    code::{self, keymap::Keymap},
     colors::ColorScheme,
     event::{self, Event},
     syntax::{self, Syntax},
@@ -38,23 +38,24 @@ impl fmt::Display for WindowEdit {
 
 impl WindowEdit {
     #[inline]
-    pub fn new(coord: Coord, config: Config, buf: &Buffer, scheme: &ColorScheme) -> WindowEdit {
+    pub fn new(coord: Coord, buf: &Buffer, app: &code::Code) -> WindowEdit {
         use crate::code::view::{NoWrap, Wrap};
 
-        let cursor = if config.wrap {
-            Wrap::initial_cursor(config.line_number)
+        let cursor = if app.config.wrap {
+            Wrap::initial_cursor(app.config.line_number)
         } else {
-            NoWrap::initial_cursor(config.line_number)
+            NoWrap::initial_cursor(app.config.line_number)
         };
 
+        let scheme = app.to_color_scheme(None);
         let we = WindowEdit {
             coord,
             cursor,
             obc_xy: (0, 0).into(),
             curr_buf_id: buf.to_id(),
             altn_buf_id: None,
-            syn: syntax::detect(buf, scheme).unwrap(),
-            scheme: scheme.clone(),
+            syn: syntax::detect(buf, &scheme).unwrap(),
+            scheme,
             keymap: Keymap::new_edit(),
         };
         debug!("{}", we);

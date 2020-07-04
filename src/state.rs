@@ -18,6 +18,7 @@ use crate::{
     app::App,
     code,
     colors::{self, ColorScheme},
+    config,
     event::Event,
     pubsub::{Notify, PubSub},
     term::Terminal,
@@ -58,7 +59,7 @@ pub struct Opt {
 /// Application state
 pub struct State {
     pub opts: Opt,
-    pub config: toml::Value,
+    pub config_value: toml::Value,
     pub tm: Terminal,
     pub schemes: Vec<ColorScheme>,
     pub subscribers: PubSub,
@@ -69,24 +70,17 @@ impl TryFrom<Opt> for State {
     type Error = Error;
 
     fn try_from(opts: Opt) -> Result<State> {
-        use crate::config;
-
         // first the terminal
         let tm = Terminal::init()?;
         // then the logger
         init_logger(&opts)?;
         // then the configuration
         let cnf = config::read_config(opts.toml_file.clone(), None)?;
-        // load the color schemes
-        let schemes = {
-            let mut schemes = colors::pkg_color_schemes();
-            schemes.extend(config::read_color_schemes()?);
-            schemes
-        };
+        let schemes = Self::load_color_schemes()?;
 
         Ok(State {
             opts,
-            config: cnf,
+            config_value: cnf,
             tm,
             schemes,
             subscribers: Default::default(),
@@ -112,9 +106,8 @@ impl State {
         state.app = match opts.app.as_str() {
             "code" => {
                 let app: code::Code = {
-                    let opts = opts.clone();
                     let coord = Coord::new(1, 1, state.tm.rows, state.tm.cols);
-                    (opts, &state, coord).into()
+                    (&state, coord).into()
                 };
                 Ok(App::Code(app))
             }
@@ -124,6 +117,12 @@ impl State {
         // a new ted-state is created. make sure to call event_loop() to
         // launch the application.
         Ok(state)
+    }
+
+    fn load_color_schemes() -> Result<Vec<ColorScheme>> {
+        let mut schemes = colors::pkg_color_schemes();
+        schemes.extend(config::read_color_schemes()?);
+        Ok(schemes)
     }
 }
 
@@ -145,8 +144,8 @@ impl State {
         Ok(())
     }
 
-    pub fn as_config(&self) -> &toml::Value {
-        &self.config
+    pub fn as_config_value(&self) -> &toml::Value {
+        &self.config_value
     }
 
     pub fn to_color_scheme(&self, name: &str) -> ColorScheme {

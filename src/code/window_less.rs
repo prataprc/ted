@@ -6,7 +6,7 @@ use std::{convert::TryInto, fmt, io, mem, result};
 
 use crate::{
     buffer::Buffer,
-    code::{keymap::Keymap, Code},
+    code::{self, keymap::Keymap},
     event::Event,
     location::Location,
     window::{Coord, Cursor, Window},
@@ -28,7 +28,7 @@ impl fmt::Display for WindowLess {
 
 impl WindowLess {
     #[inline]
-    pub fn new(coord: Coord, content: &str) -> WindowLess {
+    pub fn new(coord: Coord, content: &str, _: &code::Code) -> WindowLess {
         let loc = Location::new_ted("win-less", io::empty()).unwrap();
         let mut w = WindowLess {
             coord,
@@ -42,7 +42,7 @@ impl WindowLess {
 }
 
 impl Window for WindowLess {
-    type App = Code;
+    type App = code::Code;
 
     #[inline]
     fn to_cursor(&self) -> Cursor {
@@ -54,7 +54,7 @@ impl Window for WindowLess {
         Cursor::new(col.try_into().unwrap(), curz!(self.coord.hgt))
     }
 
-    fn on_event(&mut self, _: &mut Code, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, _: &mut code::Code, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Noop),
             evnt => {
@@ -67,7 +67,7 @@ impl Window for WindowLess {
         }
     }
 
-    fn on_refresh(&mut self, _: &mut Code) -> Result<()> {
+    fn on_refresh(&mut self, _: &mut code::Code) -> Result<()> {
         //use crate::Error;
         //use crossterm::queue;
         //use std::io::{self, Write};
