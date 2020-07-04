@@ -61,6 +61,24 @@ impl WindowEdit {
         debug!("{}", we);
         we
     }
+
+    pub fn set_buffer(&mut self, buf: &Buffer) -> &mut Self {
+        self.altn_buf_id = Some(self.curr_buf_id.clone());
+        self.curr_buf_id = buf.to_id();
+        self
+    }
+
+    pub fn flip_buffer(&mut self) -> &mut Self {
+        match self.altn_buf_id.take() {
+            Some(altn_buf_id) => {
+                let curr_buf_id = self.curr_buf_id.clone();
+                self.curr_buf_id = altn_buf_id;
+                self.altn_buf_id = Some(curr_buf_id);
+            }
+            None => (),
+        }
+        self
+    }
 }
 
 impl WindowEdit {

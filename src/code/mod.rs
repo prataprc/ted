@@ -89,7 +89,7 @@ struct Command {
 
 struct Less {
     edit: Edit,
-    less: WindowLess,
+    wless: WindowLess,
 }
 
 impl Default for Inner {
@@ -178,6 +178,15 @@ impl<'a> From<(&'a State, Coord)> for Code {
 }
 
 impl Code {
+    fn new_window_file(&self, mut coord: Coord, buf: &Buffer) -> WindowFile {
+        coord.hgt = coord.hgt.saturating_sub(1);
+        WindowFile::new(coord, buf, self)
+    }
+
+    fn new_window_prompt(&self, coord: Coord, ls: Vec<String>) -> WindowPrompt {
+        WindowPrompt::new(coord, ls, self)
+    }
+
     fn new_window_line(&self, what: &str, mut coord: Coord) -> WindowLine {
         match what {
             "status-line" => {
@@ -208,9 +217,8 @@ impl Code {
         }
     }
 
-    fn new_window_file(&self, mut coord: Coord, buf: &Buffer) -> WindowFile {
-        coord.hgt = coord.hgt.saturating_sub(1);
-        WindowFile::new(coord, buf, self)
+    fn new_window_less(&self, coord: Coord, content: &str) -> WindowLess {
+        WindowLess::new(coord, content, self)
     }
 
     #[inline]
@@ -309,7 +317,7 @@ impl Code {
                         format!("error opening {} : {}", loc, err),
                         format!("-press any key to continue-"),
                     ];
-                    prompts.push(WindowPrompt::new(coord, lines, self));
+                    prompts.push(self.new_window_prompt(coord, lines));
                 }
             }
         }
@@ -332,7 +340,7 @@ impl Application for Code {
             Inner::Edit(val) => val.wfile.to_cursor(),
             Inner::Prompt(val) => val.prompts[0].to_cursor(),
             Inner::Command(val) => val.wcmd.to_cursor(),
-            Inner::Less(val) => val.less.to_cursor(),
+            Inner::Less(val) => val.wless.to_cursor(),
             Inner::None => Default::default(),
         }
     }
@@ -367,7 +375,7 @@ impl Application for Code {
                 (Inner::Command(cmd), evnt)
             }
             (Inner::Less(mut less), evnt) => {
-                let evnt = less.less.on_event(self, evnt)?;
+                let evnt = less.wless.on_event(self, evnt)?;
                 (Inner::Less(less), evnt)
             }
             (Inner::None, _) => unreachable!(),
@@ -378,8 +386,8 @@ impl Application for Code {
             match evnt {
                 Event::Code(event::Code::Less(ref content)) => {
                     let edit = inner.into_edit();
-                    let less = WindowLess::new(self.coord, content, self);
-                    inner = Inner::Less(Less { edit, less });
+                    let wless = self.new_window_less(self.coord, content);
+                    inner = Inner::Less(Less { edit, wless });
                 }
                 Event::Esc => {
                     inner = Inner::Edit(inner.into_edit());
@@ -407,7 +415,7 @@ impl Application for Code {
             Inner::Command(cmd) => {
                 cmd.wcmd.on_refresh(self)?;
             }
-            Inner::Less(less) => less.less.on_refresh(self)?,
+            Inner::Less(less) => less.wless.on_refresh(self)?,
             Inner::None => unreachable!(),
         }
         self.inner = inner;
