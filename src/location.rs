@@ -3,9 +3,9 @@
 use dirs;
 use lazy_static::lazy_static;
 
-use std::{env, ffi, fmt, fs, iter::FromIterator, path, result, sync::Mutex};
+use std::{env, ffi, fmt, fs, io, iter::FromIterator, path, result, sync::Mutex};
 
-use crate::{Error, Result};
+use crate::{text, Error, Result};
 
 lazy_static! {
     static ref MEM_BUFFER_N: Mutex<usize> = Mutex::new(0);
@@ -14,74 +14,92 @@ lazy_static! {
 /// Location of buffer's content, typically a persistent medium.
 #[derive(Clone)]
 pub enum Location {
-    Memory(String),
+    Memory {
+        name: String,
+        buf: String,
+    },
     Disk {
         path_file: ffi::OsString,
         enc: String,
         read_only: bool,
     },
-    Ted(String),
+    Ted {
+        name: String,
+        buf: String,
+    },
     Err(Error),
 }
 
 impl Location {
     /// Create a memory-only buffer.
-    pub fn new_memory() -> Location {
-        let mut count = MEM_BUFFER_N.lock().unwrap();
-        *count = *count + 1;
-        Location::Memory(format!("memtext-{}", count))
+    pub fn new_memory<R>(r: R, enc: &str) -> Result<Location>
+    where
+        R: io::Read,
+    {
+        let name = {
+            let mut count = MEM_BUFFER_N.lock().unwrap();
+            *count = *count + 1;
+            format!("[no-name-{}]", count)
+        };
+        let buf: String = text::Encoded::from_reader(r, enc)?.into();
+        Ok(Location::Memory { name, buf })
     }
 
     /// Create a new Disk location for buffer. `loc` can be absolute path,
     /// relative path to current-directory or start with `~` relative to
     /// home-directory.
-    pub fn new_disk(fp: &ffi::OsStr, enc: &str) -> Location {
+    pub fn new_disk(fp: &ffi::OsStr, enc: &str) -> Result<Location> {
         match fp.to_os_string().into_string() {
             Ok(fp) => {
                 let path_file = Self::canonicalize(fp).into_os_string();
                 match fs::metadata(&path_file) {
-                    Ok(m) => Location::Disk {
+                    Ok(m) => Ok(Location::Disk {
                         path_file,
                         enc: enc.to_string(),
                         read_only: m.permissions().readonly(),
-                    },
-                    err => Location::Err(err_at!(IOError, err).unwrap_err()),
+                    }),
+                    err => Ok(Location::Err(err_at!(IOError, err).unwrap_err())),
                 }
             }
-            err => Location::Err(Error::Invalid(format!("{:?}", err))),
+            err => Ok(Location::Err(Error::Invalid(format!("{:?}", err)))),
         }
     }
 
     /// Create a new buffer to be used within the system.
-    pub fn new_ted(name: &str) -> Location {
-        Location::Ted(name.to_string())
+    pub fn new_ted<R>(name: &str, r: R) -> Result<Location>
+    where
+        R: io::Read,
+    {
+        let buf: String = text::Encoded::from_reader(r, "utf-8")?.into();
+        let name = name.to_string();
+        Ok(Location::Ted {
+            name: format!("[{}]", name),
+            buf,
+        })
     }
 }
 
 impl Location {
     pub fn read(&self) -> Result<String> {
-        use crate::text::Encoded;
-
         match self {
-            Location::Memory(_) => Ok("".to_string()),
+            Location::Memory { buf, .. } => Ok(buf.clone()),
             Location::Disk { path_file, enc, .. } => {
                 let fd = {
                     let mut oo = fs::OpenOptions::new();
                     err_at!(IOError, oo.read(true).open(path_file))?
                 };
-                let enc = err_at!(IOError, Encoded::from_reader(fd, enc))?;
-                Ok(enc.into())
+                Ok(text::Encoded::from_reader(fd, enc)?.into())
             }
-            Location::Ted(_) => Ok("".to_string()),
+            Location::Ted { buf, .. } => Ok(buf.clone()),
             Location::Err(err) => Err(err.clone()),
         }
     }
 
     pub fn is_read_only(&self) -> bool {
         match self {
-            Location::Memory(_) => false,
+            Location::Memory { .. } => false,
             Location::Disk { read_only, .. } => *read_only,
-            Location::Ted(_) => false,
+            Location::Ted { .. } => false,
             Location::Err(_) => true,
         }
     }
@@ -89,12 +107,12 @@ impl Location {
     /// Return full path of the location, for display purpose.
     pub fn to_long_string(&self) -> Result<String> {
         match self {
-            Location::Memory(_) => Ok("[mem-text]".to_string().into()),
+            Location::Memory { name, .. } => Ok(name.clone()),
             Location::Disk { path_file, .. } => {
                 let s = path_file.to_str().map(|s| s.to_string());
-                Ok(s.unwrap_or(format!("invalid path {:?}", path_file)))
+                Ok(s.unwrap_or(format!("<invalid path {:?}>", path_file)))
             }
-            Location::Ted(name) => Ok(format!("[{:?}]", name)),
+            Location::Ted { name, .. } => Ok(name.clone()),
             Location::Err(err) => Ok(format!("<err-{}>", err)),
         }
     }
@@ -102,15 +120,15 @@ impl Location {
     /// Return shrunk, but meaningful, version of path for display purpose.
     pub fn to_short_string(&self) -> Result<String> {
         match self {
-            Location::Memory(_) => Ok("[mem-text]".to_string()),
+            Location::Memory { name, .. } => Ok(name.clone()),
             Location::Disk { path_file, .. } => {
                 let fp = Self::shrink_home(&Self::shrink_cwd(path_file)?)?;
                 Ok(fp
                     .to_str()
                     .map(|s| s.to_string())
-                    .unwrap_or(format!("{:?}", fp)))
+                    .unwrap_or(format!("<invalid path {:?}>", fp)))
             }
-            Location::Ted(name) => Ok(format!("[{:?}]", name)),
+            Location::Ted { name, .. } => Ok(name.clone()),
             Location::Err(err) => Ok(format!("<err-{}>", err)),
         }
     }
@@ -170,19 +188,19 @@ impl Location {
 
 impl Default for Location {
     fn default() -> Location {
-        Location::new_memory()
+        Location::new_memory(io::empty(), "utf-8").unwrap()
     }
 }
 
 impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
-            Location::Memory(s) => write!(f, "{}", s),
+            Location::Memory { name, .. } => write!(f, "{}", name),
             Location::Disk { path_file, .. } => match path_file.to_str() {
                 Some(s) => write!(f, "{}", s),
                 None => write!(f, "{:?}", path_file),
             },
-            Location::Ted(name) => write!(f, "{}", name),
+            Location::Ted { name, .. } => write!(f, "{}", name),
             Location::Err(err) => write!(f, "<err-{}>", err),
         }
     }

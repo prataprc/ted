@@ -2,7 +2,7 @@ use crossterm::{cursor as term_cursor, queue};
 #[allow(unused_imports)]
 use log::trace;
 
-use std::{convert::TryInto, fmt, mem, result};
+use std::{convert::TryInto, fmt, io, mem, result};
 
 use crate::{
     buffer::{self, Buffer},
@@ -42,8 +42,8 @@ impl WindowCmd {
         use crate::code::view::NoWrap;
 
         let buf = {
-            let loc = Location::new_ted("code-cmd");
-            let mut buf = Buffer::from_reader(vec![].as_slice(), loc).unwrap();
+            let loc = Location::new_ted("code-cmd", io::empty()).unwrap();
+            let mut buf = Buffer::from_reader(io::empty(), loc).unwrap();
             buf.mode_insert();
             buf
         };

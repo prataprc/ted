@@ -19,7 +19,8 @@ pub struct WindowEdit {
     coord: Coord,
     cursor: Cursor,
     obc_xy: buffer::Cursor,
-    buffer_id: String,
+    curr_buf_id: String,
+    altn_buf_id: Option<String>,
     syn: syntax::Type,
     scheme: ColorScheme,
     keymap: Keymap,
@@ -29,8 +30,8 @@ impl fmt::Display for WindowEdit {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         write!(
             f,
-            "WindowEdit<{:?} {}@{} {}>",
-            self.buffer_id, self.cursor, self.coord, self.obc_xy,
+            "WindowEdit<{}@{} {}>",
+            self.cursor, self.coord, self.obc_xy,
         )
     }
 }
@@ -50,7 +51,8 @@ impl WindowEdit {
             coord,
             cursor,
             obc_xy: (0, 0).into(),
-            buffer_id: buf.to_id(),
+            curr_buf_id: buf.to_id(),
+            altn_buf_id: None,
             syn: syntax::detect(buf, scheme).unwrap(),
             scheme: scheme.clone(),
             keymap: Keymap::new_edit(),
@@ -63,7 +65,7 @@ impl WindowEdit {
 impl WindowEdit {
     #[inline]
     pub fn to_buffer_id(&self) -> String {
-        self.buffer_id.clone()
+        self.curr_buf_id.clone()
     }
 
     #[inline]
@@ -83,7 +85,7 @@ impl Window for WindowEdit {
     fn on_event(&mut self, app: &mut code::Code, evnt: Event) -> Result<Event> {
         use crate::pubsub::Notify;
 
-        let evnt = match app.take_buffer(&self.buffer_id) {
+        let evnt = match app.take_buffer(&self.curr_buf_id) {
             Some(mut buf) => {
                 let mut evnt = self.keymap.fold(&mut buf, evnt)?;
                 evnt = buf.on_event(evnt)?;
@@ -108,7 +110,7 @@ impl Window for WindowEdit {
     fn on_refresh(&mut self, app: &mut code::Code) -> Result<()> {
         use crate::code::view::{NoWrap, Wrap};
 
-        let err = Error::Invalid(format!("buffer {}", self.buffer_id));
+        let err = Error::Invalid(format!("buffer {}", self.curr_buf_id));
         self.cursor = if app.as_ref().wrap {
             let v = {
                 let (coord, cursor) = (self.coord, self.cursor);
@@ -117,7 +119,7 @@ impl Window for WindowEdit {
                 v.set_line_number(app.as_ref().line_number);
                 v
             };
-            let buf = err_at!(app.as_buffer(&self.buffer_id).ok_or(err))?;
+            let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.render(buf, self, &self.scheme)?
         } else {
             let v = {
@@ -127,12 +129,12 @@ impl Window for WindowEdit {
                 v.set_line_number(app.as_ref().line_number);
                 v
             };
-            let buf = err_at!(app.as_buffer(&self.buffer_id).ok_or(err))?;
+            let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.render(buf, self, &self.scheme)?
         };
         self.obc_xy = {
-            let err = Error::Invalid(format!("buffer {}", self.buffer_id));
-            err_at!(app.as_buffer(&self.buffer_id).ok_or(err))?.to_xy_cursor()
+            let err = Error::Invalid(format!("buffer {}", self.curr_buf_id));
+            err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?.to_xy_cursor()
         };
 
         Ok(())

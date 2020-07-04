@@ -184,8 +184,7 @@ impl Buffer {
     }
 
     pub fn empty() -> Buffer {
-        let buf = vec![];
-        Self::from_reader(buf.as_slice(), Default::default()).unwrap()
+        Self::from_reader(io::empty(), Default::default()).unwrap()
     }
 
     pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
@@ -260,13 +259,13 @@ impl Buffer {
     #[inline]
     pub fn to_id(&self) -> String {
         match self.to_location() {
-            Location::Memory(s) => s,
+            Location::Memory { name, .. } => name.clone(),
             Location::Disk { path_file, .. } => match path_file.to_str() {
                 Some(s) => s.to_string(),
                 None => format!("{:?}", path_file),
             },
-            Location::Ted(s) => s,
-            Location::Err(err) => format!("invalid-buffer {}", err),
+            Location::Ted { name, .. } => name.clone(),
+            Location::Err(err) => panic!("unreachable {}", err),
         }
     }
 
@@ -823,10 +822,8 @@ struct Change {
 
 impl Default for Change {
     fn default() -> Change {
-        let bytes: Vec<u8> = vec![];
-
         Change {
-            buf: Rope::from_reader(bytes.as_slice()).unwrap(),
+            buf: Rope::from_reader(io::empty()).unwrap(),
             parent: None,
             children: Default::default(),
             cursor: 0,

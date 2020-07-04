@@ -2,7 +2,7 @@
 use log::trace;
 use unicode_width::UnicodeWidthChar;
 
-use std::{convert::TryInto, fmt, mem, result};
+use std::{convert::TryInto, fmt, io, mem, result};
 
 use crate::{
     buffer::Buffer,
@@ -29,7 +29,7 @@ impl fmt::Display for WindowLess {
 impl WindowLess {
     #[inline]
     pub fn new(coord: Coord, content: &str) -> WindowLess {
-        let loc = Location::new_ted("win-less");
+        let loc = Location::new_ted("win-less", io::empty()).unwrap();
         let mut w = WindowLess {
             coord,
             status_line: Default::default(),

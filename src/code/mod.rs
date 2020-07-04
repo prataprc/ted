@@ -282,13 +282,11 @@ impl Code {
         scheme: &ColorScheme,
         files: Vec<(String, String)>,
     ) -> (Vec<Buffer>, Vec<WindowPrompt>) {
-        let locs: Vec<Location> = files
-            .into_iter()
-            .map(|(f, e)| {
-                let f: ffi::OsString = f.into();
-                Location::new_disk(&f, &e)
-            })
-            .collect();
+        let mut locs: Vec<Location> = vec![];
+        for (f, e) in files.into_iter() {
+            let f: ffi::OsString = f.into();
+            locs.push(Location::new_disk(&f, &e).unwrap())
+        }
 
         let (mut buffers, mut prompts) = (vec![], vec![]);
         for loc in locs.into_iter() {

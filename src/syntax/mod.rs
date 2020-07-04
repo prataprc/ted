@@ -134,8 +134,8 @@ pub fn detect(buf: &Buffer, scheme: &ColorScheme) -> Result<Type> {
                 Some(_) | None => "".to_string(),
             }
         }
-        Location::Memory(_) => "".to_string(),
-        Location::Ted(_) => "".to_string(),
+        Location::Memory { .. } => "".to_string(),
+        Location::Ted { .. } => "".to_string(),
         Location::Err(_) => "".to_string(),
     };
 

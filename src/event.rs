@@ -23,14 +23,14 @@ pub enum Event {
     FKey(u8, KeyModifiers),
     BackTab,
     // folded events for buffer management.
-    B(usize, DP),   // (n, Left/Right)
-    G(usize),       // (n,)
-    F(usize, DP),   // (n, Left/Right)
-    T(usize, DP),   // (n, Left/Right)
-    N(usize),       // (n,)
-    Op(usize, Opr), // (n, op-event)
-    Md(Mod),        // (n, mode-event)
-    Mt(Mto),        // (n, motion-event)
+    B(usize, DP),   // Bracket    (n, Left/Right)
+    G(usize),       // Global     (n,)
+    F(usize, DP),   // Find-char  (n, Left/Right)
+    T(usize, DP),   // Till-char  (n, Left/Right)
+    N(usize),       // Num-prefix (n,)
+    Op(usize, Opr), // Operation  (n, op-event)
+    Md(Mod),        // Mode       (n, mode-event)
+    Mt(Mto),        // Motion     (n, motion-event)
     // other events
     Edit(Input),
     List(Vec<Event>),
