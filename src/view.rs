@@ -5,13 +5,24 @@ use std::{cmp, convert::TryInto, fmt, iter::FromIterator, result};
 
 use crate::{
     buffer::{self, Buffer},
-    code::col_nu::{ColKind, ColNu},
+    col_nu::{ColKind, ColNu},
     colors::{ColorScheme, Highlight},
     term::Span,
-    window::{Coord, Cursor, Render, WinBuffer},
+    window::{Coord, Cursor, Render, WinBuffer, Window},
     Error, Result,
 };
 
+/// Type to position and render a buffer in wrap mode. Takes the following
+/// as input.
+///
+/// * coord, terminal viewport to render, origin starts from (1, 1).
+/// * cursor, cursor within the viewport, origin starts from (0, 0).
+/// * obc_xy, old-buffer-cursor starts from (0, 0).
+///
+/// Can be configured for:
+///
+/// * scroll_offset, that sets the top and bottom limit for cursor movement.
+/// * line_number, whether to render the line number.
 #[derive(Clone)]
 pub struct Wrap {
     name: String,
@@ -33,46 +44,55 @@ impl fmt::Display for Wrap {
     }
 }
 
+impl<'a, W> From<(&'a W, buffer::Cursor)> for Wrap
+where
+    W: Window,
+{
+    fn from((w, obc_xy): (&'a W, buffer::Cursor)) -> Wrap {
+        let line_number = w.config_line_number();
+        Wrap {
+            name: w.to_name(),
+            coord: w.to_coord(),
+            cursor: w.to_cursor(),
+            obc_xy,
+            nu: ColNu::new(obc_xy.row, line_number),
+            scroll_off: w.config_scroll_offset(),
+            line_number,
+        }
+    }
+}
+
 impl Wrap {
+    /// Initial cursor position on the top-left of the view-port accounting for
+    /// line-numbering.
     pub fn initial_cursor(line_number: bool) -> Cursor {
         let nbc_xy: buffer::Cursor = Default::default();
         let col = ColNu::new(nbc_xy.row, line_number).to_width();
         Cursor { row: 0, col }
     }
 
-    // create a wrap view using previous cursor's nu_width.
-    pub fn new(name: &str, coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> Wrap {
-        Wrap {
-            name: name.to_string(),
-            coord,
-            cursor,
-            obc_xy,
-            nu: ColNu::new(obc_xy.row, false),
-            scroll_off: 0,
-            line_number: false,
-        }
-    }
-
-    pub fn set_scroll_off(&mut self, scroll_off: u16) -> &mut Self {
-        self.scroll_off = scroll_off;
-        self
-    }
-
-    pub fn set_line_number(&mut self, line_number: bool) -> &mut Self {
-        self.line_number = line_number;
-        self.nu = ColNu::new(self.obc_xy.row, line_number);
-        self
-    }
-
-    pub fn render<R>(mut self, buf: &Buffer, r: &R, cs: &ColorScheme) -> Result<Cursor>
+    pub fn render<R>(mut self, buf: &Buffer, r: &R) -> Result<Cursor>
     where
         R: Render,
     {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
         self = self.shift_cursor(buf)?;
-        self.nu.set_color_scheme(cs);
-        Ok(self.refresh(buf, r, cs)?.account_nu(nu_wth))
+        self.nu.set_color_scheme(r.as_color_scheme());
+        Ok(self.refresh(buf, r)?.account_nu(nu_wth))
+    }
+
+    pub fn scroll<R>(mut self, buf: &Buffer, r: &R) -> Result<Cursor>
+    where
+        R: Render,
+    {
+        let nu_wth = self.nu.to_width();
+        self.discount_nu(nu_wth);
+        let wrap = self.shift_cursor(buf)?;
+        self.coord = wrap.coord;
+        self.nu = wrap.nu;
+        self.nu.set_color_scheme(r.as_color_scheme());
+        Ok(self.refresh(buf, r)?.account_nu(nu_wth))
     }
 
     fn shift_cursor(&self, buf: &Buffer) -> Result<Self> {
@@ -96,10 +116,11 @@ impl Wrap {
         })
     }
 
-    fn refresh<R>(self, buf: &Buffer, r: &R, scheme: &ColorScheme) -> Result<Cursor>
+    fn refresh<R>(self, buf: &Buffer, r: &R) -> Result<Cursor>
     where
         R: Render,
     {
+        let scheme = r.as_color_scheme();
         let nbc_xy = buf.to_xy_cursor();
         let line_idx = nbc_xy.row.saturating_sub(self.cursor.row as usize);
         debug!(
@@ -182,48 +203,58 @@ impl fmt::Display for NoWrap {
     }
 }
 
+impl<'a, W> From<(&'a W, buffer::Cursor)> for NoWrap
+where
+    W: Window,
+{
+    fn from((w, obc_xy): (&'a W, buffer::Cursor)) -> NoWrap {
+        let line_number = w.config_line_number();
+        NoWrap {
+            name: w.to_name(),
+            coord: w.to_coord(),
+            cursor: w.to_cursor(),
+            obc_xy,
+            nu: ColNu::new(obc_xy.row, line_number),
+            scroll_off: w.config_scroll_offset(),
+            line_number,
+        }
+    }
+}
+
 impl NoWrap {
+    /// Initial cursor position on the top-left of the view-port accounting for
+    /// line-numbering.
     pub fn initial_cursor(line_number: bool) -> Cursor {
         let nbc_xy: buffer::Cursor = Default::default();
         let col = ColNu::new(nbc_xy.row, line_number).to_width();
         Cursor { row: 0, col }
     }
 
-    pub fn new(name: &str, coord: Coord, cursor: Cursor, obc_xy: buffer::Cursor) -> NoWrap {
-        NoWrap {
-            name: name.to_string(),
-            coord,
-            cursor,
-            obc_xy,
-            nu: ColNu::new(obc_xy.row, false),
-            scroll_off: 0,
-            line_number: false,
-        }
-    }
-
-    pub fn set_scroll_off(&mut self, scroll_off: u16) -> &mut Self {
-        self.scroll_off = scroll_off;
-        self
-    }
-
-    pub fn set_line_number(&mut self, line_number: bool) -> &mut Self {
-        self.line_number = line_number;
-        self.nu = ColNu::new(self.obc_xy.row, line_number);
-        self
-    }
-
-    pub fn render<R>(mut self, buf: &Buffer, r: &R, cs: &ColorScheme) -> Result<Cursor>
+    pub fn render<R>(mut self, buf: &Buffer, r: &R) -> Result<Cursor>
     where
         R: Render,
     {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
         self = self.shift_cursor(buf)?;
-        self.nu.set_color_scheme(cs);
-        Ok(self.refresh(buf, r, cs)?.account_nu(nu_wth))
+        self.nu.set_color_scheme(r.as_color_scheme());
+        Ok(self.refresh(buf, r)?.account_nu(nu_wth))
     }
 
-    fn shift_cursor(self, buf: &Buffer) -> Result<Self> {
+    pub fn scroll<R>(mut self, buf: &Buffer, r: &R) -> Result<Cursor>
+    where
+        R: Render,
+    {
+        let nu_wth = self.nu.to_width();
+        self.discount_nu(nu_wth);
+        let nwrap = self.shift_cursor(buf)?;
+        self.coord = nwrap.coord;
+        self.nu = nwrap.nu;
+        self.nu.set_color_scheme(r.as_color_scheme());
+        Ok(self.refresh(buf, r)?.account_nu(nu_wth))
+    }
+
+    fn shift_cursor(&self, buf: &Buffer) -> Result<Self> {
         let scroll_off = self.scroll_off; // accounting for scroll-offset.
 
         let (r_min, r_max) = if self.coord.hgt < (scroll_off * 2) {
@@ -270,7 +301,7 @@ impl NoWrap {
 
         debug!("SHIFT {}->{}@{}", self, cursor, coord);
         Ok(NoWrap {
-            name: self.name,
+            name: self.name.clone(),
             coord,
             cursor,
             obc_xy: self.obc_xy,
@@ -280,10 +311,11 @@ impl NoWrap {
         })
     }
 
-    fn refresh<R>(self, buf: &Buffer, r: &R, scheme: &ColorScheme) -> Result<Cursor>
+    fn refresh<R>(self, buf: &Buffer, r: &R) -> Result<Cursor>
     where
         R: Render,
     {
+        let scheme = r.as_color_scheme();
         let nbc_xy = buf.to_xy_cursor();
         trace!("REFRESH {} nbc_xy:{}", self, nbc_xy,);
 
@@ -326,11 +358,6 @@ impl NoWrap {
         Ok(self.cursor)
     }
 
-    fn outer_coord(&self) -> Coord {
-        self.coord
-            .resize_to(self.coord.hgt, self.coord.wth + self.nu.to_width())
-    }
-
     fn discount_nu(&mut self, nu_wth: u16) {
         if self.line_number {
             self.coord = self
@@ -338,6 +365,11 @@ impl NoWrap {
                 .resize_to(self.coord.hgt, self.coord.wth - nu_wth);
             self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
         }
+    }
+
+    fn outer_coord(&self) -> Coord {
+        self.coord
+            .resize_to(self.coord.hgt, self.coord.wth + self.nu.to_width())
     }
 }
 

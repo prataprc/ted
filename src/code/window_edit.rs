@@ -24,6 +24,9 @@ pub struct WindowEdit {
     syn: syntax::Type,
     scheme: ColorScheme,
     keymap: Keymap,
+    // configuration.
+    scroll_off: u16,
+    line_number: bool,
 }
 
 impl fmt::Display for WindowEdit {
@@ -39,7 +42,7 @@ impl fmt::Display for WindowEdit {
 impl WindowEdit {
     #[inline]
     pub fn new(coord: Coord, buf: &Buffer, app: &code::Code) -> WindowEdit {
-        use crate::code::view::{NoWrap, Wrap};
+        use crate::view::{NoWrap, Wrap};
 
         let cursor = if app.config.wrap {
             Wrap::initial_cursor(app.config.line_number)
@@ -57,8 +60,11 @@ impl WindowEdit {
             syn: syntax::detect(buf, &scheme).unwrap(),
             scheme,
             keymap: Keymap::new_edit(),
+            // configuration
+            scroll_off: app.as_ref().scroll_off,
+            line_number: app.as_ref().line_number,
         };
-        debug!("{}", we);
+        debug!("{} {} {}", we, we.scroll_off, we.line_number);
         we
     }
 
@@ -97,8 +103,28 @@ impl Window for WindowEdit {
     type App = code::Code;
 
     #[inline]
+    fn to_name(&self) -> String {
+        "window-edit".to_string()
+    }
+
+    #[inline]
+    fn to_coord(&self) -> Coord {
+        self.coord
+    }
+
+    #[inline]
     fn to_cursor(&self) -> Cursor {
         self.coord.to_top_left() + self.cursor
+    }
+
+    #[inline]
+    fn config_line_number(&self) -> bool {
+        self.line_number
+    }
+
+    #[inline]
+    fn config_scroll_offset(&self) -> u16 {
+        self.scroll_off
     }
 
     fn on_event(&mut self, app: &mut code::Code, evnt: Event) -> Result<Event> {
@@ -127,29 +153,17 @@ impl Window for WindowEdit {
     }
 
     fn on_refresh(&mut self, app: &mut code::Code) -> Result<()> {
-        use crate::code::view::{NoWrap, Wrap};
+        use crate::view::{NoWrap, Wrap};
 
         let err = Error::Invalid(format!("buffer {}", self.curr_buf_id));
         self.cursor = if app.as_ref().wrap {
-            let v = {
-                let (coord, cursor) = (self.coord, self.cursor);
-                let mut v = Wrap::new("edit", coord, cursor, self.obc_xy);
-                v.set_scroll_off(app.as_ref().scroll_off);
-                v.set_line_number(app.as_ref().line_number);
-                v
-            };
+            let v: Wrap = (&*self, self.obc_xy).into();
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
-            v.render(buf, self, &self.scheme)?
+            v.render(buf, self)?
         } else {
-            let v = {
-                let (coord, cursor) = (self.coord, self.cursor);
-                let mut v = NoWrap::new("edit", coord, cursor, self.obc_xy);
-                v.set_scroll_off(app.as_ref().scroll_off);
-                v.set_line_number(app.as_ref().line_number);
-                v
-            };
+            let v: NoWrap = (&*self, self.obc_xy).into();
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
-            v.render(buf, self, &self.scheme)?
+            v.render(buf, self)?
         };
         self.obc_xy = {
             let err = Error::Invalid(format!("buffer {}", self.curr_buf_id));
@@ -161,6 +175,11 @@ impl Window for WindowEdit {
 }
 
 impl Render for WindowEdit {
+    #[inline]
+    fn as_color_scheme(&self) -> &ColorScheme {
+        &self.scheme
+    }
+
     fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
         self.syn.to_span_line(buf, a, z)
     }

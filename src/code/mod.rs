@@ -4,13 +4,11 @@ mod cmd_set;
 //mod cmd_file;
 //mod cmd_write;
 
-mod col_nu;
 mod config;
 mod keymap;
 mod keymap_cmd;
 mod keymap_edit;
 mod keymap_less;
-mod view;
 mod window_cmd;
 mod window_edit;
 mod window_file;
@@ -271,6 +269,10 @@ impl Code {
             .filter_map(|buf| if buf.to_id() == id { Some(buf) } else { None })
             .take(1)
             .next()
+    }
+
+    pub fn as_config(&self) -> &Config {
+        self.as_ref()
     }
 
     pub fn to_color_scheme(&self, name: Option<&str>) -> ColorScheme {

@@ -4,6 +4,7 @@ use std::{fmt, ops::Add, result};
 
 use crate::{
     buffer::{self, Buffer},
+    colors::ColorScheme,
     event::Event,
     event::DP,
     term::Spanline,
@@ -24,7 +25,15 @@ macro_rules! cursor {
 pub trait Window {
     type App;
 
+    fn to_name(&self) -> String;
+
+    fn to_coord(&self) -> Coord;
+
     fn to_cursor(&self) -> Cursor;
+
+    fn config_line_number(&self) -> bool;
+
+    fn config_scroll_offset(&self) -> u16;
 
     fn on_event(&mut self, app: &mut Self::App, evnt: Event) -> Result<Event>;
 
@@ -81,6 +90,8 @@ pub trait WinBuffer<'a> {
 
 /// Render trait for window objects.
 pub trait Render {
+    fn as_color_scheme(&self) -> &ColorScheme;
+
     fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline>;
 }
 

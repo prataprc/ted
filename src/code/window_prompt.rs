@@ -89,6 +89,16 @@ impl Window for WindowPrompt {
     type App = code::Code;
 
     #[inline]
+    fn to_name(&self) -> String {
+        "window-prompt".to_string()
+    }
+
+    #[inline]
+    fn to_coord(&self) -> Coord {
+        self.coord
+    }
+
+    #[inline]
     fn to_cursor(&self) -> Cursor {
         let col: u16 = match self.span_lines.last() {
             Some(line) => {
@@ -103,6 +113,16 @@ impl Window for WindowPrompt {
             None => 0,
         };
         Cursor::new(col, curz!(self.coord.row) + self.coord.hgt)
+    }
+
+    #[inline]
+    fn config_line_number(&self) -> bool {
+        false
+    }
+
+    #[inline]
+    fn config_scroll_offset(&self) -> u16 {
+        0
     }
 
     fn on_event(&mut self, _: &mut code::Code, evnt: Event) -> Result<Event> {

@@ -18,12 +18,14 @@ pub mod term;
 pub mod state;
 
 pub mod buffer;
+mod col_nu;
 pub mod colors;
 pub mod event;
 pub mod location;
 pub mod pubsub;
 pub mod tabc;
 pub mod tss;
+mod view;
 
 pub mod app;
 mod code;

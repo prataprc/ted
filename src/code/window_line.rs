@@ -7,7 +7,7 @@ use std::{fmt, iter::FromIterator, mem, result};
 use crate::{
     buffer::{self, Buffer},
     code,
-    colors::Highlight,
+    colors::{ColorScheme, Highlight},
     event::Event,
     term::{Span, Spanline},
     window::{Coord, Cursor, Render, Window},
@@ -74,12 +74,32 @@ impl Window for WindowLine {
     type App = code::Code;
 
     #[inline]
+    fn to_name(&self) -> String {
+        "window-line".to_string()
+    }
+
+    #[inline]
+    fn to_coord(&self) -> Coord {
+        self.coord
+    }
+
+    #[inline]
     fn to_cursor(&self) -> Cursor {
         match self.inner {
             Inner::Status { .. } => unreachable!(),
             Inner::Tab { .. } => unreachable!(),
             Inner::None => unreachable!(),
         }
+    }
+
+    #[inline]
+    fn config_line_number(&self) -> bool {
+        false
+    }
+
+    #[inline]
+    fn config_scroll_offset(&self) -> u16 {
+        0
     }
 
     fn on_event(&mut self, _app: &mut code::Code, evnt: Event) -> Result<Event> {
@@ -133,6 +153,12 @@ impl Window for WindowLine {
 }
 
 impl Render for WindowLine {
+    #[inline]
+    fn as_color_scheme(&self) -> &ColorScheme {
+        unreachable!()
+    }
+
+    #[inline]
     fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
         buffer::to_span_line(buf, a, z)
     }

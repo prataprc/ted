@@ -130,8 +130,28 @@ impl Window for WindowFile {
     type App = code::Code;
 
     #[inline]
+    fn to_name(&self) -> String {
+        "window-file".to_string()
+    }
+
+    #[inline]
+    fn to_coord(&self) -> Coord {
+        self.coord
+    }
+
+    #[inline]
     fn to_cursor(&self) -> Cursor {
         self.we.to_cursor()
+    }
+
+    #[inline]
+    fn config_line_number(&self) -> bool {
+        self.we.config_line_number()
+    }
+
+    #[inline]
+    fn config_scroll_offset(&self) -> u16 {
+        self.we.config_scroll_offset()
     }
 
     fn on_event(&mut self, app: &mut code::Code, evnt: Event) -> Result<Event> {

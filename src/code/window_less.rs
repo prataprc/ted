@@ -45,6 +45,16 @@ impl Window for WindowLess {
     type App = code::Code;
 
     #[inline]
+    fn to_name(&self) -> String {
+        "window-less".to_string()
+    }
+
+    #[inline]
+    fn to_coord(&self) -> Coord {
+        self.coord
+    }
+
+    #[inline]
     fn to_cursor(&self) -> Cursor {
         let col: usize = self
             .status_line
@@ -52,6 +62,16 @@ impl Window for WindowLess {
             .map(|ch| ch.width().unwrap_or(0))
             .sum();
         Cursor::new(col.try_into().unwrap(), curz!(self.coord.hgt))
+    }
+
+    #[inline]
+    fn config_line_number(&self) -> bool {
+        false
+    }
+
+    #[inline]
+    fn config_scroll_offset(&self) -> u16 {
+        0
     }
 
     fn on_event(&mut self, _: &mut code::Code, evnt: Event) -> Result<Event> {

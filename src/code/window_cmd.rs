@@ -39,7 +39,7 @@ impl fmt::Display for WindowCmd {
 impl WindowCmd {
     #[inline]
     pub fn new(coord: Coord, app: &code::Code) -> WindowCmd {
-        use crate::code::view::NoWrap;
+        use crate::view::NoWrap;
 
         let buf = {
             let loc = Location::new_ted("code-cmd", io::empty()).unwrap();
@@ -67,8 +67,28 @@ impl Window for WindowCmd {
     type App = code::Code;
 
     #[inline]
+    fn to_name(&self) -> String {
+        "window-cmd".to_string()
+    }
+
+    #[inline]
+    fn to_coord(&self) -> Coord {
+        self.coord
+    }
+
+    #[inline]
     fn to_cursor(&self) -> Cursor {
         self.coord.to_top_left() + self.cursor
+    }
+
+    #[inline]
+    fn config_line_number(&self) -> bool {
+        false
+    }
+
+    #[inline]
+    fn config_scroll_offset(&self) -> u16 {
+        0
     }
 
     fn on_event(&mut self, app: &mut code::Code, mut evnt: Event) -> Result<Event> {
@@ -100,14 +120,13 @@ impl Window for WindowCmd {
     }
 
     fn on_refresh(&mut self, _app: &mut code::Code) -> Result<()> {
-        use crate::code::view::NoWrap;
+        use crate::view::NoWrap;
 
         let (col, row) = self.coord.to_origin_cursor();
         err_at!(Fatal, termqu!(term_cursor::MoveTo(col, row)))?;
 
-        let mut v = NoWrap::new("cmd", self.coord, self.cursor, self.obc_xy);
-        v.set_scroll_off(0).set_line_number(false);
-        self.cursor = v.render(&self.buffer, self, &self.scheme)?;
+        let v: NoWrap = (&*self, self.obc_xy).into();
+        self.cursor = v.render(&self.buffer, self)?;
         self.obc_xy = self.buffer.to_xy_cursor();
 
         Ok(())
@@ -115,6 +134,12 @@ impl Window for WindowCmd {
 }
 
 impl Render for WindowCmd {
+    #[inline]
+    fn as_color_scheme(&self) -> &ColorScheme {
+        &self.scheme
+    }
+
+    #[inline]
     fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
         self.syn.to_span_line(buf, a, z)
     }
