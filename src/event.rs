@@ -53,10 +53,22 @@ impl Event {
     /// Return the keystroke modifiers like ctrl, alt, etc.. or empty if the
     /// keystore do not contain any modifiers.
     pub fn to_modifiers(&self) -> KeyModifiers {
-        match self {
-            Event::FKey(_, m) => m.clone(),
-            Event::Char(_, m) => m.clone(),
-            _ => KeyModifiers::empty(),
+        use Event::*;
+
+        let empty = KeyModifiers::empty();
+
+        match self.clone() {
+            Backspace(m) | Enter(m) | Tab(m) | Delete(m) => m,
+            Char(_, m) | FKey(_, m) | Insert(m) => m,
+            Left(m) | Right(m) | Up(m) | Down(m) => m,
+            Home(m) | End(m) | PageUp(m) | PageDown(m) => m,
+            BackTab | Esc => empty,
+            // folded events for buffer management.
+            N(_) | G(_) | B(_, _) | F(_, _) | T(_, _) => empty,
+            Op(_) | Md(_) | Mt(_) => empty,
+            // other events
+            Edit(_) | List(_) | Notify(_) | Code(_) | Ted(_) => empty,
+            Noop => empty,
         }
     }
 

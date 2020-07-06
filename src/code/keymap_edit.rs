@@ -35,8 +35,7 @@ impl KeyEdit {
     }
 
     fn normal_fold(&mut self, evnt: Event) -> Result<Event> {
-        use crate::event::Event::{Backspace, Char, Enter};
-        use crate::event::Event::{Md, Mt, Op, B, F, G, N, T};
+        use crate::event::Event::*;
         use crate::event::{Code, Opr};
 
         let noop = Event::Noop;
@@ -51,6 +50,8 @@ impl KeyEdit {
             Event::Noop if m_empty => match evnt {
                 // motion command - characterwise
                 Backspace(_) => (noop, Mt(Mto::Left(1, DP::Nobound))),
+                Left(_) => (noop, Mt(Mto::Left(1, DP::Nobound))),
+                Right(_) => (noop, Mt(Mto::Left(1, DP::Nobound))),
                 Char('h', _) => (noop, Mt(Mto::Left(1, DP::LineBound))),
                 Char(' ', _) => (noop, Mt(Mto::Right(1, DP::Nobound))),
                 Char('l', _) => (noop, Mt(Mto::Right(1, DP::LineBound))),
