@@ -96,7 +96,7 @@ impl Window for WindowCmd {
 
         let mut buf = mem::replace(&mut self.buffer, Default::default());
         evnt = match self.keymap.fold(&mut buf, evnt)? {
-            Event::Enter => {
+            Event::Enter(_) => {
                 let line = buf.to_string();
                 let syn = mem::replace(&mut self.syn, Default::default());
                 match line.split(' ').next() {

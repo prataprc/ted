@@ -14,7 +14,7 @@ use std::{
 use crate::{
     buffer::Buffer,
     colors::{ColorScheme, Highlight},
-    event::{Event, DP},
+    event::Event,
     location::Location,
     term::{Span, Spanline, Style},
     tss::{Automata, Token},
@@ -475,6 +475,8 @@ impl Ord for SyntSpan {
 
 impl SyntSpan {
     fn into_span(&self, buf: &Buffer) -> Result<Span> {
+        use crate::event::DP;
+
         let span: Span = {
             let iter = buf.chars_at(self.a, DP::Right)?.take(self.z - self.a);
             String::from_iter(iter).into()

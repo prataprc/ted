@@ -478,7 +478,7 @@ impl WrapView {
 impl WrapView {
     // return (ColKind, buffer_cursor, len)
     fn to_view_rows(&self, buf: &Buffer) -> Result<Vec<(ColKind, usize, u16)>> {
-        use crate::event::DP::Right;
+        use crate::event::DP;
         use std::iter::repeat;
 
         let (coord, cursor, bc_xy) = (self.coord, self.cursor, self.bc_xy);
@@ -491,7 +491,7 @@ impl WrapView {
             let line_idx = bc_xy.row.saturating_sub(tops);
             let mut top_rows = vec![];
             let iter = {
-                let iter = buf.lines_at(line_idx, Right)?.take(tops);
+                let iter = buf.lines_at(line_idx, DP::Right)?.take(tops);
                 (line_idx..).zip(iter)
             };
             for (bc_row, line) in iter {
@@ -519,7 +519,7 @@ impl WrapView {
         rows.extend::<Vec<(ColKind, usize, u16)>>({
             let mut bot_rows = vec![];
             let iter = {
-                let iter = buf.lines_at(bc_xy.row, Right)?.take(bots);
+                let iter = buf.lines_at(bc_xy.row, DP::Right)?.take(bots);
                 (bc_xy.row..).zip(iter)
             };
             for (bc_row, line) in iter {

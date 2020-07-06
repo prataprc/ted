@@ -13,24 +13,33 @@ use crate::{pubsub::Notify, Error, Result};
 /// Events
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
-    // Insert events
-    Backspace,
-    Enter,
-    Tab,
-    Delete,
-    Esc,
+    // Direct key events
+    Backspace(KeyModifiers),
+    Enter(KeyModifiers),
+    Tab(KeyModifiers),
+    Delete(KeyModifiers),
     Char(char, KeyModifiers),
     FKey(u8, KeyModifiers),
+    Insert(KeyModifiers),
+    Left(KeyModifiers),
+    Right(KeyModifiers),
+    Up(KeyModifiers),
+    Down(KeyModifiers),
+    Home(KeyModifiers),
+    End(KeyModifiers),
+    PageUp(KeyModifiers),
+    PageDown(KeyModifiers),
     BackTab,
+    Esc,
     // folded events for buffer management.
-    B(usize, DP),   // Bracket    (n, Left/Right)
-    G(usize),       // Global     (n,)
-    F(usize, DP),   // Find-char  (n, Left/Right)
-    T(usize, DP),   // Till-char  (n, Left/Right)
-    N(usize),       // Num-prefix (n,)
-    Op(usize, Opr), // Operation  (n, op-event)
-    Md(Mod),        // Mode       (n, mode-event)
-    Mt(Mto),        // Motion     (n, motion-event)
+    N(usize),     // Num-prefix (n,)
+    G(usize),     // Global     (n,)
+    B(usize, DP), // Bracket    (n, Left/Right)
+    F(usize, DP), // Find-char  (n, Left/Right)
+    T(usize, DP), // Till-char  (n, Left/Right)
+    Op(Opr),      // Operation  (op-event)
+    Md(Mod),      // Mode       (n, mode-event)
+    Mt(Mto),      // Motion     (n, motion-event)
     // other events
     Edit(Input),
     List(Vec<Event>),
@@ -133,26 +142,37 @@ impl Extend<Event> for Event {
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         use Event::Edit;
-        use Event::{BackTab, Code, FKey, List, Md, Mt, Noop, Notify, Op, Ted};
-        use Event::{Backspace, Char, Delete, Enter, Esc, Tab, B, F, G, N, T};
+        use Event::{BackTab, Code, FKey, Insert, List, Noop, Notify};
+        use Event::{Backspace, Char, Delete, Enter, Esc, Tab};
+        use Event::{Down, End, Home, Left, PageDown, PageUp, Right, Up};
+        use Event::{Md, Mt, Op, Ted, B, F, G, N, T};
 
         match self {
             // insert events
-            Backspace => write!(f, "backspace"),
-            Enter => write!(f, "enter"),
-            Tab => write!(f, "tab"),
-            Delete => write!(f, "delete"),
-            Esc => write!(f, "esc"),
+            Backspace(_) => write!(f, "backspace"),
+            Enter(_) => write!(f, "enter"),
+            Tab(_) => write!(f, "tab"),
+            Delete(_) => write!(f, "delete"),
             Char(ch, _) => write!(f, "char({:?})", ch),
             FKey(ch, _) => write!(f, "fkey({})", ch),
+            Insert(_) => write!(f, "insert"),
+            Left(_) => write!(f, "left"),
+            Right(_) => write!(f, "right"),
+            Up(_) => write!(f, "up"),
+            Down(_) => write!(f, "down"),
+            Home(_) => write!(f, "home"),
+            End(_) => write!(f, "end"),
+            PageUp(_) => write!(f, "page-up"),
+            PageDown(_) => write!(f, "page-down"),
             BackTab => write!(f, "backtab"),
+            Esc => write!(f, "esc"),
             // folded events for buffer management
             B(n, dp) => write!(f, "b({},{})", n, dp),
             G(n) => write!(f, "g({})", n),
             F(n, dp) => write!(f, "f({},{})", n, dp),
             T(n, dp) => write!(f, "t({},{})", n, dp),
             N(n) => write!(f, "b({}", n),
-            Op(n, opr) => write!(f, "op({},{})", n, opr),
+            Op(opr) => write!(f, "op({})", opr),
             Md(md) => write!(f, "md({})", md),
             Mt(mt) => write!(f, "mt({})", mt),
             // other events
@@ -168,36 +188,30 @@ impl fmt::Display for Event {
 
 impl From<TermEvent> for Event {
     fn from(evnt: TermEvent) -> Event {
-        use crate::buffer::NL;
-        use Event::{BackTab, Backspace, Char, Delete, Enter, Esc, FKey};
-        use Event::{Md, Mt, Tab};
-
         match evnt {
             TermEvent::Key(KeyEvent { code, modifiers: m }) => {
                 let ctrl = m.contains(KeyModifiers::CONTROL);
                 let empty = m.is_empty();
                 match code {
                     //
-                    KeyCode::Backspace if empty => Backspace,
-                    KeyCode::Enter if empty => Enter,
-                    KeyCode::Tab if empty => Tab,
-                    KeyCode::Delete if empty => Delete,
-                    KeyCode::Char('[') if ctrl => Esc,
-                    KeyCode::Char(NL) if empty => Enter,
-                    KeyCode::Char(ch) => Char(ch, m),
-                    //
-                    KeyCode::BackTab if empty => BackTab,
-                    KeyCode::F(f) if empty => FKey(f, m),
-                    //
-                    KeyCode::Esc if empty => Esc,
-                    KeyCode::Insert => Md(Mod::Insert(1, DP::Nope)),
-                    //
-                    KeyCode::Left if empty => Mt(Mto::Left(1, DP::LineBound)),
-                    KeyCode::Right if empty => Mt(Mto::Right(1, DP::LineBound)),
-                    KeyCode::Up if empty => Mt(Mto::Up(1, DP::Nope)),
-                    KeyCode::Down if empty => Mt(Mto::Down(1, DP::Nope)),
-                    KeyCode::Home if empty => Mt(Mto::Home(DP::Nope)),
-                    KeyCode::End if empty => Mt(Mto::End),
+                    KeyCode::Backspace => Event::Backspace(m),
+                    KeyCode::Enter => Event::Enter(m),
+                    KeyCode::Tab => Event::Tab(m),
+                    KeyCode::Delete => Event::Delete(m),
+                    KeyCode::Char('[') if ctrl => Event::Esc,
+                    KeyCode::Char(ch) => Event::Char(ch, m),
+                    KeyCode::F(f) if empty => Event::FKey(f, m),
+                    KeyCode::BackTab => Event::BackTab,
+                    KeyCode::Esc => Event::Esc,
+                    KeyCode::Insert => Event::Insert(m),
+                    KeyCode::Left if empty => Event::Left(m),
+                    KeyCode::Right if empty => Event::Right(m),
+                    KeyCode::Up if empty => Event::Up(m),
+                    KeyCode::Down if empty => Event::Down(m),
+                    KeyCode::Home if empty => Event::Home(m),
+                    KeyCode::End if empty => Event::End(m),
+                    KeyCode::PageUp if empty => Event::PageUp(m),
+                    KeyCode::PageDown if empty => Event::PageDown(m),
                     KeyCode::Null => Event::Noop,
                     _ => Event::Noop,
                 }
@@ -246,7 +260,8 @@ pub enum DP {
     LineBound,
     Nobound,
     Caret,
-    Nope,
+    TextCol,
+    None,
 }
 
 impl fmt::Display for DP {
@@ -261,7 +276,8 @@ impl fmt::Display for DP {
             DP::LineBound => write!(f, "line_bound"),
             DP::Nobound => write!(f, "no_bound"),
             DP::Caret => write!(f, "caret"),
-            DP::Nope => write!(f, "nope"),
+            DP::TextCol => write!(f, "text_col"),
+            DP::None => write!(f, "nope"),
         }
     }
 }
@@ -310,7 +326,7 @@ impl fmt::Display for Opr {
 #[derive(Clone, Eq, PartialEq)]
 pub enum Mod {
     Esc,
-    Insert(usize, DP), // (n, Nope/Caret)
+    Insert(usize, DP), // (n, None/Caret)
     Append(usize, DP), // (n, Right/End)
     Open(usize, DP),   // (n, Left/Right)
 }
@@ -331,12 +347,12 @@ impl fmt::Display for Mod {
 pub enum Mto {
     Left(usize, DP),  // (n, LineBound/Nobound)
     Right(usize, DP), // (n, LineBound/Nobound)
-    Up(usize, DP),    // (n, Caret/Nope)
-    Down(usize, DP),  // (n, Caret/Nope)
+    Up(usize, DP),    // (n, Caret/None)
+    Down(usize, DP),  // (n, Caret/None)
     Col(usize),       // (n,)
-    Home(DP),         // (n, Caret/Nope)
+    Home(DP),         // (n, Caret/TextCol/None)
     End,
-    Row(usize, DP),                     // (n, Caret/Nope)
+    Row(usize, DP),                     // (n, Caret/None)
     Percent(usize),                     // (n,)
     Cursor(usize),                      // (n,)
     CharF(usize, Option<char>, DP),     // (n, ch, Left/Right)
@@ -392,27 +408,25 @@ impl fmt::Display for Mto {
 impl Mto {
     /// Do the character/pattern motion in the opposite direction.
     pub fn reverse(self, n: usize, dp: DP) -> Result<Self> {
-        use {
-            Mto::{CharF, CharT, Pattern},
-            DP::{Left, Right},
-        };
+        use Mto::{CharF, CharT, Pattern};
 
-        match (self, dp) {
-            (CharF(_, ch, Left), Right) => Ok(CharF(n, ch, Left)),
-            (CharF(_, ch, Left), Left) => Ok(CharF(n, ch, Right)),
-            (CharF(_, ch, Right), Right) => Ok(CharF(n, ch, Right)),
-            (CharF(_, ch, Right), Left) => Ok(CharF(n, ch, Left)),
-            (CharT(_, ch, Left), Right) => Ok(CharT(n, ch, Left)),
-            (CharT(_, ch, Left), Left) => Ok(CharT(n, ch, Right)),
-            (CharT(_, ch, Right), Right) => Ok(CharT(n, ch, Right)),
-            (CharT(_, ch, Right), Left) => Ok(CharT(n, ch, Left)),
-            (Pattern(_, ch, Left), Right) => Ok(Pattern(n, ch, Left)),
-            (Pattern(_, ch, Left), Left) => Ok(Pattern(n, ch, Right)),
-            (Pattern(_, ch, Right), Right) => Ok(Pattern(n, ch, Right)),
-            (Pattern(_, ch, Right), Left) => Ok(Pattern(n, ch, Left)),
-            (Mto::None, _) => Ok(Mto::None),
-            _ => err_at!(Fatal, msg: format!("unreachable")),
-        }
+        let evnt = match (self, dp) {
+            (CharF(_, ch, DP::Left), DP::Right) => CharF(n, ch, DP::Left),
+            (CharF(_, ch, DP::Left), DP::Left) => CharF(n, ch, DP::Right),
+            (CharF(_, ch, DP::Right), DP::Right) => CharF(n, ch, DP::Right),
+            (CharF(_, ch, DP::Right), DP::Left) => CharF(n, ch, DP::Left),
+            (CharT(_, ch, DP::Left), DP::Right) => CharT(n, ch, DP::Left),
+            (CharT(_, ch, DP::Left), DP::Left) => CharT(n, ch, DP::Right),
+            (CharT(_, ch, DP::Right), DP::Right) => CharT(n, ch, DP::Right),
+            (CharT(_, ch, DP::Right), DP::Left) => CharT(n, ch, DP::Left),
+            (Pattern(_, ch, DP::Left), DP::Right) => Pattern(n, ch, DP::Left),
+            (Pattern(_, ch, DP::Left), DP::Left) => Pattern(n, ch, DP::Right),
+            (Pattern(_, ch, DP::Right), DP::Right) => Pattern(n, ch, DP::Right),
+            (Pattern(_, ch, DP::Right), DP::Left) => Pattern(n, ch, DP::Left),
+            (Mto::None, _) => Mto::None,
+            _ => err_at!(Fatal, msg: format!("unreachable"))?,
+        };
+        Ok(evnt)
     }
 }
 

@@ -573,7 +573,7 @@ impl Buffer {
                 }
                 Md(Mod::Open(n, DP::Left)) if n > 0 => {
                     self.insert_repeat = n - 1;
-                    mto_home(self, DP::Nope)?;
+                    mto_home(self, DP::None)?;
                     self.cmd_insert_char(NL)?;
                     mto_left(self, 1, DP::Nobound)?;
                     (Inner::Insert(nb.into()), Event::Noop)
@@ -595,8 +595,6 @@ impl Buffer {
     }
 
     fn handle_n_event(&mut self, evnt: Event) -> Result<Event> {
-        use crate::event::Event::Mt;
-
         // switch to insert mode.
         let evnt = match Self::to_insert_n(evnt) {
             (Some(n), evnt) if n > 0 => {
@@ -609,38 +607,38 @@ impl Buffer {
         let evnt = match evnt {
             Event::Noop => Event::Noop,
             // execute motion command.
-            Mt(Mto::Left(n, dp)) => mto_left(self, n, dp)?,
-            Mt(Mto::Right(n, dp)) => mto_right(self, n, dp)?,
-            Mt(Mto::Up(n, dp)) => mto_up(self, n, dp)?,
-            Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
-            Mt(Mto::Col(n)) => mto_column(self, n)?,
-            Mt(Mto::Home(dp)) => mto_home(self, dp)?,
-            Mt(Mto::End) => mto_end(self)?,
-            Mt(Mto::Row(n, dp)) => mto_row(self, n, dp)?,
-            Mt(Mto::Percent(n)) => mto_percent(self, n)?,
-            Mt(Mto::Cursor(n)) => mto_cursor(self, n)?,
-            Mt(e @ Mto::CharF(_, _, _)) => {
+            Event::Mt(Mto::Left(n, dp)) => mto_left(self, n, dp)?,
+            Event::Mt(Mto::Right(n, dp)) => mto_right(self, n, dp)?,
+            Event::Mt(Mto::Up(n, dp)) => mto_up(self, n, dp)?,
+            Event::Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
+            Event::Mt(Mto::Col(n)) => mto_column(self, n)?,
+            Event::Mt(Mto::Home(dp)) => mto_home(self, dp)?,
+            Event::Mt(Mto::End) => mto_end(self)?,
+            Event::Mt(Mto::Row(n, dp)) => mto_row(self, n, dp)?,
+            Event::Mt(Mto::Percent(n)) => mto_percent(self, n)?,
+            Event::Mt(Mto::Cursor(n)) => mto_cursor(self, n)?,
+            Event::Mt(e @ Mto::CharF(_, _, _)) => {
                 self.mto_find_char = e.clone();
                 mto_char(self, e)?
             }
-            Mt(e @ Mto::CharT(_, _, _)) => {
+            Event::Mt(e @ Mto::CharT(_, _, _)) => {
                 self.mto_find_char = e.clone();
                 mto_char(self, e)?
             }
-            Mt(Mto::CharR(n, dir)) => {
+            Event::Mt(Mto::CharR(n, dir)) => {
                 let e = self.mto_find_char.clone();
                 mto_char(self, e.reverse(n, dir)?)?
             }
-            Mt(e @ Mto::Word(_, _, _)) => mto_words(self, e)?,
-            Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
-            Mt(e @ Mto::Sentence(_, _)) => mto_sentence(self, e)?,
-            Mt(e @ Mto::Para(_, _)) => mto_para(self, e)?,
-            Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(self, e)?,
-            Mt(e @ Mto::Pattern(_, Some(_), _)) => {
+            Event::Mt(e @ Mto::Word(_, _, _)) => mto_words(self, e)?,
+            Event::Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
+            Event::Mt(e @ Mto::Sentence(_, _)) => mto_sentence(self, e)?,
+            Event::Mt(e @ Mto::Para(_, _)) => mto_para(self, e)?,
+            Event::Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(self, e)?,
+            Event::Mt(e @ Mto::Pattern(_, Some(_), _)) => {
                 self.mto_pattern = e.clone();
                 mto_pattern(self, e)?
             }
-            Mt(Mto::PatternR(n, dir)) => {
+            Event::Mt(Mto::PatternR(n, dir)) => {
                 let e = self.mto_pattern.clone();
                 mto_pattern(self, e.reverse(n, dir)?)?
             }
@@ -683,19 +681,19 @@ impl Buffer {
                 self.cmd_insert_char(ch)?;
                 Event::Noop
             }
-            Backspace => {
+            Backspace(_) => {
                 self.cmd_backspace(1)?;
                 Event::Noop
             }
-            Enter => {
+            Enter(_) => {
                 self.cmd_insert_char(NL)?;
                 Event::Noop
             }
-            Tab => {
+            Tab(_) => {
                 self.cmd_insert_char('\t')?;
                 Event::Noop
             }
-            Delete => {
+            Delete(_) => {
                 let from = Bound::Included(self.to_cursor());
                 let to = from.clone();
                 self.cmd_remove_at(from, to)?;
@@ -709,10 +707,11 @@ impl Buffer {
 
     fn repeat(&mut self) -> Result<()> {
         use crate::event::Event::{Backspace, Char, Delete, Enter, Tab};
+
         let (last_inserts, insert_repeat) = {
             let evnts: Vec<Event> = self.last_inserts.drain(..).collect();
             let valid = evnts.iter().all(|evnt| match evnt {
-                Char(_, _) | Enter | Tab | Backspace | Delete => true,
+                Char(_, _) | Enter(_) | Tab(_) | Backspace(_) | Delete(_) => true,
                 _ => false,
             });
             if valid {
@@ -1089,7 +1088,7 @@ pub fn mto_home(buf: &mut Buffer, pos: DP) -> Result<Event> {
         DP::Caret => {
             buf.skip_whitespace(DP::Right);
         }
-        DP::Nope => (),
+        DP::None => (),
         _ => err_at!(Fatal, msg: format!("unreachable"))?,
     }
     Ok(Event::Noop)
@@ -1111,7 +1110,7 @@ pub fn mto_up(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
             buf.set_cursor(cursor);
             match pos {
                 DP::Caret => mto_home(buf, DP::Caret),
-                DP::Nope => Ok(Event::Noop),
+                DP::None => Ok(Event::Noop),
                 _ => {
                     err_at!(Fatal, msg: format!("unreachable"))?;
                     Ok(Event::Noop)
@@ -1136,7 +1135,7 @@ pub fn mto_down(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
             buf.set_cursor(cursor);
             match pos {
                 DP::Caret => mto_home(buf, DP::Caret),
-                DP::Nope => Ok(Event::Noop),
+                DP::None => Ok(Event::Noop),
                 _ => {
                     err_at!(Fatal, msg: format!("unreachable"))?;
                     Ok(Event::Noop)

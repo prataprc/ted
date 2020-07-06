@@ -35,9 +35,9 @@ impl KeyEdit {
     }
 
     fn normal_fold(&mut self, evnt: Event) -> Result<Event> {
-        use crate::event::Code::{StatusCursor, StatusFile};
         use crate::event::Event::{Backspace, Char, Enter};
-        use crate::event::Event::{Code, Md, Mt, B, F, G, N, T};
+        use crate::event::Event::{Md, Mt, Op, B, F, G, N, T};
+        use crate::event::{Code, Opr};
 
         let noop = Event::Noop;
 
@@ -49,19 +49,21 @@ impl KeyEdit {
 
         let (prefix, evnt) = match prefix {
             Event::Noop if m_empty => match evnt {
-                Backspace => (noop, Mt(Mto::Left(1, DP::Nobound))),
-                Enter => (noop, Mt(Mto::Down(1, DP::Caret))),
+                // motion command - characterwise
+                Backspace(_) => (noop, Mt(Mto::Left(1, DP::Nobound))),
                 Char('h', _) => (noop, Mt(Mto::Left(1, DP::LineBound))),
                 Char(' ', _) => (noop, Mt(Mto::Right(1, DP::Nobound))),
                 Char('l', _) => (noop, Mt(Mto::Right(1, DP::LineBound))),
+                Char('0', _) => (noop, Mt(Mto::Home(DP::None))),
+                // motion command - linewise
+                Enter(_) => (noop, Mt(Mto::Down(1, DP::Caret))),
                 Char('-', _) => (noop, Mt(Mto::Up(1, DP::Caret))),
-                Char('j', _) => (noop, Mt(Mto::Up(1, DP::Nope))),
-                Char('k', _) => (noop, Mt(Mto::Down(1, DP::Nope))),
+                Char('j', _) => (noop, Mt(Mto::Up(1, DP::None))),
+                Char('k', _) => (noop, Mt(Mto::Down(1, DP::None))),
                 Char('+', _) => (noop, Mt(Mto::Down(1, DP::Caret))),
                 Char('|', _) => (noop, Mt(Mto::Col(1))),
                 Char('G', _) => (noop, Mt(Mto::Row(1, DP::Caret))),
                 Char('%', _) => (noop, Mt(Mto::Percent(1))),
-                Char('0', _) => (noop, Mt(Mto::Home(DP::Nope))),
                 Char('^', _) => (noop, Mt(Mto::Home(DP::Caret))),
                 Char('$', _) => (noop, Mt(Mto::End)),
                 Char('b', _) => (noop, Mt(Mto::Word(1, DP::Left, DP::Start))),
@@ -80,61 +82,48 @@ impl KeyEdit {
                 Char('N', _) => (noop, Mt(Mto::PatternR(1, DP::Left))),
                 //
                 Char('I', _) => (noop, Md(Mod::Insert(1, DP::Caret))),
-                Char('i', _) => (noop, Md(Mod::Insert(1, DP::Nope))),
+                Char('i', _) => (noop, Md(Mod::Insert(1, DP::None))),
                 Char('a', _) => (noop, Md(Mod::Append(1, DP::Right))),
                 Char('A', _) => (noop, Md(Mod::Append(1, DP::End))),
                 Char('O', _) => (noop, Md(Mod::Open(1, DP::Left))),
                 Char('o', _) => (noop, Md(Mod::Open(1, DP::Right))),
                 Md(Mod::Insert(n, p)) => (noop, Md(Mod::Insert(n, p))),
                 //
-                Char('[', _) => (B(1, DP::Left), Event::Noop),
-                Char(']', _) => (B(1, DP::Right), Event::Noop),
-                Char('g', _) => (G(1), Event::Noop),
-                Char('f', _) => (F(1, DP::Right), Event::Noop),
-                Char('F', _) => (F(1, DP::Left), Event::Noop),
-                Char('t', _) => (T(1, DP::Right), Event::Noop),
-                Char('T', _) => (T(1, DP::Left), Event::Noop),
-                Char(ch @ '0'..='9', _) => (N(parse_n!(1, ch)), Event::Noop),
-                evnt => (noop, evnt),
-            },
-            B(n, d) if m_empty => match evnt {
-                Char('(', _) => (noop, Mt(Mto::Bracket(n, '(', ')', d))),
-                Char(')', _) => (noop, Mt(Mto::Bracket(n, ')', '(', d))),
-                Char('{', _) => (noop, Mt(Mto::Bracket(n, '{', '}', d))),
-                Char('}', _) => (noop, Mt(Mto::Bracket(n, '}', '{', d))),
-                evnt => (noop, evnt),
-            },
-            G(n) if m_empty => match evnt {
-                Char('g', _) if ctrl => (noop, Code(StatusCursor)),
-                Char('g', _) => (noop, Mt(Mto::Row(n, DP::Caret))),
-                Char('e', _) => (noop, Mt(Mto::Word(n, DP::Left, DP::End))),
-                Char('E', _) => (noop, Mt(Mto::WWord(n, DP::Left, DP::End))),
-                Char('o', _) => (noop, Mt(Mto::Cursor(n))),
-                Char('I', _) => (noop, Md(Mod::Insert(n, DP::Caret))),
-                evnt => (noop, evnt),
-            },
-            F(n, d) if m_empty => match evnt {
-                Char(ch, _) => (noop, Mt(Mto::CharF(n, Some(ch), d))),
-                evnt => (noop, evnt),
-            },
-            T(n, d) if m_empty => match evnt {
-                Char(ch, _) => (noop, Mt(Mto::CharT(n, Some(ch), d))),
+                Char('[', _) => (B(1, DP::Left), noop),
+                Char(']', _) => (B(1, DP::Right), noop),
+                Char('g', _) if ctrl => (noop, Event::Code(Code::StatusFile)),
+                Char('g', _) => (G(1), noop),
+                Char('f', _) => (F(1, DP::Right), noop),
+                Char('F', _) => (F(1, DP::Left), noop),
+                Char('t', _) => (T(1, DP::Right), noop),
+                Char('T', _) => (T(1, DP::Left), noop),
+                // numeric prefix
+                Char(ch @ '0'..='9', _) => (N(parse_n!(1, ch)), noop),
+                // operation prefix
+                Char('c', _) => (Op(Opr::Change(1, Mto::None)), noop),
+                Char('d', _) => (Op(Opr::Delete(1, Mto::None)), noop),
+                Char('y', _) => (Op(Opr::Yank(1, Mto::None)), noop),
+                Char('~', _) => (Op(Opr::Swapcase(1, Mto::None)), noop),
+                Char('!', _) => (Op(Opr::Filter(1, Mto::None)), noop),
+                Char('=', _) => (Op(Opr::Equal(1, Mto::None)), noop),
+                Char('<', _) => (Op(Opr::RShift(1, Mto::None)), noop),
+                Char('>', _) => (Op(Opr::LShift(1, Mto::None)), noop),
                 evnt => (noop, evnt),
             },
             N(n) if m_empty => match evnt {
-                Backspace => (noop, Mt(Mto::Left(n, DP::Nobound))),
-                Enter => (noop, Mt(Mto::Down(n, DP::Caret))),
+                Backspace(_) => (noop, Mt(Mto::Left(n, DP::Nobound))),
+                Enter(_) => (noop, Mt(Mto::Down(n, DP::Caret))),
                 Char('h', _) => (noop, Mt(Mto::Left(n, DP::LineBound))),
                 Char(' ', _) => (noop, Mt(Mto::Right(n, DP::Nobound))),
                 Char('l', _) => (noop, Mt(Mto::Right(n, DP::LineBound))),
                 Char('-', _) => (noop, Mt(Mto::Up(n, DP::Caret))),
-                Char('j', _) => (noop, Mt(Mto::Up(n, DP::Nope))),
-                Char('k', _) => (noop, Mt(Mto::Down(n, DP::Nope))),
+                Char('j', _) => (noop, Mt(Mto::Up(n, DP::None))),
+                Char('k', _) => (noop, Mt(Mto::Down(n, DP::None))),
                 Char('+', _) => (noop, Mt(Mto::Down(n, DP::Caret))),
                 Char('|', _) => (noop, Mt(Mto::Col(n))),
                 Char('G', _) => (noop, Mt(Mto::Row(n, DP::Caret))),
                 Char('%', _) => (noop, Mt(Mto::Percent(n))),
-                Char('0', _) => (noop, Mt(Mto::Home(DP::Nope))),
+                Char('0', _) => (noop, Mt(Mto::Home(DP::None))),
                 Char('^', _) => (noop, Mt(Mto::Home(DP::Caret))),
                 Char('$', _) => (noop, Mt(Mto::End)),
                 Char('b', _) => (noop, Mt(Mto::Word(n, DP::Left, DP::Start))),
@@ -153,27 +142,64 @@ impl KeyEdit {
                 Char('N', _) => (noop, Mt(Mto::PatternR(n, DP::Left))),
                 //
                 Char('I', _) => (noop, Md(Mod::Insert(n, DP::Caret))),
-                Char('i', _) => (noop, Md(Mod::Insert(n, DP::Nope))),
+                Char('i', _) => (noop, Md(Mod::Insert(n, DP::None))),
                 Char('a', _) => (noop, Md(Mod::Append(n, DP::Right))),
                 Char('A', _) => (noop, Md(Mod::Append(n, DP::End))),
                 Char('O', _) => (noop, Md(Mod::Open(n, DP::Left))),
                 Char('o', _) => (noop, Md(Mod::Open(n, DP::Right))),
                 Md(Mod::Insert(m, p)) => (noop, Md(Mod::Insert(n * m, p))),
                 //
-                Char('[', _) => (B(n, DP::Left), Event::Noop),
-                Char(']', _) => (B(n, DP::Right), Event::Noop),
-                Char('g', _) => (G(n), Event::Noop),
-                Char('f', _) => (F(n, DP::Right), Event::Noop),
-                Char('F', _) => (F(n, DP::Left), Event::Noop),
-                Char('t', _) => (T(n, DP::Right), Event::Noop),
-                Char('T', _) => (T(n, DP::Left), Event::Noop),
-                Char(ch @ '0'..='9', _) => (N(parse_n!(n, ch)), Event::Noop),
+                Char('[', _) => (B(n, DP::Left), noop),
+                Char(']', _) => (B(n, DP::Right), noop),
+                Char('g', _) if ctrl => (noop, Event::Code(Code::StatusFile)),
+                Char('g', _) => (G(n), noop),
+                Char('f', _) => (F(n, DP::Right), noop),
+                Char('F', _) => (F(n, DP::Left), noop),
+                Char('t', _) => (T(n, DP::Right), noop),
+                Char('T', _) => (T(n, DP::Left), noop),
+                // continue with numberic prefix
+                Char(ch @ '0'..='9', _) => (N(parse_n!(n, ch)), noop),
+                // operation prefix
+                Char('c', _) => (Op(Opr::Change(n, Mto::None)), noop),
+                Char('d', _) => (Op(Opr::Delete(n, Mto::None)), noop),
+                Char('y', _) => (Op(Opr::Yank(n, Mto::None)), noop),
+                Char('~', _) => (Op(Opr::Swapcase(n, Mto::None)), noop),
+                Char('!', _) => (Op(Opr::Filter(n, Mto::None)), noop),
+                Char('=', _) => (Op(Opr::Equal(n, Mto::None)), noop),
+                Char('<', _) => (Op(Opr::RShift(n, Mto::None)), noop),
+                Char('>', _) => (Op(Opr::LShift(n, Mto::None)), noop),
                 evnt => (noop, evnt),
             },
-            // control commands
-            Event::Noop | N(_) => match evnt {
-                Char('g', _) if ctrl => (noop, Code(StatusFile)),
-                evnt => (prefix, evnt),
+            G(n) if m_empty => match evnt {
+                Char('g', _) if ctrl => (noop, Event::Code(Code::StatusCursor)),
+                Char('g', _) => (noop, Mt(Mto::Row(n, DP::Caret))),
+                Char('e', _) => (noop, Mt(Mto::Word(n, DP::Left, DP::End))),
+                Char('E', _) => (noop, Mt(Mto::WWord(n, DP::Left, DP::End))),
+                Char('o', _) => (noop, Mt(Mto::Cursor(n))),
+                Char('I', _) => (noop, Md(Mod::Insert(n, DP::Caret))),
+                // operation prefix
+                Char('~', _) => (Op(Opr::Swapcase(n, Mto::None)), noop),
+                Char('u', _) => (Op(Opr::Lowercase(n, Mto::None)), noop),
+                Char('U', _) => (Op(Opr::Uppercase(n, Mto::None)), noop),
+                Char('w', _) => (Op(Opr::Format(n, Mto::None)), noop),
+                Char('?', _) => (Op(Opr::Encode(n, Mto::None)), noop),
+                Char('@', _) => (Op(Opr::Func(n, Mto::None)), noop),
+                evnt => (noop, evnt),
+            },
+            B(n, d) if m_empty => match evnt {
+                Char('(', _) => (noop, Mt(Mto::Bracket(n, '(', ')', d))),
+                Char(')', _) => (noop, Mt(Mto::Bracket(n, ')', '(', d))),
+                Char('{', _) => (noop, Mt(Mto::Bracket(n, '{', '}', d))),
+                Char('}', _) => (noop, Mt(Mto::Bracket(n, '}', '{', d))),
+                evnt => (noop, evnt),
+            },
+            F(n, d) if m_empty => match evnt {
+                Char(ch, _) => (noop, Mt(Mto::CharF(n, Some(ch), d))),
+                evnt => (noop, evnt),
+            },
+            T(n, d) if m_empty => match evnt {
+                Char(ch, _) => (noop, Mt(Mto::CharT(n, Some(ch), d))),
+                evnt => (noop, evnt),
             },
             prefix => (prefix, evnt),
         };
