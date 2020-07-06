@@ -52,10 +52,13 @@ Commandline input
 			name.  Note that commands invoked indirectly (e.g.,
 			with a function) may still set the alternate file
 			name.
+
 CTRL-^			Edit the alternate file.  Mostly the alternate file is
 			the previously edited file.  This is a quick way to
 			toggle between two files.  It is equivalent to ":e #",
 			except that it also works when there is no file name.
+
+|zf|	zf	define a fold
 
 Normal-mode input
 =================
