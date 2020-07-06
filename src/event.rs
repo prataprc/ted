@@ -263,16 +263,21 @@ impl From<Event> for Vec<Event> {
 /// Event argument, specify the direction or position.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DP {
+    /// Left-Direction to move/operate.
     Left,
+    /// Right-Direction ro move/operate.
     Right,
-    Find,
-    Till,
     Start,
     End,
     LineBound,
     Nobound,
-    Caret,
+    /// Non-Blank column in the line, as in, first non-blank / last non-blank.
     TextCol,
+    /// Cursor sticks to current-col, for subsequent linewise motion/operation,
+    /// until next characterwise motion/operation.
+    StickyCol,
+    /// Specifies the screen-col for characterwise operation, as apposed
+    /// to text-col within the buffer-line.
     None,
 }
 
@@ -281,14 +286,12 @@ impl fmt::Display for DP {
         match self {
             DP::Left => write!(f, "left"),
             DP::Right => write!(f, "right"),
-            DP::Find => write!(f, "find"),
-            DP::Till => write!(f, "till"),
             DP::Start => write!(f, "start"),
             DP::End => write!(f, "end"),
             DP::LineBound => write!(f, "line_bound"),
             DP::Nobound => write!(f, "no_bound"),
-            DP::Caret => write!(f, "caret"),
-            DP::TextCol => write!(f, "text_col"),
+            DP::TextCol => write!(f, "TextCol"),
+            DP::StickyCol => write!(f, "sticky_col"),
             DP::None => write!(f, "nope"),
         }
     }
@@ -338,7 +341,7 @@ impl fmt::Display for Opr {
 #[derive(Clone, Eq, PartialEq)]
 pub enum Mod {
     Esc,
-    Insert(usize, DP), // (n, None/Caret)
+    Insert(usize, DP), // (n, None/TextCol)
     Append(usize, DP), // (n, Right/End)
     Open(usize, DP),   // (n, Left/Right)
 }
@@ -357,14 +360,18 @@ impl fmt::Display for Mod {
 /// Event argument specify the cursor motion.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Mto {
-    Left(usize, DP),  // (n, LineBound/Nobound)
-    Right(usize, DP), // (n, LineBound/Nobound)
-    Up(usize, DP),    // (n, Caret/None)
-    Down(usize, DP),  // (n, Caret/None)
-    Col(usize),       // (n,)
-    Home(DP),         // (n, Caret/TextCol/None)
-    End,
-    Row(usize, DP),                     // (n, Caret/None)
+    Left(usize, DP),                    // (n, LineBound/Nobound)
+    Right(usize, DP),                   // (n, LineBound/Nobound)
+    Up(usize, DP),                      // (n, TextCol/None)
+    Down(usize, DP),                    // (n, TextCol/None)
+    Col(usize),                         // (n,)
+    LineHome(DP),                       // TextCol/StickyCol/None
+    LineEnd(usize, DP),                 // (n, TextCol/StickyCol/None)
+    LineMiddle(usize, DP),              // (n-percent, None)
+    ScreenHome(DP),                     // TextCol/None
+    ScreenEnd(usize, DP),               // (n, TextCol/None)
+    ScreenMiddle(DP),                   // None
+    Row(usize, DP),                     // (n, TextCol/None)
     Percent(usize),                     // (n,)
     Cursor(usize),                      // (n,)
     CharF(usize, Option<char>, DP),     // (n, ch, Left/Right)
@@ -394,8 +401,12 @@ impl fmt::Display for Mto {
             Mto::Up(n, dp) => write!(f, "up({},{})", n, dp),
             Mto::Down(n, dp) => write!(f, "down({},{})", n, dp),
             Mto::Col(n) => write!(f, "col({})", n),
-            Mto::Home(dp) => write!(f, "home({})", dp),
-            Mto::End => write!(f, "end"),
+            Mto::LineHome(dp) => write!(f, "line-home({})", dp),
+            Mto::LineEnd(n, dp) => write!(f, "line-end({},{})", n, dp),
+            Mto::LineMiddle(n, dp) => write!(f, "line-middle({},{})", n, dp),
+            Mto::ScreenHome(dp) => write!(f, "screen-home({})", dp),
+            Mto::ScreenEnd(n, dp) => write!(f, "screen-end({},{})", n, dp),
+            Mto::ScreenMiddle(dp) => write!(f, "screen-middle({})", dp),
             Mto::Row(n, dp) => write!(f, "row({},{})", n, dp),
             Mto::Percent(n) => write!(f, "percent({})", n),
             Mto::Cursor(n) => write!(f, "cursor({})", n),

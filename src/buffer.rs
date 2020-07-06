@@ -558,29 +558,29 @@ impl Buffer {
             Inner::Normal(nb) => match evnt {
                 Md(Mod::Insert(n, pos)) if n > 0 => {
                     self.insert_repeat = n - 1;
-                    if pos == DP::Caret {
-                        mto_home(self, DP::Caret)?;
+                    if pos == DP::TextCol {
+                        mto_line_home(self, DP::TextCol)?;
                     }
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Append(n, pos)) if n > 0 => {
                     self.insert_repeat = n - 1;
                     if pos == DP::End {
-                        mto_end(self)?;
+                        mto_line_end(self, 1, DP::None)?;
                     }
                     mto_right(self, 1, DP::Nobound)?;
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Open(n, DP::Left)) if n > 0 => {
                     self.insert_repeat = n - 1;
-                    mto_home(self, DP::None)?;
+                    mto_line_home(self, DP::None)?;
                     self.cmd_insert_char(NL)?;
                     mto_left(self, 1, DP::Nobound)?;
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Open(n, DP::Right)) if n > 0 => {
                     self.insert_repeat = n - 1;
-                    mto_end(self)?;
+                    mto_line_end(self, 1, DP::None)?;
                     mto_right(self, 1, DP::Nobound)?;
                     self.cmd_insert_char(NL)?;
                     (Inner::Insert(nb.into()), Event::Noop)
@@ -612,8 +612,8 @@ impl Buffer {
             Event::Mt(Mto::Up(n, dp)) => mto_up(self, n, dp)?,
             Event::Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
             Event::Mt(Mto::Col(n)) => mto_column(self, n)?,
-            Event::Mt(Mto::Home(dp)) => mto_home(self, dp)?,
-            Event::Mt(Mto::End) => mto_end(self)?,
+            Event::Mt(Mto::LineHome(dp)) => mto_line_home(self, dp)?,
+            Event::Mt(Mto::LineEnd(n, dp)) => mto_line_end(self, n, dp)?,
             Event::Mt(Mto::Row(n, dp)) => mto_row(self, n, dp)?,
             Event::Mt(Mto::Percent(n)) => mto_percent(self, n)?,
             Event::Mt(Mto::Cursor(n)) => mto_cursor(self, n)?,
@@ -667,8 +667,8 @@ impl Buffer {
             Mt(Mto::Right(n, dp)) => mto_right(self, n, dp)?,
             Mt(Mto::Up(n, dp)) => mto_up(self, n, dp)?,
             Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
-            Mt(Mto::Home(dp)) => mto_home(self, dp)?,
-            Mt(Mto::End) => mto_end(self)?,
+            Mt(Mto::LineHome(dp)) => mto_line_home(self, dp)?,
+            Mt(Mto::LineEnd(n, dp)) => mto_line_end(self, n, dp)?,
             // Handle mode events.
             Esc => {
                 self.repeat()?;
@@ -1082,10 +1082,10 @@ pub fn mto_right(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-pub fn mto_home(buf: &mut Buffer, pos: DP) -> Result<Event> {
+pub fn mto_line_home(buf: &mut Buffer, pos: DP) -> Result<Event> {
     buf.set_cursor(buf.line_home());
     match pos {
-        DP::Caret => {
+        DP::TextCol => {
             buf.skip_whitespace(DP::Right);
         }
         DP::None => (),
@@ -1109,7 +1109,7 @@ pub fn mto_up(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
             };
             buf.set_cursor(cursor);
             match pos {
-                DP::Caret => mto_home(buf, DP::Caret),
+                DP::TextCol => mto_line_home(buf, DP::TextCol),
                 DP::None => Ok(Event::Noop),
                 _ => {
                     err_at!(Fatal, msg: format!("unreachable"))?;
@@ -1134,7 +1134,7 @@ pub fn mto_down(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
             };
             buf.set_cursor(cursor);
             match pos {
-                DP::Caret => mto_home(buf, DP::Caret),
+                DP::TextCol => mto_line_home(buf, DP::TextCol),
                 DP::None => Ok(Event::Noop),
                 _ => {
                     err_at!(Fatal, msg: format!("unreachable"))?;
@@ -1176,11 +1176,11 @@ pub fn mto_percent(buf: &mut Buffer, n: usize) -> Result<Event> {
         mut n_rows if n < 100 => {
             n_rows = n_rows.saturating_sub(1);
             match (((n_rows as f64) * (n as f64)) / (100 as f64)) as usize {
-                n if n < row => mto_up(buf, row - n, DP::Caret),
-                n => mto_down(buf, n - row, DP::Caret),
+                n if n < row => mto_up(buf, row - n, DP::TextCol),
+                n => mto_down(buf, n - row, DP::TextCol),
             }
         }
-        n_rows => mto_down(buf, n_rows.saturating_sub(1), DP::Caret),
+        n_rows => mto_down(buf, n_rows.saturating_sub(1), DP::TextCol),
     }
 }
 
@@ -1191,7 +1191,7 @@ pub fn mto_cursor(buf: &mut Buffer, n: usize) -> Result<Event> {
 }
 
 // TODO: create an option of having sticky cursor.
-pub fn mto_end(buf: &mut Buffer) -> Result<Event> {
+pub fn mto_line_end(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
     let mut cursor = buf.to_cursor();
     {
         let mut iter = buf.chars_at(buf.to_cursor(), DP::Right)?;
@@ -1209,8 +1209,8 @@ pub fn mto_end(buf: &mut Buffer) -> Result<Event> {
 
 pub fn mto_char(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     let (mut n, ch, dp, pos) = match evnt {
-        Mto::CharF(n, Some(ch), dp) => (n, ch, dp, DP::Find),
-        Mto::CharT(n, Some(ch), dp) => (n, ch, dp, DP::Till),
+        Mto::CharF(n, Some(ch), dp) => (n, ch, dp, "find"),
+        Mto::CharT(n, Some(ch), dp) => (n, ch, dp, "till"),
         Mto::None => return Ok(Event::Noop),
         _ => unreachable!(),
     };
@@ -1223,7 +1223,7 @@ pub fn mto_char(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
             loop {
                 match iter.next() {
                     Some((_, NL)) => break cursor,
-                    Some((i, c)) if c == ch && n == 0 && pos == DP::Find => {
+                    Some((i, c)) if c == ch && n == 0 && pos == "find" => {
                         break cursor.saturating_add(i);
                     }
                     Some((i, c)) if c == ch && n == 0 => {
@@ -1239,7 +1239,7 @@ pub fn mto_char(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
             loop {
                 match iter.next() {
                     Some((_, NL)) => break cursor,
-                    Some((i, c)) if c == ch && n == 0 && pos == DP::Find => {
+                    Some((i, c)) if c == ch && n == 0 && pos == "find" => {
                         break cursor.saturating_sub(i + 1);
                     }
                     Some((i, c)) if c == ch && n == 0 => {
