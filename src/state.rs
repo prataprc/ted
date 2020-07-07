@@ -173,6 +173,7 @@ impl State {
             trace!("{} {}", evnt, self.app.to_cursor());
 
             let start = SystemTime::now();
+
             hidecr!()?;
 
             for mut evnt in evnt {

@@ -377,6 +377,10 @@ impl Buffer {
         self.to_change().rope.char_to_line(char_idx)
     }
 
+    fn line(&self, line_idx: usize) -> String {
+        self.to_change().rope.line(line_idx).to_string()
+    }
+
     #[inline]
     fn to_line_home(&self) -> usize {
         let change = self.to_change();
@@ -982,15 +986,37 @@ impl Change {
     }
 }
 
-pub fn mto_left(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+pub fn mto_left(buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
+    use crate::text::Format;
+
     let mut cursor = buf.to_char_cursor();
+    let home = buf.to_line_home();
+    let new_cursor = cursor.saturating_sub(n);
+
     cursor = match dp {
-        DP::LineBound => {
-            let home = buf.to_line_home();
-            let new_cursor = cursor.saturating_sub(n);
-            if_else!(new_cursor > home, new_cursor, home)
+        DP::LineBound if new_cursor >= home => new_cursor,
+        DP::LineBound => home,
+        DP::Nobound if new_cursor >= home => new_cursor,
+        DP::Nobound => {
+            n = n - (cursor - home);
+            let mut iter = (0..buf.char_to_line(cursor)).rev();
+            loop {
+                match iter.next() {
+                    Some(line_idx) => {
+                        let s = buf.line(line_idx);
+                        let m = Format::trim_newline(&s).0.chars().count();
+                        if n == m {
+                            break buf.line_to_char(line_idx);
+                        } else if n < m {
+                            break buf.line_to_char(line_idx) + (m - n);
+                        } else {
+                            ()
+                        }
+                    }
+                    None => break 0,
+                }
+            }
         }
-        DP::Nobound => cursor.saturating_sub(n),
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
     };
 
