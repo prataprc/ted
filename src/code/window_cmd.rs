@@ -134,13 +134,15 @@ impl Window for WindowCmd {
 }
 
 impl Render for WindowCmd {
+    type Buf = Buffer;
+
     #[inline]
     fn as_color_scheme(&self) -> &ColorScheme {
         &self.scheme
     }
 
     #[inline]
-    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+    fn to_span_line(&self, buf: &Self::Buf, a: usize, z: usize) -> Result<Spanline> {
         self.syn.to_span_line(buf, a, z)
     }
 }

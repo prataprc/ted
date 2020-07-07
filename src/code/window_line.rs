@@ -153,13 +153,15 @@ impl Window for WindowLine {
 }
 
 impl Render for WindowLine {
+    type Buf = Buffer;
+
     #[inline]
     fn as_color_scheme(&self) -> &ColorScheme {
         unreachable!()
     }
 
     #[inline]
-    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+    fn to_span_line(&self, buf: &Self::Buf, a: usize, z: usize) -> Result<Spanline> {
         buffer::to_span_line(buf, a, z)
     }
 }

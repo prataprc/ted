@@ -111,7 +111,7 @@ pub struct Buffer {
     pub location: Location,
     /// Mark this buffer read-only, in which case insert ops are not allowed.
     pub read_only: bool,
-    /// File-format for this buffer.
+    /// Text-format for this buffer.
     pub format: text::Format,
 
     // Globally counting buffer number.
@@ -189,18 +189,9 @@ impl Buffer {
 
     pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
         match &mut self.inner {
-            Inner::Normal(val) => {
-                val.set_cursor(cursor);
-            }
-            Inner::Insert(val) => {
-                val.set_cursor(cursor);
-            }
+            Inner::Normal(val) => val.set_cursor(cursor),
+            Inner::Insert(val) => val.set_cursor(cursor),
         };
-        self
-    }
-
-    pub fn set_location(&mut self, loc: Location) -> &mut Self {
-        self.location = loc;
         self
     }
 
@@ -215,20 +206,88 @@ impl Buffer {
     }
 }
 
-impl Buffer {
-    #[inline]
-    fn to_change(&self) -> cell::Ref<Change> {
-        match &self.inner {
-            Inner::Normal(val) => val.to_change(),
-            Inner::Insert(val) => val.to_change(),
+impl WinBuffer for Buffer {
+    fn to_xy_cursor(&self) -> Cursor {
+        self.to_change().to_xy_cursor()
+    }
+
+    fn lines_at<'a>(
+        &'a self,
+        line_idx: usize,
+        dp: DP,
+    ) -> Result<Box<dyn Iterator<Item = String> + 'a>> {
+        let change = self.to_change();
+        let iter = unsafe {
+            let cref: &Change = change.borrow();
+            (cref as *const Change)
+                .as_ref()
+                .unwrap()
+                .rope
+                .lines_at(line_idx)
+        };
+
+        match dp {
+            DP::Right => Ok(Box::new(IterLine {
+                _change: change,
+                iter,
+                reverse: false,
+            })),
+            DP::Left => Ok(Box::new(IterLine {
+                _change: change,
+                iter,
+                reverse: true,
+            })),
+            _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
-    fn to_mut_change(&mut self) -> cell::RefMut<Change> {
-        match &mut self.inner {
-            Inner::Insert(ib) => ib.to_mut_change(),
-            Inner::Normal(nb) => nb.to_mut_change(),
+    fn chars_at<'a>(
+        &'a self,
+        char_idx: usize,
+        dp: DP,
+    ) -> Result<Box<dyn Iterator<Item = char> + 'a>> {
+        let change = self.to_change();
+        let iter = unsafe {
+            let cref: &Change = change.borrow();
+            let r: &Rope = {
+                let c = (cref as *const Change).as_ref().unwrap();
+                c.as_ref()
+            };
+            r.chars_at(char_idx)
+        };
+
+        match dp {
+            DP::Right => Ok(Box::new(IterChar {
+                _change: Some(change),
+                iter,
+                reverse: false,
+            })),
+            DP::Left => Ok(Box::new(IterChar {
+                _change: Some(change),
+                iter,
+                reverse: true,
+            })),
+            _ => err_at!(Fatal, msg: format!("unreachable")),
         }
+    }
+
+    fn line_to_char(&self, line_idx: usize) -> usize {
+        self.to_change().rope.line_to_char(line_idx)
+    }
+
+    fn n_chars(&self) -> usize {
+        let change = &self.to_change();
+        change.rope.len_chars()
+    }
+
+    fn n_lines(&self) -> usize {
+        let change = &self.to_change();
+        change.rope.len_lines()
+    }
+
+    fn len_line(&self, line_idx: usize) -> usize {
+        let change = &self.to_change();
+        change.rope.line(line_idx).len_chars()
     }
 }
 
@@ -280,9 +339,7 @@ impl Buffer {
     pub fn to_location(&self) -> Location {
         self.location.clone()
     }
-}
 
-impl Buffer {
     /// Return the underlying text, if buffer is really large this can be
     /// a costly operation.
     #[inline]
@@ -290,225 +347,41 @@ impl Buffer {
         self.to_change().as_ref().to_string()
     }
 
-    /// Return the cursor position, as character offset, within this buffer.
-    #[inline]
-    pub fn to_cursor(&self) -> usize {
-        self.to_change().to_cursor()
-    }
-
-    /// Like `to_xy_cursor` method, but return only the column offset for the
-    /// cursor-line.
-    pub fn to_col(&self) -> usize {
-        self.to_xy_cursor().col
-    }
-
-    /// Return the number of text lines in this buffer.
-    #[inline]
-    pub fn n_lines(&self) -> usize {
-        let change = self.to_change();
-        change.buf.len_lines()
-    }
-
-    /// For the line identified by `line_idx`, starting from 0, return the
-    /// length of the line. Note that, `0 <= line_idx < n_lines`.
-    #[inline]
-    pub fn line_len(&self, line_idx: usize) -> usize {
-        let change = self.to_change();
-        change.buf.line(line_idx).len_chars()
-    }
-
-    /// Similar to `line_to_char` but for the current cursor line.
-    #[inline]
-    pub fn line_home(&self) -> usize {
-        let change = self.to_change();
-        change
-            .buf
-            .line_to_char(change.buf.char_to_line(self.to_cursor()))
-    }
-
-    #[inline]
-    pub fn char_to_line(&self, char_idx: usize) -> usize {
-        self.to_change().buf.char_to_line(char_idx)
-    }
-
-    /// Return the byte offset for requested `char_idx`, which must be a valid
-    /// character offset within the buffer. [Buffer::to_cursor] is a `char_idx`.
-    /// Note that, `0 <= char_idx < n_chars`.
-    #[inline]
-    pub fn char_to_byte(&self, char_idx: usize) -> usize {
-        self.to_change().buf.char_to_byte(char_idx)
-    }
-
-    /// Return the character under the requested offset `char_idx`.
-    /// Note that `0 <= char_idx < n_chars`.
-    #[inline]
-    pub fn char(&self, char_idx: usize) -> char {
-        let change = self.to_change();
-        change.buf.char(char_idx)
-    }
-
     pub fn byte_to_char(&self, byte_idx: usize) -> usize {
         self.to_change().as_ref().byte_to_char(byte_idx)
     }
 }
 
-impl<'a> WinBuffer<'a> for Buffer {
-    type IterLine = IterLine<'a>;
-    type IterChar = IterChar<'a>;
-
-    fn to_xy_cursor(&self) -> Cursor {
-        self.to_change().to_xy_cursor()
-    }
-
-    fn lines_at(&'a self, line_idx: usize, dp: DP) -> Result<Self::IterLine> {
-        let change = self.to_change();
-        let iter = unsafe {
-            let cref: &Change = change.borrow();
-            (cref as *const Change)
-                .as_ref()
-                .unwrap()
-                .buf
-                .lines_at(line_idx)
-        };
-
-        match dp {
-            DP::Right => Ok(IterLine {
-                _change: change,
-                iter,
-                reverse: false,
-            }),
-            DP::Left => Ok(IterLine {
-                _change: change,
-                iter,
-                reverse: true,
-            }),
-            _ => err_at!(Fatal, msg: format!("unreachable")),
+impl Buffer {
+    #[inline]
+    fn to_change(&self) -> cell::Ref<Change> {
+        match &self.inner {
+            Inner::Normal(val) => val.to_change(),
+            Inner::Insert(val) => val.to_change(),
         }
     }
 
-    fn chars_at(&'a self, char_idx: usize, dp: DP) -> Result<Self::IterChar> {
-        let change = self.to_change();
-        let iter = unsafe {
-            let cref: &Change = change.borrow();
-            let r: &Rope = {
-                let c = (cref as *const Change).as_ref().unwrap();
-                c.as_ref()
-            };
-            r.chars_at(char_idx)
-        };
-
-        match dp {
-            DP::Right => Ok(IterChar {
-                _change: Some(change),
-                iter,
-                reverse: false,
-            }),
-            DP::Left => Ok(IterChar {
-                _change: Some(change),
-                iter,
-                reverse: true,
-            }),
-            _ => err_at!(Fatal, msg: format!("unreachable")),
+    fn to_mut_change(&mut self) -> cell::RefMut<Change> {
+        match &mut self.inner {
+            Inner::Insert(ib) => ib.to_mut_change(),
+            Inner::Normal(nb) => nb.to_mut_change(),
         }
     }
 
-    fn line_to_char(&self, line_idx: usize) -> usize {
-        self.to_change().buf.line_to_char(line_idx)
+    #[inline]
+    fn to_char_cursor(&self) -> usize {
+        self.to_change().to_char_cursor()
     }
 
     fn char_to_line(&self, char_idx: usize) -> usize {
-        self.to_change().buf.char_to_line(char_idx)
-    }
-
-    fn n_chars(&self) -> usize {
-        let change = &self.to_change();
-        change.buf.len_chars()
-    }
-
-    fn n_lines(&self) -> usize {
-        let change = &self.to_change();
-        change.buf.len_lines()
-    }
-
-    fn len_line(&self, line_idx: usize) -> usize {
-        let change = &self.to_change();
-        change.buf.line(line_idx).len_chars()
-    }
-
-    fn is_trailing_newline(&self) -> bool {
-        match self.n_chars() {
-            0 => false,
-            n => self.char(n - 1) == NL,
-        }
-    }
-}
-
-pub fn to_span_line(buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
-    let span: Span = {
-        let iter = buf.chars_at(a, DP::Right)?.take(z - a);
-        String::from_iter(iter).into()
-    };
-    Ok(span.into())
-}
-
-impl Buffer {
-    #[inline]
-    pub fn skip_whitespace(&mut self, dp: DP) -> usize {
-        self.to_mut_change().skip_whitespace(dp)
+        self.to_change().rope.char_to_line(char_idx)
     }
 
     #[inline]
-    pub fn skip_alphanumeric(&mut self, dp: DP) -> usize {
-        self.to_mut_change().skip_alphanumeric(dp)
-    }
-
-    #[inline]
-    pub fn skip_non_whitespace(&mut self, dp: DP) -> usize {
-        self.to_mut_change().skip_non_whitespace(dp)
-    }
-
-    #[inline]
-    pub fn cmd_insert_char(&mut self, ch: char) -> Result<()> {
-        let change = match &mut self.inner {
-            Inner::Normal(nb) => &mut nb.change,
-            Inner::Insert(ib) => &mut ib.change,
-        };
-
-        *change = Change::to_next_change(change);
-        self.to_mut_change().insert_char(ch)
-    }
-
-    #[inline]
-    pub fn cmd_insert(&mut self, char_idx: usize, text: &str) -> Result<()> {
-        let change = match &mut self.inner {
-            Inner::Normal(nb) => &mut nb.change,
-            Inner::Insert(ib) => &mut ib.change,
-        };
-
-        *change = Change::to_next_change(change);
-        self.to_mut_change().insert(char_idx, text)
-    }
-
-    #[inline]
-    pub fn cmd_backspace(&mut self, n: usize) -> Result<()> {
-        let change = match &mut self.inner {
-            Inner::Normal(nb) => &mut nb.change,
-            Inner::Insert(ib) => &mut ib.change,
-        };
-
-        *change = Change::to_next_change(change);
-        self.to_mut_change().backspace(n)
-    }
-
-    #[inline]
-    pub fn cmd_remove_at(&mut self, from: Bound<usize>, to: Bound<usize>) -> Result<()> {
-        let change = match &mut self.inner {
-            Inner::Normal(nb) => &mut nb.change,
-            Inner::Insert(ib) => &mut ib.change,
-        };
-
-        *change = Change::to_next_change(change);
-        self.to_mut_change().remove_at(from, to)
+    fn to_line_home(&self) -> usize {
+        let change = self.to_change();
+        let line_idx = change.rope.char_to_line(self.to_char_cursor());
+        change.rope.line_to_char(line_idx)
     }
 }
 
@@ -517,7 +390,7 @@ impl Buffer {
         let evnt = match self.to_mode() {
             "insert" => self.handle_i_event(evnt),
             "normal" => self.handle_n_event(evnt),
-            _ => err_at!(Fatal, msg: format!("unreachable")),
+            mode => err_at!(Fatal, msg: format!("invalid buffer-mode {}", mode)),
         }?;
 
         Ok(evnt)
@@ -536,17 +409,131 @@ impl Buffer {
             inner @ Inner::Insert(_) => inner,
         };
     }
+
+    #[inline]
+    fn skip_whitespace(&mut self, dp: DP) -> usize {
+        self.to_mut_change().skip_whitespace(dp)
+    }
+
+    #[inline]
+    fn skip_alphanumeric(&mut self, dp: DP) -> usize {
+        self.to_mut_change().skip_alphanumeric(dp)
+    }
+
+    #[inline]
+    fn skip_non_whitespace(&mut self, dp: DP) -> usize {
+        self.to_mut_change().skip_non_whitespace(dp)
+    }
+
+    #[inline]
+    fn cmd_insert_char(&mut self, ch: char) -> Result<()> {
+        let change = match &mut self.inner {
+            Inner::Normal(nb) => &mut nb.change,
+            Inner::Insert(ib) => &mut ib.change,
+        };
+
+        *change = Change::to_next_change(change);
+        self.to_mut_change().insert_char(ch)
+    }
+
+    #[inline]
+    fn cmd_insert(&mut self, char_idx: usize, text: &str) -> Result<()> {
+        let change = match &mut self.inner {
+            Inner::Normal(nb) => &mut nb.change,
+            Inner::Insert(ib) => &mut ib.change,
+        };
+
+        *change = Change::to_next_change(change);
+        self.to_mut_change().insert(char_idx, text)
+    }
+
+    #[inline]
+    fn cmd_backspace(&mut self, n: usize) -> Result<()> {
+        let change = match &mut self.inner {
+            Inner::Normal(nb) => &mut nb.change,
+            Inner::Insert(ib) => &mut ib.change,
+        };
+
+        *change = Change::to_next_change(change);
+        self.to_mut_change().backspace(n)
+    }
+
+    #[inline]
+    fn cmd_remove_at(&mut self, a: Bound<usize>, z: Bound<usize>) -> Result<()> {
+        let change = match &mut self.inner {
+            Inner::Normal(nb) => &mut nb.change,
+            Inner::Insert(ib) => &mut ib.change,
+        };
+
+        *change = Change::to_next_change(change);
+        self.to_mut_change().remove_at(a, z)
+    }
 }
 
 impl Buffer {
-    fn to_insert_n(evnt: Event) -> (Option<usize>, Event) {
+    fn handle_n_event(&mut self, evnt: Event) -> Result<Event> {
+        // try switching to insert mode, if event is insert command.
+        match Self::to_insert_n(evnt.clone()) {
+            Some(0) | None => (),
+            _ => {
+                let evnt = self.ex_n_insert(evnt)?;
+                return self.handle_i_event(evnt);
+            }
+        };
+
+        let evnt = match evnt {
+            Event::Noop => Event::Noop,
+            // motion command - characterwise.
+            Event::Mt(Mto::Left(n, dp)) => mto_left(self, n, dp)?,
+            Event::Mt(Mto::Right(n, dp)) => mto_right(self, n, dp)?,
+            Event::Mt(Mto::LineHome(dp)) => mto_line_home(self, dp)?,
+            Event::Mt(Mto::LineEnd(n, dp)) => mto_line_end(self, n, dp)?,
+            Event::Mt(Mto::Col(n)) => mto_column(self, n)?,
+            Event::Mt(e @ Mto::CharF(_, _, _)) => {
+                self.mto_find_char = e.clone();
+                mto_char(self, e)?
+            }
+            Event::Mt(e @ Mto::CharT(_, _, _)) => {
+                self.mto_find_char = e.clone();
+                mto_char(self, e)?
+            }
+            Event::Mt(Mto::CharR(n, dir)) => {
+                let e = self.mto_find_char.clone();
+                mto_char(self, e.reverse(n, dir)?)?
+            }
+            // motion command - linewise.
+            Event::Mt(Mto::Row(n, dp)) => mto_row(self, n, dp)?,
+            Event::Mt(Mto::Percent(n)) => mto_percent(self, n)?,
+            Event::Mt(Mto::Cursor(n)) => mto_cursor(self, n)?,
+            Event::Mt(Mto::Up(n, dp)) => mto_up(self, n, dp)?,
+            Event::Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
+            Event::Mt(e @ Mto::Word(_, _, _)) => mto_words(self, e)?,
+            Event::Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
+            Event::Mt(e @ Mto::Sentence(_, _)) => mto_sentence(self, e)?,
+            Event::Mt(e @ Mto::Para(_, _)) => mto_para(self, e)?,
+            Event::Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(self, e)?,
+            Event::Mt(e @ Mto::Pattern(_, Some(_), _)) => {
+                self.mto_pattern = e.clone();
+                mto_pattern(self, e)?
+            }
+            Event::Mt(Mto::PatternR(n, dir)) => {
+                let e = self.mto_pattern.clone();
+                mto_pattern(self, e.reverse(n, dir)?)?
+            }
+            evnt => evnt,
+        };
+
+        Ok(evnt)
+    }
+
+    fn to_insert_n(evnt: Event) -> Option<usize> {
         use crate::event::{Event::Md, Mod};
 
         match evnt {
-            Md(Mod::Insert(n, dp)) => (Some(n), Md(Mod::Insert(n, dp))),
-            Md(Mod::Append(n, dp)) => (Some(n), Md(Mod::Append(n, dp))),
-            Md(Mod::Open(n, dp)) => (Some(n), Md(Mod::Open(n, dp))),
-            _ => (None, evnt),
+            Md(Mod::Insert(n, _)) => Some(n),
+            Md(Mod::Append(n, _)) => Some(n),
+            Md(Mod::Open(n, _)) => Some(n),
+            _ => None,
         }
     }
 
@@ -591,60 +578,6 @@ impl Buffer {
         };
 
         self.inner = inner;
-        Ok(evnt)
-    }
-
-    fn handle_n_event(&mut self, evnt: Event) -> Result<Event> {
-        // switch to insert mode.
-        let evnt = match Self::to_insert_n(evnt) {
-            (Some(n), evnt) if n > 0 => {
-                let evnt = self.ex_n_insert(evnt)?;
-                return self.handle_i_event(evnt);
-            }
-            (_, evnt) => evnt,
-        };
-
-        let evnt = match evnt {
-            Event::Noop => Event::Noop,
-            // execute motion command.
-            Event::Mt(Mto::Left(n, dp)) => mto_left(self, n, dp)?,
-            Event::Mt(Mto::Right(n, dp)) => mto_right(self, n, dp)?,
-            Event::Mt(Mto::Up(n, dp)) => mto_up(self, n, dp)?,
-            Event::Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
-            Event::Mt(Mto::Col(n)) => mto_column(self, n)?,
-            Event::Mt(Mto::LineHome(dp)) => mto_line_home(self, dp)?,
-            Event::Mt(Mto::LineEnd(n, dp)) => mto_line_end(self, n, dp)?,
-            Event::Mt(Mto::Row(n, dp)) => mto_row(self, n, dp)?,
-            Event::Mt(Mto::Percent(n)) => mto_percent(self, n)?,
-            Event::Mt(Mto::Cursor(n)) => mto_cursor(self, n)?,
-            Event::Mt(e @ Mto::CharF(_, _, _)) => {
-                self.mto_find_char = e.clone();
-                mto_char(self, e)?
-            }
-            Event::Mt(e @ Mto::CharT(_, _, _)) => {
-                self.mto_find_char = e.clone();
-                mto_char(self, e)?
-            }
-            Event::Mt(Mto::CharR(n, dir)) => {
-                let e = self.mto_find_char.clone();
-                mto_char(self, e.reverse(n, dir)?)?
-            }
-            Event::Mt(e @ Mto::Word(_, _, _)) => mto_words(self, e)?,
-            Event::Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
-            Event::Mt(e @ Mto::Sentence(_, _)) => mto_sentence(self, e)?,
-            Event::Mt(e @ Mto::Para(_, _)) => mto_para(self, e)?,
-            Event::Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(self, e)?,
-            Event::Mt(e @ Mto::Pattern(_, Some(_), _)) => {
-                self.mto_pattern = e.clone();
-                mto_pattern(self, e)?
-            }
-            Event::Mt(Mto::PatternR(n, dir)) => {
-                let e = self.mto_pattern.clone();
-                mto_pattern(self, e.reverse(n, dir)?)?
-            }
-            evnt => evnt,
-        };
-
         Ok(evnt)
     }
 
@@ -694,7 +627,7 @@ impl Buffer {
                 Event::Noop
             }
             Delete(_) => {
-                let from = Bound::Included(self.to_cursor());
+                let from = Bound::Included(self.to_char_cursor());
                 let to = from.clone();
                 self.cmd_remove_at(from, to)?;
                 Event::Noop
@@ -711,7 +644,8 @@ impl Buffer {
         let (last_inserts, insert_repeat) = {
             let evnts: Vec<Event> = self.last_inserts.drain(..).collect();
             let valid = evnts.iter().all(|evnt| match evnt {
-                Char(_, _) | Enter(_) | Tab(_) | Backspace(_) | Delete(_) => true,
+                Backspace(_) | Delete(_) => true,
+                Char(_, _) | Enter(_) | Tab(_) => true,
                 _ => false,
             });
             if valid {
@@ -759,9 +693,8 @@ impl NormalBuffer {
         nb
     }
 
-    fn set_cursor(&mut self, cursor: usize) -> &mut Self {
+    fn set_cursor(&mut self, cursor: usize) {
         self.to_mut_change().set_cursor(cursor);
-        self
     }
 }
 
@@ -795,9 +728,8 @@ impl Default for InsertBuffer {
 }
 
 impl InsertBuffer {
-    fn set_cursor(&mut self, cursor: usize) -> &mut Self {
-        self.to_mut_change().set_cursor(cursor);
-        self
+    fn set_cursor(&mut self, cursor: usize) {
+        self.to_mut_change().set_cursor(cursor)
     }
 }
 
@@ -813,7 +745,7 @@ impl InsertBuffer {
 
 #[derive(Clone)]
 struct Change {
-    buf: Rope,
+    rope: Rope,
     parent: Option<rc::Weak<RefCell<Change>>>,
     children: Vec<Rc<RefCell<Change>>>,
     cursor: usize,
@@ -822,7 +754,7 @@ struct Change {
 impl Default for Change {
     fn default() -> Change {
         Change {
-            buf: Rope::from_reader(io::empty()).unwrap(),
+            rope: Rope::from_reader(io::empty()).unwrap(),
             parent: None,
             children: Default::default(),
             cursor: 0,
@@ -831,9 +763,9 @@ impl Default for Change {
 }
 
 impl From<Rope> for Change {
-    fn from(buf: Rope) -> Change {
+    fn from(rope: Rope) -> Change {
         Change {
-            buf,
+            rope,
             parent: None,
             children: Default::default(),
             cursor: 0,
@@ -843,20 +775,20 @@ impl From<Rope> for Change {
 
 impl AsRef<Rope> for Change {
     fn as_ref(&self) -> &Rope {
-        &self.buf
+        &self.rope
     }
 }
 
 impl AsMut<Rope> for Change {
     fn as_mut(&mut self) -> &mut Rope {
-        &mut self.buf
+        &mut self.rope
     }
 }
 
 impl Change {
-    fn start(buf: Rope) -> Rc<RefCell<Change>> {
+    fn start(rope: Rope) -> Rc<RefCell<Change>> {
         Rc::new(RefCell::new(Change {
-            buf,
+            rope,
             parent: None,
             children: Default::default(),
             cursor: 0,
@@ -867,7 +799,7 @@ impl Change {
         let next = {
             let prev_change: &Change = &prev.as_ref().borrow();
             Rc::new(RefCell::new(Change {
-                buf: prev_change.as_ref().clone(),
+                rope: prev_change.as_ref().clone(),
                 parent: None,
                 children: Default::default(),
                 cursor: prev_change.cursor,
@@ -880,38 +812,37 @@ impl Change {
         next
     }
 
-    fn to_cursor(&self) -> usize {
+    fn to_char_cursor(&self) -> usize {
         self.cursor
     }
 
     fn to_xy_cursor(&self) -> Cursor {
-        let row_at = self.buf.char_to_line(self.cursor);
-        let col_at = self.cursor - self.buf.line_to_char(row_at);
+        let row_at = self.rope.char_to_line(self.cursor);
+        let col_at = self.cursor - self.rope.line_to_char(row_at);
         (col_at, row_at).into()
     }
 }
 
 impl Change {
-    fn set_cursor(&mut self, cursor: usize) -> &mut Self {
+    fn set_cursor(&mut self, cursor: usize) {
         self.cursor = cursor;
-        self
     }
 
     fn insert_char(&mut self, ch: char) -> Result<()> {
-        self.buf.insert_char(self.cursor, ch);
+        self.rope.insert_char(self.cursor, ch);
         self.cursor += 1;
         Ok(())
     }
 
     fn insert(&mut self, char_idx: usize, text: &str) -> Result<()> {
-        self.buf.insert(char_idx, text);
+        self.rope.insert(char_idx, text);
         Ok(())
     }
 
     fn backspace(&mut self, n: usize) -> Result<()> {
         if self.cursor > 0 {
             let cursor = self.cursor.saturating_sub(n);
-            self.buf.remove(cursor..self.cursor);
+            self.rope.remove(cursor..self.cursor);
         }
         Ok(())
     }
@@ -919,7 +850,7 @@ impl Change {
     fn remove_at(&mut self, from: Bound<usize>, to: Bound<usize>) -> Result<()> {
         use std::ops::Bound::{Excluded, Included, Unbounded};
 
-        let n = self.buf.len_chars();
+        let n = self.rope.len_chars();
         let from = match from {
             Included(from) => cmp::min(from, n.saturating_sub(1)),
             Excluded(from) => cmp::min(from.saturating_add(1), n),
@@ -931,7 +862,7 @@ impl Change {
             Unbounded => n,
         };
         if from < to {
-            self.buf.remove(from..to);
+            self.rope.remove(from..to);
         }
         Ok(())
     }
@@ -1038,7 +969,7 @@ impl Change {
 
 impl Change {
     fn iter<'a>(&'a self, dp: DP) -> Box<dyn Iterator<Item = char> + 'a> {
-        let chars = self.buf.chars_at(self.cursor);
+        let chars = self.rope.chars_at(self.cursor);
         match dp {
             DP::Left => Box::new(IterChar {
                 _change: None,
@@ -1052,23 +983,23 @@ impl Change {
 }
 
 pub fn mto_left(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
-    let mut cursor = buf.to_cursor();
+    let mut cursor = buf.to_char_cursor();
     cursor = match dp {
         DP::LineBound => {
-            let home = buf.line_home();
+            let home = buf.to_line_home();
             let new_cursor = cursor.saturating_sub(n);
-            Ok(if_else!(new_cursor > home, new_cursor, home))
+            if_else!(new_cursor > home, new_cursor, home)
         }
-        DP::Nobound => Ok(cursor.saturating_sub(n)),
-        _ => err_at!(Fatal, msg: format!("unreachable")),
-    }?;
+        DP::Nobound => cursor.saturating_sub(n),
+        dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
+    };
 
     buf.set_cursor(cursor);
     Ok(Event::Noop)
 }
 
 pub fn mto_right(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
-    let mut cursor = buf.to_cursor();
+    let mut cursor = buf.to_char_cursor();
     for ch in buf.chars_at(cursor, DP::Right)?.take(n) {
         match dp {
             DP::LineBound if ch == NL => break,
@@ -1083,7 +1014,7 @@ pub fn mto_right(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
 }
 
 pub fn mto_line_home(buf: &mut Buffer, pos: DP) -> Result<Event> {
-    buf.set_cursor(buf.line_home());
+    buf.set_cursor(buf.to_line_home());
     match pos {
         DP::TextCol => {
             buf.skip_whitespace(DP::Right);
@@ -1095,16 +1026,14 @@ pub fn mto_line_home(buf: &mut Buffer, pos: DP) -> Result<Event> {
 }
 
 pub fn mto_up(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
-    let mut cursor = buf.to_cursor();
+    let mut cursor = buf.to_char_cursor();
     match buf.char_to_line(cursor) {
         0 => Ok(Event::Noop),
         row => {
             let row = row.saturating_sub(n);
             cursor = {
-                let col = {
-                    let n_chars = buf.line_len(row);
-                    cmp::min(n_chars.saturating_sub(2), buf.to_col())
-                };
+                let n_chars = buf.len_line(row).saturating_sub(2);
+                let col = cmp::min(n_chars, buf.to_xy_cursor().col);
                 buf.line_to_char(row) + col
             };
             buf.set_cursor(cursor);
@@ -1121,15 +1050,15 @@ pub fn mto_up(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
 }
 
 pub fn mto_down(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
-    let row = buf.char_to_line(buf.to_cursor());
+    let row = buf.char_to_line(buf.to_char_cursor());
     match buf.n_lines() {
         0 => Ok(Event::Noop),
         n_rows if row == n_rows => Ok(Event::Noop),
         n_rows => {
             let row = limite!(row.saturating_add(n), n_rows);
             let cursor = {
-                let n_chars = buf.line_len(row);
-                let col = cmp::min(n_chars.saturating_sub(2), buf.to_col());
+                let n_chars = buf.len_line(row).saturating_sub(2);
+                let col = cmp::min(n_chars, buf.to_xy_cursor().col);
                 buf.line_to_char(row) + col
             };
             buf.set_cursor(cursor);
@@ -1148,17 +1077,17 @@ pub fn mto_down(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
 pub fn mto_column(buf: &mut Buffer, n: usize) -> Result<Event> {
     let n = {
         let m = {
-            let cursor = buf.to_cursor();
-            buf.line_len(buf.char_to_line(cursor)).saturating_sub(1)
+            let cursor = buf.to_char_cursor();
+            buf.len_line(buf.char_to_line(cursor)).saturating_sub(1)
         };
         cmp::min(m, n).saturating_sub(1)
     };
-    buf.set_cursor(buf.line_home() + n);
+    buf.set_cursor(buf.to_line_home() + n);
     Ok(Event::Noop)
 }
 
 pub fn mto_row(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
-    let row = buf.char_to_line(buf.to_cursor());
+    let row = buf.char_to_line(buf.to_char_cursor());
     let n = n.saturating_sub(1);
     match buf.n_lines() {
         0 => Ok(Event::Noop),
@@ -1170,7 +1099,7 @@ pub fn mto_row(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
 }
 
 pub fn mto_percent(buf: &mut Buffer, n: usize) -> Result<Event> {
-    let row = buf.char_to_line(buf.to_cursor());
+    let row = buf.char_to_line(buf.to_char_cursor());
     match buf.n_lines() {
         0 => Ok(Event::Noop),
         mut n_rows if n < 100 => {
@@ -1185,16 +1114,16 @@ pub fn mto_percent(buf: &mut Buffer, n: usize) -> Result<Event> {
 }
 
 pub fn mto_cursor(buf: &mut Buffer, n: usize) -> Result<Event> {
-    let cursor = buf.to_cursor();
+    let cursor = buf.to_char_cursor();
     buf.set_cursor(limite!(cursor + n, buf.n_chars()));
     Ok(Event::Noop)
 }
 
 // TODO: create an option of having sticky cursor.
 pub fn mto_line_end(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
-    let mut cursor = buf.to_cursor();
+    let mut cursor = buf.to_char_cursor();
     {
-        let mut iter = buf.chars_at(buf.to_cursor(), DP::Right)?;
+        let mut iter = buf.chars_at(buf.to_char_cursor(), DP::Right)?;
         loop {
             match iter.next() {
                 Some(NL) => break (),
@@ -1215,8 +1144,8 @@ pub fn mto_char(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
         _ => unreachable!(),
     };
 
-    let mut cursor = buf.to_cursor();
-    let home = buf.line_home();
+    let mut cursor = buf.to_char_cursor();
+    let home = buf.to_line_home();
     cursor = match dp {
         DP::Right => {
             let mut iter = buf.chars_at(cursor, DP::Right)?.enumerate();
@@ -1360,7 +1289,7 @@ pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
 pub fn mto_sentence(buf: &mut Buffer, e: Mto) -> Result<Event> {
     let is_ws = |ch: char| ch.is_whitespace();
 
-    let mut cursor = buf.to_cursor();
+    let mut cursor = buf.to_char_cursor();
     let mut pch: Option<char> = None;
     cursor = match e {
         Mto::Sentence(mut n, DP::Left) => {
@@ -1425,7 +1354,7 @@ pub fn mto_sentence(buf: &mut Buffer, e: Mto) -> Result<Event> {
 }
 
 pub fn mto_para(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
-    let mut cursor = buf.to_cursor();
+    let mut cursor = buf.to_char_cursor();
     let row = buf.char_to_line(cursor);
     cursor = match evnt {
         Mto::Para(mut n, DP::Left) => {
@@ -1471,7 +1400,7 @@ pub fn mto_para(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
 
 pub fn mto_bracket(buf: &mut Buffer, e: Mto) -> Result<Event> {
     let mut m = 0;
-    let mut cursor = buf.to_cursor();
+    let mut cursor = buf.to_char_cursor();
     match e {
         Mto::Bracket(mut n, yin, yan, DP::Left) => {
             let mut iter = buf.chars_at(cursor, DP::Left)?.enumerate();
@@ -1516,7 +1445,10 @@ pub fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
 
     let iter = {
         let search: Search = patt.as_str().try_into()?;
-        let byte_off = buf.char_to_byte(buf.to_cursor());
+        let byte_off = {
+            let char_idx = buf.to_char_cursor();
+            buf.to_change().rope.char_to_byte(char_idx)
+        };
         match dp {
             DP::Right => search.find_fwd(&buf.to_string(), byte_off),
             DP::Left => search.find_rev(&buf.to_string(), byte_off),
@@ -1529,11 +1461,11 @@ pub fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     let cursor = match dp {
         DP::Left => match iter.skip(n).next() {
             Some((s, _)) => Ok(s),
-            None => Ok(buf.to_cursor()),
+            None => Ok(buf.to_char_cursor()),
         },
         DP::Right => match iter.skip(n).next() {
             Some((s, _)) => Ok(s),
-            None => Ok(buf.to_cursor()),
+            None => Ok(buf.to_char_cursor()),
         },
         _ => err_at!(Fatal, msg: format!("unreachable")),
     }?;
@@ -1630,6 +1562,14 @@ impl Search {
             }
         }
     }
+}
+
+pub fn to_span_line(buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+    let span: Span = {
+        let iter = buf.chars_at(a, DP::Right)?.take(z - a);
+        String::from_iter(iter).into()
+    };
+    Ok(span.into())
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@ use crossterm;
 use std::{fmt, ops::Add, result};
 
 use crate::{
-    buffer::{self, Buffer},
+    buffer::{self},
     colors::ColorScheme,
     event::Event,
     event::DP,
@@ -42,10 +42,7 @@ pub trait Window {
 
 /// This is a simple abstraction trait for [buffer::Buffer]. Gives an idea
 /// on window's api dependency with `Buffer`.
-pub trait WinBuffer<'a> {
-    type IterLine: Iterator<Item = String>;
-    type IterChar: Iterator<Item = char>;
-
+pub trait WinBuffer {
     /// Return the cursor position, as (col, row) starting from (0,), within
     /// this buffer.
     fn to_xy_cursor(&self) -> buffer::Cursor;
@@ -56,7 +53,11 @@ pub trait WinBuffer<'a> {
     /// the cursor's current line. In reverse direction, iteration will start
     /// from the one before cursor's current line. Note that,
     /// `0 <= line_idx < n_lines`.
-    fn lines_at(&'a self, line_idx: usize, dp: DP) -> Result<Self::IterLine>;
+    fn lines_at<'a>(
+        &'a self,
+        line_idx: usize,
+        dp: DP,
+    ) -> Result<Box<dyn Iterator<Item = String> + 'a>>;
 
     /// Return an iterator starting from char_idx. `dp` can either be
     /// [DP::Right] or [DP::Left] for either forward iteration or reverse
@@ -64,16 +65,15 @@ pub trait WinBuffer<'a> {
     /// the cursor position. In reverse direction, iteration will start
     /// from the one before cursor position. Note that,
     /// `0 <= char_idx < n_chars`.
-    fn chars_at(&'a self, char_idx: usize, dp: DP) -> Result<Self::IterChar>;
+    fn chars_at<'a>(
+        &'a self,
+        char_idx: usize,
+        dp: DP,
+    ) -> Result<Box<dyn Iterator<Item = char> + 'a>>;
 
     /// Return the character offset of first character for the requested
     /// `line_idx`. Note that, `0 <= line_idx < n_lines`.
     fn line_to_char(&self, line_idx: usize) -> usize;
-
-    /// Return the line offset for requested `char_idx`, which must be a valid
-    /// character offset within the buffer. [Buffer::to_cursor] is a `char_idx`.
-    /// Note that, `0 <= char_idx < n_chars`.
-    fn char_to_line(&self, char_idx: usize) -> usize;
 
     /// Return the number of characters in the buffer.
     fn n_chars(&self) -> usize;
@@ -83,16 +83,15 @@ pub trait WinBuffer<'a> {
 
     /// Return the number of characters in line `line_idx`, starts from ZERO.
     fn len_line(&self, line_idx: usize) -> usize;
-
-    /// Return whether the last character in buffer is NEWLINE.
-    fn is_trailing_newline(&self) -> bool;
 }
 
 /// Render trait for window objects.
 pub trait Render {
+    type Buf;
+
     fn as_color_scheme(&self) -> &ColorScheme;
 
-    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline>;
+    fn to_span_line(&self, buf: &Self::Buf, a: usize, z: usize) -> Result<Spanline>;
 }
 
 // Terminal coordinates, describes the four corners of a window.

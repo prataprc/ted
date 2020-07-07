@@ -265,19 +265,19 @@ impl From<Event> for Vec<Event> {
 pub enum DP {
     /// Left-Direction to move/operate.
     Left,
-    /// Right-Direction ro move/operate.
+    /// Right-Direction to move/operate.
     Right,
     Start,
     End,
+    /// Motion/operation bound by end-of-line.
     LineBound,
+    /// Motion/operation not-bound by end-of-line.
     Nobound,
     /// Non-Blank column in the line, as in, first non-blank / last non-blank.
     TextCol,
     /// Cursor sticks to current-col, for subsequent linewise motion/operation,
     /// until next characterwise motion/operation.
     StickyCol,
-    /// Specifies the screen-col for characterwise operation, as apposed
-    /// to text-col within the buffer-line.
     None,
 }
 
@@ -360,23 +360,25 @@ impl fmt::Display for Mod {
 /// Event argument specify the cursor motion.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Mto {
-    Left(usize, DP),                    // (n, LineBound/Nobound)
-    Right(usize, DP),                   // (n, LineBound/Nobound)
+    // characterwise motion
+    Left(usize, DP),                // (n, LineBound/Nobound)
+    Right(usize, DP),               // (n, LineBound/Nobound)
+    LineHome(DP),                   // TextCol/StickyCol/None
+    LineEnd(usize, DP),             // (n, TextCol/StickyCol/None)
+    LineMiddle(usize, DP),          // (n-percent, None)
+    ScreenHome(DP),                 // TextCol/None
+    ScreenEnd(usize, DP),           // (n, TextCol/None)
+    ScreenMiddle(DP),               // None
+    Col(usize),                     // (n,)
+    CharF(usize, Option<char>, DP), // (n, ch, Left/Right)
+    CharT(usize, Option<char>, DP), // (n, ch, Left/Right)
+    CharR(usize, DP),               // repeat CharF/CharT (n, Left/Right)
+    // linewise motion.
     Up(usize, DP),                      // (n, TextCol/None)
     Down(usize, DP),                    // (n, TextCol/None)
-    Col(usize),                         // (n,)
-    LineHome(DP),                       // TextCol/StickyCol/None
-    LineEnd(usize, DP),                 // (n, TextCol/StickyCol/None)
-    LineMiddle(usize, DP),              // (n-percent, None)
-    ScreenHome(DP),                     // TextCol/None
-    ScreenEnd(usize, DP),               // (n, TextCol/None)
-    ScreenMiddle(DP),                   // None
     Row(usize, DP),                     // (n, TextCol/None)
     Percent(usize),                     // (n,)
     Cursor(usize),                      // (n,)
-    CharF(usize, Option<char>, DP),     // (n, ch, Left/Right)
-    CharT(usize, Option<char>, DP),     // (n, ch, Left/Right)
-    CharR(usize, DP),                   // repeat CharF/CharT (n, Left/Right)
     Word(usize, DP, DP),                // (n, Left/Right, Start/End)
     WWord(usize, DP, DP),               // (n, Left/Right, Start/End)
     Sentence(usize, DP),                // (n, Left/Right)

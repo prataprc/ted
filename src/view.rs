@@ -4,7 +4,7 @@ use log::{debug, trace};
 use std::{cmp, convert::TryInto, fmt, iter::FromIterator, result};
 
 use crate::{
-    buffer::{self, Buffer},
+    buffer::{self},
     col_nu::{ColKind, ColNu},
     colors::{ColorScheme, Highlight},
     term::Span,
@@ -71,9 +71,10 @@ impl Wrap {
         Cursor { row: 0, col }
     }
 
-    pub fn render<R>(mut self, buf: &Buffer, r: &R) -> Result<Cursor>
+    pub fn render<R>(mut self, buf: &R::Buf, r: &R) -> Result<Cursor>
     where
         R: Render,
+        <R as Render>::Buf: WinBuffer,
     {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
@@ -82,8 +83,9 @@ impl Wrap {
         Ok(self.refresh(buf, r)?.account_nu(nu_wth))
     }
 
-    pub fn scroll<R>(mut self, buf: &Buffer, r: &R) -> Result<Cursor>
+    pub fn scroll<R>(mut self, buf: &R::Buf, r: &R) -> Result<Cursor>
     where
+        <R as Render>::Buf: WinBuffer,
         R: Render,
     {
         let nu_wth = self.nu.to_width();
@@ -95,7 +97,10 @@ impl Wrap {
         Ok(self.refresh(buf, r)?.account_nu(nu_wth))
     }
 
-    fn shift_cursor(&self, buf: &Buffer) -> Result<Self> {
+    fn shift_cursor<B>(&self, buf: &B) -> Result<Self>
+    where
+        B: WinBuffer,
+    {
         let view = {
             let mut view = WrapView::new(self.coord, self.cursor, self.obc_xy);
             view.set_scroll_off(self.scroll_off)
@@ -116,9 +121,10 @@ impl Wrap {
         })
     }
 
-    fn refresh<R>(self, buf: &Buffer, r: &R) -> Result<Cursor>
+    fn refresh<R>(self, buf: &R::Buf, r: &R) -> Result<Cursor>
     where
         R: Render,
+        <R as Render>::Buf: WinBuffer,
     {
         let scheme = r.as_color_scheme();
         let nbc_xy = buf.to_xy_cursor();
@@ -230,9 +236,10 @@ impl NoWrap {
         Cursor { row: 0, col }
     }
 
-    pub fn render<R>(mut self, buf: &Buffer, r: &R) -> Result<Cursor>
+    pub fn render<R>(mut self, buf: &R::Buf, r: &R) -> Result<Cursor>
     where
         R: Render,
+        <R as Render>::Buf: WinBuffer,
     {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
@@ -241,9 +248,10 @@ impl NoWrap {
         Ok(self.refresh(buf, r)?.account_nu(nu_wth))
     }
 
-    pub fn scroll<R>(mut self, buf: &Buffer, r: &R) -> Result<Cursor>
+    pub fn scroll<R>(mut self, buf: &R::Buf, r: &R) -> Result<Cursor>
     where
         R: Render,
+        <R as Render>::Buf: WinBuffer,
     {
         let nu_wth = self.nu.to_width();
         self.discount_nu(nu_wth);
@@ -254,7 +262,10 @@ impl NoWrap {
         Ok(self.refresh(buf, r)?.account_nu(nu_wth))
     }
 
-    fn shift_cursor(&self, buf: &Buffer) -> Result<Self> {
+    fn shift_cursor<B>(&self, buf: &B) -> Result<Self>
+    where
+        B: WinBuffer,
+    {
         let scroll_off = self.scroll_off; // accounting for scroll-offset.
 
         let (r_min, r_max) = if self.coord.hgt < (scroll_off * 2) {
@@ -311,9 +322,10 @@ impl NoWrap {
         })
     }
 
-    fn refresh<R>(self, buf: &Buffer, r: &R) -> Result<Cursor>
+    fn refresh<R>(self, buf: &R::Buf, r: &R) -> Result<Cursor>
     where
         R: Render,
+        <R as Render>::Buf: WinBuffer,
     {
         let scheme = r.as_color_scheme();
         let nbc_xy = buf.to_xy_cursor();
@@ -434,7 +446,10 @@ impl WrapView {
         self
     }
 
-    fn into_new_view(mut self, buf: &Buffer) -> Result<Self> {
+    fn into_new_view<B>(mut self, buf: &B) -> Result<Self>
+    where
+        B: WinBuffer,
+    {
         let nbc_xy = buf.to_xy_cursor();
 
         match self.to_cursor(buf, self.to_view_rows(buf)?)? {
@@ -477,7 +492,10 @@ impl WrapView {
 
 impl WrapView {
     // return (ColKind, buffer_cursor, len)
-    fn to_view_rows(&self, buf: &Buffer) -> Result<Vec<(ColKind, usize, u16)>> {
+    fn to_view_rows<B>(&self, buf: &B) -> Result<Vec<(ColKind, usize, u16)>>
+    where
+        B: WinBuffer,
+    {
         use crate::event::DP;
         use std::iter::repeat;
 
@@ -559,11 +577,14 @@ impl WrapView {
         Ok(rows)
     }
 
-    fn to_cursor(
+    fn to_cursor<B>(
         &self,
-        buf: &Buffer,
+        buf: &B,
         mut rows: Vec<(ColKind, usize, u16)>, // (ColKind, bc, n)
-    ) -> Result<Option<Cursor>> {
+    ) -> Result<Option<Cursor>>
+    where
+        B: WinBuffer,
+    {
         let rows = {
             // crop the rows for scroll offset.
             let so = self.scroll_off as usize;
