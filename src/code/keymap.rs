@@ -1,6 +1,7 @@
 use crate::{
     //
     buffer::Buffer,
+    code,
     code::keymap_cmd::KeyCmd,
     code::keymap_edit::KeyEdit,
     code::keymap_less::KeyLess,
@@ -9,7 +10,7 @@ use crate::{
 };
 
 trait Keymapper {
-    fn fold(&mut self, buf: &Buffer, evnt: Event) -> Result<Event>;
+    fn fold(&mut self, _: &code::Code, buf: &Buffer, evnt: Event) -> Result<Event>;
 }
 
 #[derive(Clone)]
@@ -41,11 +42,11 @@ impl Keymap {
 }
 
 impl Keymap {
-    pub fn fold(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
+    pub fn fold(&mut self, app: &code::Code, buf: &Buffer, evnt: Event) -> Result<Event> {
         match self {
-            Keymap::Edit(km) => km.fold(buf, evnt),
-            Keymap::Cmd(km) => km.fold(buf, evnt),
-            Keymap::Less(km) => km.fold(buf, evnt),
+            Keymap::Edit(km) => km.fold(app, buf, evnt),
+            Keymap::Cmd(km) => km.fold(app, buf, evnt),
+            Keymap::Less(km) => km.fold(app, buf, evnt),
             Keymap::None => unreachable!(),
         }
     }

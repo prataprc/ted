@@ -74,12 +74,12 @@ impl Window for WindowLess {
         0
     }
 
-    fn on_event(&mut self, _: &mut code::Code, evnt: Event) -> Result<Event> {
+    fn on_event(&mut self, app: &mut code::Code, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Noop),
             evnt => {
                 let mut km = mem::replace(&mut self.keymap, Default::default());
-                let evnt = km.fold(&self.buffer, evnt)?;
+                let evnt = km.fold(app, &self.buffer, evnt)?;
                 let evnt = self.buffer.on_event(evnt)?;
                 self.keymap = km;
                 Ok(evnt)

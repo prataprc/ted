@@ -132,7 +132,7 @@ impl Window for WindowEdit {
 
         let evnt = match app.take_buffer(&self.curr_buf_id) {
             Some(mut buf) => {
-                let mut evnt = self.keymap.fold(&mut buf, evnt)?;
+                let mut evnt = self.keymap.fold(app, &mut buf, evnt)?;
                 evnt = buf.on_event(evnt)?;
                 // after handling the event for buffer, handle for its file-type.
                 evnt = self.syn.on_edit(&buf, evnt)?;

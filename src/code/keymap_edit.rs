@@ -5,6 +5,7 @@ use std::mem;
 
 use crate::{
     buffer::Buffer,
+    code,
     event::{Event, Mod, Mto, DP},
     Error, Result,
 };
@@ -22,7 +23,7 @@ pub struct KeyEdit {
 }
 
 impl KeyEdit {
-    pub fn fold(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
+    pub fn fold(&mut self, _: &code::Code, buf: &Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
             "insert" => self.insert_fold(evnt),
             "normal" => self.normal_fold(evnt),
@@ -138,7 +139,7 @@ impl KeyEdit {
                 Char('T', _) => (T(n, DP::Left), noop),
                 Char(';', _) => (noop, Mt(Mto::CharR(n, DP::Right))),
                 Char(',', _) => (noop, Mt(Mto::CharR(n, DP::Left))),
-
+                // motion command - linewise
                 Enter(_) => (noop, Mt(Mto::Down(n, DP::TextCol))),
                 Char('-', _) => (noop, Mt(Mto::Up(n, DP::TextCol))),
                 Char('j', _) => (noop, Mt(Mto::Up(n, DP::None))),

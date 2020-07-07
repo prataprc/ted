@@ -351,10 +351,7 @@ impl Application for Code {
         let inner = mem::replace(&mut self.inner, Default::default());
         let (mut inner, evnt) = match (inner, evnt) {
             (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
-                let mut val = {
-                    let coord = self.coord;
-                    self.new_window_cmd(coord, edit)
-                };
+                let mut val = self.new_window_cmd(self.coord, edit);
                 let evnt = val.wcmd.on_event(self, Event::Char(':', m))?;
                 (Inner::Command(val), evnt)
             }

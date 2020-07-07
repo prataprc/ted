@@ -95,7 +95,7 @@ impl Window for WindowCmd {
         use crate::code::cmd::Command;
 
         let mut buf = mem::replace(&mut self.buffer, Default::default());
-        evnt = match self.keymap.fold(&mut buf, evnt)? {
+        evnt = match self.keymap.fold(app, &mut buf, evnt)? {
             Event::Enter(_) => {
                 let line = buf.to_string();
                 let syn = mem::replace(&mut self.syn, Default::default());
