@@ -260,6 +260,7 @@ impl From<Event> for Vec<Event> {
         }
     }
 }
+
 /// Event argument, specify the direction or position.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum DP {

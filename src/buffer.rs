@@ -105,6 +105,19 @@ impl Ord for Cursor {
     }
 }
 
+#[derive(Clone, Copy)]
+enum StickyCol {
+    Home,
+    End,
+    None,
+}
+
+impl Default for StickyCol {
+    fn default() -> Self {
+        StickyCol::None
+    }
+}
+
 // all bits and pieces of content is managed by buffer.
 pub struct Buffer {
     /// Source for this buffer, typically a file from local disk.
@@ -119,6 +132,8 @@ pub struct Buffer {
     // Buffer states
     inner: Inner,
 
+    // sticky state for cursor column.
+    sticky_col: StickyCol,
     // Last search command applied on this buffer.
     mto_pattern: Mto,
     // Last find character command (within the line) applied on this buffer.
@@ -149,6 +164,8 @@ impl Default for Buffer {
             format: Default::default(),
             num: Default::default(),
             inner: Default::default(),
+
+            sticky_col: Default::default(),
             mto_pattern: Default::default(),
             mto_find_char: Default::default(),
             insert_repeat: Default::default(),
@@ -174,6 +191,7 @@ impl Buffer {
             inner: Inner::Normal(NormalBuffer::new(buf)),
             format: Default::default(),
 
+            sticky_col: Default::default(),
             mto_pattern: Default::default(),
             mto_find_char: Default::default(),
             insert_repeat: Default::default(),
@@ -410,11 +428,6 @@ impl Buffer {
             Inner::Normal(nb) => Inner::Insert(nb.into()),
             inner @ Inner::Insert(_) => inner,
         };
-    }
-
-    #[inline]
-    fn skip_whitespace(&mut self, dp: DP) -> usize {
-        self.to_mut_change().skip_whitespace(dp)
     }
 
     #[inline]
@@ -871,26 +884,24 @@ impl Change {
 }
 
 impl Change {
-    fn skip_whitespace(&mut self, dp: DP) -> usize {
-        let mut n = 0;
-        let n = {
-            let mut iter = self.iter(dp);
-            loop {
-                match iter.next() {
-                    Some(ch) if ch.is_whitespace() => n += 1,
-                    Some(_) => break n,
-                    None => break n,
-                }
+    fn skip_whitespace(&mut self, dp: DP) -> Result<usize> {
+        let skips: Vec<(usize, char)> = {
+            let iter = self.iter(dp).enumerate();
+            iter.take_while(|(_, ch)| ch.is_whitespace()).collect()
+        };
+        let n = match skips.last() {
+            Some((n, _)) => *n + 1,
+            None => 0,
+        };
+        self.cursor = match dp {
+            DP::Left => self.cursor.saturating_sub(n),
+            DP::Right => {
+                let m = self.rope.len_chars().saturating_sub(1);
+                cmp::min(self.cursor + n, m)
             }
+            dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
         };
-
-        self.cursor = if dp == DP::Right {
-            self.cursor + n
-        } else {
-            self.cursor - n
-        };
-
-        n
+        Ok(n)
     }
 
     fn skip_non_whitespace(&mut self, dp: DP) -> usize {
@@ -1070,11 +1081,38 @@ pub fn mto_line_home(buf: &mut Buffer, pos: DP) -> Result<Event> {
     buf.set_cursor(buf.to_line_home());
     match pos {
         DP::TextCol => {
-            buf.skip_whitespace(DP::Right);
+            buf.to_mut_change().skip_whitespace(DP::Right)?;
+        }
+        DP::StickyCol => {
+            buf.sticky_col = StickyCol::Home;
         }
         DP::None => (),
-        _ => err_at!(Fatal, msg: format!("unreachable"))?,
+        dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
     }
+    Ok(Event::Noop)
+}
+
+pub fn mto_line_end(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+    use crate::text::Format;
+
+    let cursor = buf.to_char_cursor();
+    let n = {
+        let s = buf.line(buf.char_to_line(cursor));
+        Format::trim_newline(&s).0.chars().count()
+    };
+    buf.set_cursor(cursor + n);
+
+    match dp {
+        DP::TextCol => {
+            buf.to_mut_change().skip_whitespace(DP::Left)?;
+        }
+        DP::StickyCol => {
+            buf.sticky_col = StickyCol::Home;
+        }
+        DP::None => (),
+        dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
+    }
+
     Ok(Event::Noop)
 }
 
@@ -1172,23 +1210,6 @@ pub fn mto_cursor(buf: &mut Buffer, n: usize) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-// TODO: create an option of having sticky cursor.
-pub fn mto_line_end(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
-    let mut cursor = buf.to_char_cursor();
-    {
-        let mut iter = buf.chars_at(buf.to_char_cursor(), DP::Right)?;
-        loop {
-            match iter.next() {
-                Some(NL) => break (),
-                Some(_) => cursor += 1,
-                None => break (),
-            }
-        }
-    }
-    buf.set_cursor(cursor);
-    Ok(Event::Noop)
-}
-
 pub fn mto_char(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     let (mut n, ch, dp, pos) = match evnt {
         Mto::CharF(n, Some(ch), dp) => (n, ch, dp, "find"),
@@ -1243,7 +1264,7 @@ pub fn mto_words(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     match evnt {
         Mto::Word(n, DP::Left, pos) => {
             for _ in 0..n {
-                let n = buf.skip_whitespace(DP::Left);
+                let n = buf.to_mut_change().skip_whitespace(DP::Left)?;
                 match pos {
                     DP::End if n == 0 => {
                         buf.skip_alphanumeric(DP::Left);
@@ -1255,7 +1276,7 @@ pub fn mto_words(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
                     }
                     DP::Start if n == 0 => {
                         buf.skip_alphanumeric(DP::Left);
-                        buf.skip_whitespace(DP::Left);
+                        buf.to_mut_change().skip_whitespace(DP::Left)?;
                     }
                     DP::Start => (),
                     _ => unreachable!(),
@@ -1265,7 +1286,7 @@ pub fn mto_words(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
         }
         Mto::Word(n, DP::Right, pos) => {
             for _ in 0..n {
-                let n = buf.skip_whitespace(DP::Right);
+                let n = buf.to_mut_change().skip_whitespace(DP::Right)?;
                 match pos {
                     DP::End if n == 0 => {
                         buf.skip_alphanumeric(DP::Right);
@@ -1277,7 +1298,7 @@ pub fn mto_words(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
                     }
                     DP::Start if n == 0 => {
                         buf.skip_alphanumeric(DP::Right);
-                        buf.skip_whitespace(DP::Right);
+                        buf.to_mut_change().skip_whitespace(DP::Right)?;
                     }
                     DP::Start => (),
                     _ => unreachable!(),
@@ -1293,7 +1314,7 @@ pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     match evnt {
         Mto::WWord(n, DP::Left, pos) => {
             for _ in 0..n {
-                let n = buf.skip_whitespace(DP::Left);
+                let n = buf.to_mut_change().skip_whitespace(DP::Left)?;
                 match pos {
                     DP::Start if n == 0 => {
                         buf.skip_non_whitespace(DP::Left);
@@ -1305,7 +1326,7 @@ pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
                     }
                     DP::End if n == 0 => {
                         buf.skip_non_whitespace(DP::Left);
-                        buf.skip_whitespace(DP::Left);
+                        buf.to_mut_change().skip_whitespace(DP::Left)?;
                     }
                     DP::End => (),
                     _ => unreachable!(),
@@ -1315,7 +1336,7 @@ pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
         }
         Mto::WWord(n, DP::Right, pos) => {
             for _ in 0..n {
-                let n = buf.skip_whitespace(DP::Right);
+                let n = buf.to_mut_change().skip_whitespace(DP::Right)?;
                 match pos {
                     DP::End if n == 0 => {
                         buf.skip_non_whitespace(DP::Right);
@@ -1327,7 +1348,7 @@ pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
                     }
                     DP::Start if n == 0 => {
                         buf.skip_non_whitespace(DP::Right);
-                        buf.skip_whitespace(DP::Right);
+                        buf.to_mut_change().skip_whitespace(DP::Right)?;
                     }
                     DP::Start => (),
                     _ => unreachable!(),
@@ -1401,7 +1422,7 @@ pub fn mto_sentence(buf: &mut Buffer, e: Mto) -> Result<Event> {
     }?;
 
     buf.set_cursor(cursor);
-    buf.skip_whitespace(DP::Right);
+    buf.to_mut_change().skip_whitespace(DP::Right)?;
 
     Ok(Event::Noop)
 }

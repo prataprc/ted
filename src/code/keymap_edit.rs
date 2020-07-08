@@ -101,8 +101,6 @@ impl KeyEdit {
                 Char(']', _) => (B(1, DP::Right), noop),
                 Char('g', _) if ctrl => (noop, Event::Code(Code::StatusFile)),
                 Char('g', _) => (G(1), noop),
-                // numeric prefix
-                Char(ch @ '0'..='9', _) => (N(parse_n!(1, ch)), noop),
                 // operation prefix
                 Char('c', _) => (Op(Opr::Change(1, Mto::None)), noop),
                 Char('d', _) => (Op(Opr::Delete(1, Mto::None)), noop),
@@ -112,6 +110,8 @@ impl KeyEdit {
                 Char('=', _) => (Op(Opr::Equal(1, Mto::None)), noop),
                 Char('<', _) => (Op(Opr::RShift(1, Mto::None)), noop),
                 Char('>', _) => (Op(Opr::LShift(1, Mto::None)), noop),
+                // numeric prefix
+                Char(ch @ '0'..='9', _) => (N(parse_n!(0, ch)), noop),
                 evnt => (noop, evnt),
             },
             N(n) if m_empty => match evnt {
@@ -172,8 +172,6 @@ impl KeyEdit {
                 Char(']', _) => (B(n, DP::Right), noop),
                 Char('g', _) if ctrl => (noop, Event::Code(Code::StatusFile)),
                 Char('g', _) => (G(n), noop),
-                // continue with numberic prefix
-                Char(ch @ '0'..='9', _) => (N(parse_n!(n, ch)), noop),
                 // operation prefix
                 Char('c', _) => (Op(Opr::Change(n, Mto::None)), noop),
                 Char('d', _) => (Op(Opr::Delete(n, Mto::None)), noop),
@@ -183,6 +181,8 @@ impl KeyEdit {
                 Char('=', _) => (Op(Opr::Equal(n, Mto::None)), noop),
                 Char('<', _) => (Op(Opr::RShift(n, Mto::None)), noop),
                 Char('>', _) => (Op(Opr::LShift(n, Mto::None)), noop),
+                // continue with numberic prefix
+                Char(ch @ '0'..='9', _) => (N(parse_n!(n, ch)), noop),
                 evnt => (noop, evnt),
             },
             G(n) if m_empty => match evnt {
