@@ -8,6 +8,7 @@ use simplelog;
 use structopt::StructOpt;
 
 use std::{
+    cmp,
     convert::{TryFrom, TryInto},
     fs, path,
     sync::mpsc,
@@ -161,7 +162,7 @@ impl State {
 impl State {
     /// main event-loop.
     pub fn event_loop(mut self) -> Result<String> {
-        let mut stats = Latency::new();
+        let (mut stats, mut r_stats) = (Latency::new(), Latency::new());
 
         // initial screen refresh
         self.app.on_refresh()?;
@@ -169,8 +170,15 @@ impl State {
 
         'a: loop {
             // new event
-            let evnt: Event = err_at!(Fatal, crossterm::event::read())?.into();
-            trace!("{} {}", evnt, self.app.to_cursor());
+            let evnt: Event = {
+                use crossterm::event::read;
+
+                let start = SystemTime::now();
+                let evnt: Event = err_at!(Fatal, read())?.into();
+                trace!("{} {}", evnt, self.app.to_cursor());
+                r_stats.sample(start.elapsed().unwrap());
+                evnt
+            };
 
             let start = SystemTime::now();
 
@@ -201,7 +209,11 @@ impl State {
             stats.sample(start.elapsed().unwrap());
         }
 
-        Ok(stats.pretty_print())
+        {
+            let mut s = format!("read: {}\n", r_stats.pretty_print());
+            s.push_str(&format!("  {}", stats.pretty_print()));
+            Ok(s)
+        }
     }
 }
 
@@ -231,7 +243,10 @@ impl Latency {
         if self.max == Duration::from_nanos(0) || self.max < duration {
             self.max = duration
         }
-        let off: usize = (duration.as_nanos() / 10_000_000) as usize;
+        let off = {
+            let off = (duration.as_nanos() / 1_000_000) as usize;
+            cmp::min(off, 255)
+        };
         self.durations[off] += 1;
     }
 
