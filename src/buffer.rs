@@ -217,13 +217,11 @@ impl WinBuffer for Buffer {
         dp: DP,
     ) -> Result<Box<dyn Iterator<Item = String> + 'a>> {
         let change = self.to_change();
+        let line_idx = cmp::min(change.rope.len_lines(), line_idx);
         let iter = unsafe {
             let cref: &Change = change.borrow();
-            (cref as *const Change)
-                .as_ref()
-                .unwrap()
-                .rope
-                .lines_at(line_idx)
+            let cref = (cref as *const Change).as_ref().unwrap();
+            cref.rope.lines_at(line_idx)
         };
 
         match dp {
@@ -1010,7 +1008,7 @@ pub fn mto_left(buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
                         } else if n < m {
                             break buf.line_to_char(line_idx) + (m - n);
                         } else {
-                            ()
+                            n = n - m;
                         }
                     }
                     None => break 0,
@@ -1024,16 +1022,45 @@ pub fn mto_left(buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-pub fn mto_right(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+pub fn mto_right(buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
+    use crate::text::Format;
+
     let mut cursor = buf.to_char_cursor();
-    for ch in buf.chars_at(cursor, DP::Right)?.take(n) {
-        match dp {
-            DP::LineBound if ch == NL => break,
-            DP::Nobound | DP::LineBound => (),
-            _ => err_at!(Fatal, msg: format!("unreachable"))?,
+    let line_idx = buf.char_to_line(cursor);
+    let end = {
+        let home = buf.to_line_home();
+        home + Format::trim_newline(&buf.line(line_idx)).0.chars().count()
+    };
+    let new_cursor = cursor + n;
+    cursor = match dp {
+        DP::LineBound if new_cursor < end => new_cursor,
+        DP::LineBound => end.saturating_sub(1),
+        DP::Nobound if new_cursor < end => new_cursor,
+        DP::Nobound => {
+            n = n - (end - cursor);
+            let mut iter = {
+                let iter = buf.lines_at(line_idx, DP::Right)?.enumerate();
+                iter.skip(1)
+            };
+            loop {
+                match iter.next() {
+                    Some((i, line)) => {
+                        let m = Format::trim_newline(&line).0.chars().count();
+                        let home = buf.line_to_char(line_idx + i);
+                        if n == m {
+                            break home + m.saturating_sub(1);
+                        } else if n < m {
+                            break home + n.saturating_sub(1);
+                        } else {
+                            n = n - m;
+                        }
+                    }
+                    None => break buf.n_chars().saturating_sub(1),
+                }
+            }
         }
-        cursor += 1
-    }
+        dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
+    };
 
     buf.set_cursor(cursor);
     Ok(Event::Noop)
