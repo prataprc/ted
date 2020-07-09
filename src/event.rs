@@ -298,6 +298,22 @@ impl fmt::Display for DP {
     }
 }
 
+impl DP {
+    fn dir_xor(self, rhs: Self) -> Result<Self> {
+        let dp = match (self, rhs) {
+            (DP::Left, DP::Right) => DP::Left,
+            (DP::Right, DP::Right) => DP::Right,
+            (DP::Left, DP::Left) => DP::Right,
+            (DP::Right, DP::Left) => DP::Left,
+            (x, y) => {
+                let msg = format!("invalid direction {} {}", x, y);
+                err_at!(Fatal, msg: msg)?
+            }
+        };
+        Ok(dp)
+    }
+}
+
 /// Event argument specify the text operation.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Opr {
@@ -433,24 +449,15 @@ impl fmt::Display for Mto {
 
 impl Mto {
     /// Do the character/pattern motion in the opposite direction.
-    pub fn reverse(self, n: usize, dp: DP) -> Result<Self> {
+    pub fn dir_xor(self, n: usize, new_dp: DP) -> Result<Self> {
         use Mto::{CharF, CharT, Pattern};
 
-        let evnt = match (self, dp) {
-            (CharF(_, ch, DP::Left), DP::Right) => CharF(n, ch, DP::Left),
-            (CharF(_, ch, DP::Left), DP::Left) => CharF(n, ch, DP::Right),
-            (CharF(_, ch, DP::Right), DP::Right) => CharF(n, ch, DP::Right),
-            (CharF(_, ch, DP::Right), DP::Left) => CharF(n, ch, DP::Left),
-            (CharT(_, ch, DP::Left), DP::Right) => CharT(n, ch, DP::Left),
-            (CharT(_, ch, DP::Left), DP::Left) => CharT(n, ch, DP::Right),
-            (CharT(_, ch, DP::Right), DP::Right) => CharT(n, ch, DP::Right),
-            (CharT(_, ch, DP::Right), DP::Left) => CharT(n, ch, DP::Left),
-            (Pattern(_, ch, DP::Left), DP::Right) => Pattern(n, ch, DP::Left),
-            (Pattern(_, ch, DP::Left), DP::Left) => Pattern(n, ch, DP::Right),
-            (Pattern(_, ch, DP::Right), DP::Right) => Pattern(n, ch, DP::Right),
-            (Pattern(_, ch, DP::Right), DP::Left) => Pattern(n, ch, DP::Left),
-            (Mto::None, _) => Mto::None,
-            _ => err_at!(Fatal, msg: format!("unreachable"))?,
+        let evnt = match self {
+            CharF(_, ch, dp) => CharF(n, ch, dp.dir_xor(new_dp)?),
+            CharT(_, ch, dp) => CharT(n, ch, dp.dir_xor(new_dp)?),
+            Pattern(_, ch, dp) => Pattern(n, ch, dp.dir_xor(new_dp)?),
+            Mto::None => Mto::None,
+            _ => err_at!(Fatal, msg: format!("unexpected {}", self))?,
         };
         Ok(evnt)
     }
