@@ -7,6 +7,7 @@ use crate::{
     app::Application,
     buffer::{self, Buffer},
     code::{self, keymap::Keymap},
+    col_nu::ColNu,
     colors::ColorScheme,
     event::{self, Event},
     syntax::{self, Syntax},
@@ -97,6 +98,69 @@ impl WindowEdit {
     pub fn to_text_type(&self) -> String {
         self.syn.as_name().to_string()
     }
+
+    // return the width of editable screen's width.
+    fn to_screen_width(&self) -> u16 {
+        let nu_wth = ColNu::new(self.obc_xy.row, self.line_number).to_width();
+        self.coord.wth - nu_wth
+    }
+
+    // return the number of characters to move left ro reach screen-home.
+    fn to_cursor_col(&self) -> u16 {
+        let nu_wth = ColNu::new(self.obc_xy.row, self.line_number).to_width();
+        self.cursor.col - nu_wth
+    }
+
+    fn mto_screen_end(&self, buf: &mut Buffer, mut n: usize) -> Result<()> {
+        use crate::{event::DP, text::Format};
+        use std::cmp;
+
+        let cursor = {
+            let w = self.to_screen_width() as usize;
+            let mut col = (self.obc_xy.col / w) * w;
+            let mut row = self.obc_xy.row;
+
+            let mut iter = buf.lines_at(self.obc_xy.row, DP::Right)?;
+            loop {
+                match iter.next() {
+                    Some(line) => {
+                        let m = {
+                            let s = line.to_string();
+                            Format::trim_newline(&s).0.chars().count()
+                        };
+                        let ends: Vec<usize> = {
+                            let iter = (0..).map(|i| i * w);
+                            let iter = iter.skip_while(|c| c < &col);
+                            iter.take_while(|c| c <= &m).collect()
+                        };
+                        if ends.len() <= n {
+                            n -= ends.len();
+                            row += 1;
+                            col = 0;
+                        } else {
+                            let cursor = {
+                                let item = ends.into_iter().skip(n).next();
+                                let end = item.unwrap_or(m).saturating_sub(1);
+                                buf.line_to_char(row) + cmp::min(end, m)
+                            };
+                            break cursor;
+                        }
+                    }
+                    None => {
+                        let line_idx = buf.n_lines().saturating_sub(1);
+                        let n = {
+                            let s = buf.line(line_idx);
+                            Format::trim_newline(&s).0.chars().count()
+                        };
+                        break buf.line_to_char(line_idx) + n.saturating_sub(1);
+                    }
+                }
+            }
+        };
+
+        buf.set_cursor(cursor);
+        Ok(())
+    }
 }
 
 impl Window for WindowEdit {
@@ -128,28 +192,64 @@ impl Window for WindowEdit {
     }
 
     fn on_event(&mut self, app: &mut code::Code, evnt: Event) -> Result<Event> {
-        use crate::pubsub::Notify;
+        use crate::{
+            buffer::mto_left,
+            event::{Mto, DP},
+            pubsub::Notify,
+        };
 
-        let evnt = match app.take_buffer(&self.curr_buf_id) {
-            Some(mut buf) => {
-                let mut evnt = self.keymap.fold(app, &mut buf, evnt)?;
-                evnt = buf.on_event(evnt)?;
-                // after handling the event for buffer, handle for its file-type.
-                evnt = self.syn.on_edit(&buf, evnt)?;
-                app.add_buffer(buf);
-                Ok(evnt)
-            }
-            None => Ok(evnt),
-        }?;
+        let (evnt, buf) = match app.take_buffer(&self.curr_buf_id) {
+            Some(mut buf) => match self.keymap.fold(app, &mut buf, evnt)? {
+                Event::Code(event::Code::StatusCursor) => {
+                    let msg = vec![self.syn.to_status_cursor()?];
+                    app.notify("code", Notify::Status(msg))?;
+                    (Event::Noop, Some(buf))
+                }
+                Event::Mt(Mto::ScreenHome(DP::TextCol)) => {
+                    let c = self.to_cursor_col() as usize;
+                    let evnt = mto_left(&mut buf, c, DP::None)?;
+                    buf.skip_whitespace(DP::Right);
+                    (evnt, Some(buf))
+                }
+                Event::Mt(Mto::ScreenHome(DP::None)) => {
+                    let c = self.to_cursor_col() as usize;
+                    let evnt = mto_left(&mut buf, c, DP::None)?;
+                    (evnt, Some(buf))
+                }
+                Event::Mt(Mto::ScreenEnd(n, DP::TextCol)) => {
+                    self.mto_screen_end(&mut buf, n)?;
+                    buf.skip_whitespace(DP::Left);
+                    (Event::Noop, Some(buf))
+                }
+                Event::Mt(Mto::ScreenEnd(n, DP::None)) => {
+                    self.mto_screen_end(&mut buf, n)?;
+                    (Event::Noop, Some(buf))
+                }
+                Event::Mt(Mto::ScreenMiddle(_)) => {
+                    let m = self.to_screen_width() / 2;
+                    let evnt = match self.to_cursor_col() {
+                        c if m < c => {
+                            let n = c.saturating_sub(m) as usize;
+                            buffer::mto_right(&mut buf, n, DP::None)?
+                        }
+                        c => {
+                            let n = m.saturating_sub(c) as usize;
+                            buffer::mto_right(&mut buf, n, DP::None)?
+                        }
+                    };
+                    (evnt, Some(buf))
+                }
+                evnt => {
+                    let evnt = buf.on_event(evnt)?;
+                    let evnt = self.syn.on_edit(&mut buf, evnt)?;
+                    (evnt, Some(buf))
+                }
+            },
+            None => (evnt, None),
+        };
 
-        match evnt {
-            Event::Code(event::Code::StatusCursor) => {
-                let msg = vec![self.syn.to_status_cursor()?];
-                app.notify("code", Notify::Status(msg))?;
-                Ok(Event::Noop)
-            }
-            evnt => Ok(evnt),
-        }
+        buf.map(|buf| app.add_buffer(buf));
+        Ok(evnt)
     }
 
     fn on_refresh(&mut self, app: &mut code::Code) -> Result<()> {

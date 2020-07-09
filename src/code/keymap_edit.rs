@@ -69,10 +69,13 @@ impl KeyEdit {
                 Char(';', _) => (noop, Mt(Mto::CharR(1, DP::Right))),
                 Char(',', _) => (noop, Mt(Mto::CharR(1, DP::Left))),
                 // motion command - linewise
+                Char('k', _) => (noop, Mt(Mto::Up(1, DP::None))),
+                Up(_) => (noop, Mt(Mto::Up(1, DP::None))),
+                Char('j', _) => (noop, Mt(Mto::Down(1, DP::None))),
+                Down(_) => (noop, Mt(Mto::Down(1, DP::None))),
                 Enter(_) => (noop, Mt(Mto::Down(1, DP::TextCol))),
+
                 Char('-', _) => (noop, Mt(Mto::Up(1, DP::TextCol))),
-                Char('j', _) => (noop, Mt(Mto::Up(1, DP::None))),
-                Char('k', _) => (noop, Mt(Mto::Down(1, DP::None))),
                 Char('+', _) => (noop, Mt(Mto::Down(1, DP::TextCol))),
                 Char('G', _) => (noop, Mt(Mto::Row(1, DP::TextCol))),
                 Char('%', _) => (noop, Mt(Mto::Percent(1))),
@@ -140,10 +143,13 @@ impl KeyEdit {
                 Char(';', _) => (noop, Mt(Mto::CharR(n, DP::Right))),
                 Char(',', _) => (noop, Mt(Mto::CharR(n, DP::Left))),
                 // motion command - linewise
-                Enter(_) => (noop, Mt(Mto::Down(n, DP::TextCol))),
+                Char('k', _) => (noop, Mt(Mto::Up(1, DP::None))),
+                Up(_) => (noop, Mt(Mto::Up(1, DP::None))),
+                Char('j', _) => (noop, Mt(Mto::Down(1, DP::None))),
+                Down(_) => (noop, Mt(Mto::Down(1, DP::None))),
+                Enter(_) => (noop, Mt(Mto::Down(1, DP::None))),
+
                 Char('-', _) => (noop, Mt(Mto::Up(n, DP::TextCol))),
-                Char('j', _) => (noop, Mt(Mto::Up(n, DP::None))),
-                Char('k', _) => (noop, Mt(Mto::Down(n, DP::None))),
                 Char('+', _) => (noop, Mt(Mto::Down(n, DP::TextCol))),
                 Char('G', _) => (noop, Mt(Mto::Row(n, DP::TextCol))),
                 Char('%', _) => (noop, Mt(Mto::Percent(n))),

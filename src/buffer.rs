@@ -291,6 +291,10 @@ impl WinBuffer for Buffer {
         self.to_change().rope.line_to_char(line_idx)
     }
 
+    fn line(&self, line_idx: usize) -> String {
+        self.to_change().rope.line(line_idx).to_string()
+    }
+
     fn n_chars(&self) -> usize {
         let change = &self.to_change();
         change.rope.len_chars()
@@ -366,6 +370,10 @@ impl Buffer {
     pub fn byte_to_char(&self, byte_idx: usize) -> usize {
         self.to_change().as_ref().byte_to_char(byte_idx)
     }
+
+    pub fn to_char_cursor(&self) -> usize {
+        self.to_change().to_char_cursor()
+    }
 }
 
 impl Buffer {
@@ -384,17 +392,8 @@ impl Buffer {
         }
     }
 
-    #[inline]
-    fn to_char_cursor(&self) -> usize {
-        self.to_change().to_char_cursor()
-    }
-
     fn char_to_line(&self, char_idx: usize) -> usize {
         self.to_change().rope.char_to_line(char_idx)
-    }
-
-    fn line(&self, line_idx: usize) -> String {
-        self.to_change().rope.line(line_idx).to_string()
     }
 
     #[inline]
@@ -428,6 +427,11 @@ impl Buffer {
             Inner::Normal(nb) => Inner::Insert(nb.into()),
             inner @ Inner::Insert(_) => inner,
         };
+    }
+
+    #[inline]
+    pub fn skip_whitespace(&mut self, dp: DP) -> usize {
+        self.to_mut_change().skip_alphanumeric(dp)
     }
 
     #[inline]
@@ -503,6 +507,8 @@ impl Buffer {
             Event::Mt(Mto::Right(n, dp)) => mto_right(self, n, dp)?,
             Event::Mt(Mto::LineHome(dp)) => mto_line_home(self, dp)?,
             Event::Mt(Mto::LineEnd(n, dp)) => mto_line_end(self, n, dp)?,
+            Event::Mt(Mto::LineMiddle(1, _)) => mto_line_middle(self, 50)?,
+            Event::Mt(Mto::LineMiddle(p, _)) => mto_line_middle(self, p)?,
             Event::Mt(Mto::Col(n)) => mto_column(self, n)?,
             Event::Mt(e @ Mto::CharF(_, _, _)) => {
                 self.mto_find_char = e.clone();
@@ -827,6 +833,7 @@ impl Change {
         next
     }
 
+    #[inline]
     fn to_char_cursor(&self) -> usize {
         self.cursor
     }
@@ -1124,6 +1131,22 @@ pub fn mto_line_end(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
     }
 
+    Ok(Event::Noop)
+}
+
+pub fn mto_line_middle(buf: &mut Buffer, p: usize) -> Result<Event> {
+    use crate::text::Format;
+
+    let n = {
+        let s = buf.line(buf.char_to_line(buf.to_char_cursor()));
+        Format::trim_newline(&s).0.chars().count()
+    };
+    let cursor = {
+        let n = (((p as f64) / 100.0) * (n as f64)) as usize;
+        buf.to_line_home() + n
+    };
+    buf.set_cursor(cursor);
+    buf.sticky_col = StickyCol::default();
     Ok(Event::Noop)
 }
 

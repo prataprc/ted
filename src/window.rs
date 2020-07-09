@@ -75,6 +75,8 @@ pub trait WinBuffer {
     /// `line_idx`. Note that, `0 <= line_idx < n_lines`.
     fn line_to_char(&self, line_idx: usize) -> usize;
 
+    fn line(&self, line_idx: usize) -> String;
+
     /// Return the number of characters in the buffer.
     fn n_chars(&self) -> usize;
 
