@@ -5,7 +5,7 @@ use crate::{
     term::{Span, Style},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum ColKind {
     Nu(usize),
     Wrap,

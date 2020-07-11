@@ -47,29 +47,32 @@ pub type Result<T> = result::Result<T, Error>;
 /// Collection of all `Ted` errors.
 #[derive(Clone)]
 pub enum Error {
-    Fatal(String),
-    BadPattern(String),
-    IOError(String),
-    IPC(String),
-    NoTopic,
-    Invalid(String),
-    FailConvert(String),
-    FailParse(String),
-    FailBuffer(String),
+    Fatal(String, String),
+    BadPattern(String, String),
+    IOError(String, String),
+    IPC(String, String),
+    NoTopic(String),
+    Invalid(String, String),
+    FailConvert(String, String),
+    FailParse(String, String),
+    FailBuffer(String, String),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        use Error::{BadPattern, Fatal, IOError, Invalid, NoTopic, IPC};
+        use Error::{FailBuffer, FailConvert, FailParse};
+
         match self {
-            Error::Fatal(msg) => write!(f, "Fatal: {}", msg),
-            Error::BadPattern(msg) => write!(f, "BadPattern: {}", msg),
-            Error::IOError(msg) => write!(f, "IOError: {}", msg),
-            Error::IPC(msg) => write!(f, "IPC: {}", msg),
-            Error::NoTopic => write!(f, "NoTopic"),
-            Error::Invalid(msg) => write!(f, "Invalid: {}", msg),
-            Error::FailConvert(msg) => write!(f, "FailConvert: {}", msg),
-            Error::FailParse(msg) => write!(f, "FailParse: {}", msg),
-            Error::FailBuffer(msg) => write!(f, "FailBuffer: {}", msg),
+            Fatal(p, msg) => write!(f, "{} Fatal: {}", p, msg),
+            BadPattern(p, msg) => write!(f, "{} BadPattern: {}", p, msg),
+            IOError(p, msg) => write!(f, "{} IOError: {}", p, msg),
+            IPC(p, msg) => write!(f, "{} IPC: {}", p, msg),
+            NoTopic(p) => write!(f, "{} NoTopic", p),
+            Invalid(p, msg) => write!(f, "{} Invalid: {}", p, msg),
+            FailConvert(p, msg) => write!(f, "{} FailConvert: {}", p, msg),
+            FailParse(p, msg) => write!(f, "{} FailParse: {}", p, msg),
+            FailBuffer(p, msg) => write!(f, "{} FailBuffer: {}", p, msg),
         }
     }
 }

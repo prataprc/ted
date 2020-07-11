@@ -66,8 +66,8 @@ impl WindowFile {
         let alt = format!("--display-error--");
         let b = {
             let id = self.we.to_buffer_id();
-            app.as_buffer(&id)
-                .ok_or(Error::Invalid(format!("buffer {}", id)))
+            let err = Error::Invalid(String::new(), format!("buffer {}", id));
+            app.as_buffer(&id).ok_or(err)
         }?;
 
         let l_name = {

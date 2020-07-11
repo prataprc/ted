@@ -35,7 +35,10 @@ impl Encoded {
                 let buf = err_at!(FailConvert, from_utf8(&buf))?;
                 Ok(Encoded::Utf8(buf.to_string()))
             }
-            _ => err_at!(Err(Error::Invalid(format!("encoding {}", fenc)))),
+            _ => {
+                let s = format!("encoding {}", fenc);
+                err_at!(Err(Error::Invalid(String::new(), s)))
+            }
         }
     }
 

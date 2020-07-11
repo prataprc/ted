@@ -71,7 +71,7 @@ impl PubSub {
                 }
                 Ok(())
             }
-            None => Err(Error::NoTopic),
+            None => Err(Error::NoTopic(String::new())),
         }
     }
 

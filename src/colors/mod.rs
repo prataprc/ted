@@ -40,10 +40,8 @@ impl TryFrom<toml::Value> for ColorScheme {
     type Error = Error;
 
     fn try_from(value: toml::Value) -> Result<Self> {
-        use crate::Error::Invalid;
-
         let table = {
-            let err = Invalid(format!("bad color sheme"));
+            let err = Error::Invalid(String::new(), format!("bad color sheme"));
             value.as_table().ok_or(err)?
         };
 
@@ -58,7 +56,10 @@ impl TryFrom<toml::Value> for ColorScheme {
         for (key, value) in table.iter() {
             match key.as_str() {
                 "name" => {
-                    let err = Invalid(format!("bad value for {}", key));
+                    let err = {
+                        let s = format!("bad value for {}", key);
+                        Error::Invalid(String::new(), s)
+                    };
                     name = value.as_str().ok_or(err)?.to_string();
                 }
                 hl => {

@@ -61,7 +61,10 @@ impl Location {
                     err => Ok(Location::Err(err_at!(IOError, err).unwrap_err())),
                 }
             }
-            err => Ok(Location::Err(Error::Invalid(format!("{:?}", err)))),
+            err => {
+                let err = Error::Invalid(String::new(), format!("{:?}", err));
+                Ok(Location::Err(err))
+            }
         }
     }
 

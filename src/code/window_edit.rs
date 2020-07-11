@@ -255,18 +255,24 @@ impl Window for WindowEdit {
     fn on_refresh(&mut self, app: &mut code::Code) -> Result<()> {
         use crate::view::{NoWrap, Wrap};
 
-        let err = Error::Invalid(format!("buffer {}", self.curr_buf_id));
+        let err = {
+            let s = format!("buffer {}", self.curr_buf_id);
+            Error::Invalid(String::new(), s)
+        };
         self.cursor = if app.as_ref().wrap {
             let v: Wrap = (&*self, self.obc_xy).into();
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
-            v.render(buf, self)?
+            v.render(buf, self, false /*scroll*/)?
         } else {
             let v: NoWrap = (&*self, self.obc_xy).into();
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
-            v.render(buf, self)?
+            v.render(buf, self, false /*scroll*/)?
         };
         self.obc_xy = {
-            let err = Error::Invalid(format!("buffer {}", self.curr_buf_id));
+            let err = {
+                let s = format!("buffer {}", self.curr_buf_id);
+                Error::Invalid(String::new(), s)
+            };
             err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?.to_xy_cursor()
         };
 

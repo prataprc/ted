@@ -41,30 +41,30 @@ macro_rules! err_at {
         use Error::{BadPattern, Fatal, IOError, Invalid, NoTopic, IPC};
         use Error::{FailBuffer, FailConvert, FailParse};
 
-        let prefix = format!("{}:{}", file!(), line!());
+        let p = format!("{}:{}", file!(), line!());
         match $e {
             Ok(val) => Ok(val),
-            Err(Fatal(s)) => Err(Fatal(format!("{} {}", prefix, s))),
-            Err(BadPattern(s)) => Err(BadPattern(format!("{} {}", prefix, s))),
-            Err(IOError(s)) => Err(IOError(format!("{} {}", prefix, s))),
-            Err(IPC(s)) => Err(IPC(format!("{} {}", prefix, s))),
-            Err(NoTopic) => Err(NoTopic),
-            Err(Invalid(s)) => Err(Invalid(format!("{} {}", prefix, s))),
-            Err(FailConvert(s)) => Err(FailConvert(format!("{} {}", prefix, s))),
-            Err(FailParse(s)) => Err(FailParse(format!("{} {}", prefix, s))),
-            Err(FailBuffer(s)) => Err(FailBuffer(format!("{} {}", prefix, s))),
+            Err(Fatal(_, s)) => Err(Fatal(p, s)),
+            Err(BadPattern(_, s)) => Err(BadPattern(p, s)),
+            Err(IOError(_, s)) => Err(IOError(p, s)),
+            Err(IPC(_, s)) => Err(IPC(p, s)),
+            Err(NoTopic(_)) => Err(NoTopic(p)),
+            Err(Invalid(_, s)) => Err(Invalid(p, s)),
+            Err(FailConvert(_, s)) => Err(FailConvert(p, s)),
+            Err(FailParse(_, s)) => Err(FailParse(p, s)),
+            Err(FailBuffer(_, s)) => Err(FailBuffer(p, s)),
         }
     }};
-    ($v:ident, msg:$m:expr) => {
-        //
-        Err(Error::$v(format!("{}:{} {}", file!(), line!(), $m)))
-    };
+    ($v:ident, msg:$m:expr) => {{
+        let prefix = format!("{}:{}", file!(), line!());
+        Err(Error::$v(prefix, format!("{}", $m)))
+    }};
     ($v:ident, $e:expr) => {
         match $e {
             Ok(val) => Ok(val),
             Err(err) => {
-                let m = format!("{}:{} {}", file!(), line!(), err);
-                Err(Error::$v(m))
+                let prefix = format!("{}:{}", file!(), line!());
+                Err(Error::$v(prefix, format!("{}", err)))
             }
         }
     };
@@ -72,8 +72,8 @@ macro_rules! err_at {
         match $e {
             Ok(val) => Ok(val),
             Err(err) => {
-                let m = format!("{}:{} {} {}", file!(), line!(), $m, err);
-                Err(Error::$v(m))
+                let prefix = format!("{}:{}", file!(), line!());
+                Err(Error::$v(prefix, format!("{} {}", $m, err)))
             }
         }
     };

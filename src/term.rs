@@ -332,7 +332,7 @@ impl Style {
         use crate::Error::Invalid;
 
         let table = {
-            let err = Invalid(format!("bad style"));
+            let err = Invalid(String::new(), format!("bad style"));
             value.as_table().ok_or(err)?
         };
 
@@ -340,7 +340,7 @@ impl Style {
         for (key, value) in table.iter() {
             let value = {
                 let msg = format!("bad style key:{:?} value:{:?}", key, value);
-                value.as_str().ok_or(Invalid(msg))?
+                value.as_str().ok_or(Invalid(String::new(), msg))?
             };
             match key.as_str() {
                 "on" | "bg" => style.bg = Style::to_color(value, canvas)?,

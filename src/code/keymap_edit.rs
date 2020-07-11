@@ -123,18 +123,12 @@ impl KeyEdit {
                 Left(_) => (noop, Mt(Mto::Left(n, DP::LineBound))),
                 Right(_) => (noop, Mt(Mto::Right(n, DP::LineBound))),
                 Home(_) => (noop, Mt(Mto::LineHome(DP::StickyCol))),
-                End(_) => {
-                    let n = n.saturating_sub(1);
-                    (noop, Mt(Mto::LineEnd(n, DP::StickyCol)))
-                }
+                End(_) => (noop, Mt(Mto::LineEnd(n, DP::StickyCol))),
                 Char('h', _) => (noop, Mt(Mto::Left(n, DP::LineBound))),
                 Char(' ', _) => (noop, Mt(Mto::Right(n, DP::Nobound))),
                 Char('l', _) => (noop, Mt(Mto::Right(n, DP::LineBound))),
                 Char('^', _) => (noop, Mt(Mto::LineHome(DP::TextCol))),
-                Char('$', _) => {
-                    let n = n.saturating_sub(1);
-                    (noop, Mt(Mto::LineEnd(n, DP::StickyCol)))
-                }
+                Char('$', _) => (noop, Mt(Mto::LineEnd(n, DP::StickyCol))),
                 Char('|', _) => (noop, Mt(Mto::Col(n))),
                 Char('f', _) => (F(n, DP::Right), noop),
                 Char('F', _) => (F(n, DP::Left), noop),
@@ -235,7 +229,7 @@ impl KeyEdit {
             prefix => (prefix, evnt),
         };
 
-        trace!("folded event, {} {}", prefix, evnt);
+        trace!("prefix:{} event:{}", prefix, evnt);
 
         self.prefix = prefix;
         Ok(evnt)

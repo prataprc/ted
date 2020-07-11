@@ -3,7 +3,7 @@
 
 use lazy_static::lazy_static;
 #[allow(unused_imports)]
-use log::trace;
+use log::{debug, trace};
 use regex::Regex;
 use ropey::{self, Rope};
 
@@ -225,6 +225,10 @@ impl Buffer {
 }
 
 impl WinBuffer for Buffer {
+    fn to_char_cursor(&self) -> usize {
+        self.to_change().to_char_cursor()
+    }
+
     fn to_xy_cursor(&self) -> Cursor {
         self.to_change().to_xy_cursor()
     }
@@ -369,10 +373,6 @@ impl Buffer {
 
     pub fn byte_to_char(&self, byte_idx: usize) -> usize {
         self.to_change().as_ref().byte_to_char(byte_idx)
-    }
-
-    pub fn to_char_cursor(&self) -> usize {
-        self.to_change().to_char_cursor()
     }
 }
 
@@ -892,22 +892,22 @@ impl Change {
 
 impl Change {
     fn skip_whitespace(&mut self, dp: DP) -> Result<usize> {
-        let skips: Vec<(usize, char)> = {
-            let iter = self.iter(dp).enumerate();
-            iter.take_while(|(_, ch)| ch.is_whitespace()).collect()
+        let mut n = 0;
+        let item = {
+            let mut iter = self.iter(dp).enumerate().skip_while(|(_, ch)| {
+                n += 1;
+                ch.is_whitespace()
+            });
+            iter.next().clone()
         };
-        let n = match skips.last() {
-            Some((n, _)) => *n + 1,
-            None => 0,
+        let cursor = match (item, dp) {
+            (Some((i, _)), DP::Right) => self.cursor + i,
+            (Some((i, _)), DP::Left) => self.cursor - i,
+            (None, DP::Left) => 0,
+            (None, DP::Right) => self.rope.len_chars().saturating_sub(1),
+            (_, dp) => err_at!(Fatal, msg: format!("unexpected: {}", dp))?,
         };
-        self.cursor = match dp {
-            DP::Left => self.cursor.saturating_sub(n),
-            DP::Right => {
-                let m = self.rope.len_chars().saturating_sub(1);
-                cmp::min(self.cursor + n, m)
-            }
-            dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
-        };
+        self.cursor = cursor;
         Ok(n)
     }
 
@@ -1090,7 +1090,9 @@ pub fn mto_line_home(buf: &mut Buffer, pos: DP) -> Result<Event> {
     buf.set_cursor(buf.to_line_home());
     match pos {
         DP::TextCol => {
-            buf.to_mut_change().skip_whitespace(DP::Right)?;
+            let xy = buf.to_xy_cursor();
+            let n = skip_whitespace(&buf.line(xy.row), xy.col, DP::Right)?;
+            buf.set_cursor(buf.to_char_cursor() + n);
             buf.sticky_col = StickyCol::default();
         }
         DP::StickyCol => {
@@ -1110,16 +1112,17 @@ pub fn mto_line_end(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
     // When a `n` is given also go `n-1` lines downward.
     mto_down(buf, n.saturating_sub(1), DP::None)?;
 
-    let cursor = buf.to_char_cursor();
     let m = {
-        let s = buf.line(buf.char_to_line(cursor));
-        Format::trim_newline(&s).0.chars().count()
+        let s = buf.line(buf.char_to_line(buf.to_char_cursor()));
+        Format::trim_newline(&s).0.chars().count().saturating_sub(1)
     };
-    buf.set_cursor(cursor + m);
+    buf.set_cursor(buf.to_line_home() + m);
 
     match dp {
         DP::TextCol => {
-            buf.to_mut_change().skip_whitespace(DP::Left)?;
+            let xy = buf.to_xy_cursor();
+            let n = skip_whitespace(&buf.line(xy.row), xy.col, DP::Left)?;
+            buf.set_cursor(buf.to_char_cursor().saturating_sub(n));
             buf.sticky_col = StickyCol::default();
         }
         DP::StickyCol => {
@@ -1669,6 +1672,35 @@ pub fn to_span_line(buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
         String::from_iter(iter).into()
     };
     Ok(span.into())
+}
+
+// skip whitespace from `offset` in specified direction `dp` and returned
+// the number of position skipped.
+fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
+    let line = text::Format::trim_newline(&line).0;
+    let chars: Vec<char> = line.chars().collect();
+    let ln = chars.len();
+
+    let n = match dp {
+        DP::Right => {
+            let item = {
+                let iter = chars.into_iter().skip(off).enumerate();
+                iter.skip_while(|(_, ch)| ch.is_whitespace()).next().clone()
+            };
+            item.map(|x| x.0)
+                .unwrap_or(ln.saturating_sub(off).saturating_sub(1))
+        }
+        DP::Left => {
+            let item = {
+                let m = chars.len().saturating_sub(off).saturating_sub(1);
+                let iter = chars.into_iter().rev().skip(m).enumerate();
+                iter.skip_while(|(_, ch)| ch.is_whitespace()).next().clone()
+            };
+            item.map(|x| x.0).unwrap_or(off)
+        }
+        dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
+    };
+    Ok(n)
 }
 
 #[cfg(test)]

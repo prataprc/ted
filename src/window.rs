@@ -43,6 +43,9 @@ pub trait Window {
 /// This is a simple abstraction trait for [buffer::Buffer]. Gives an idea
 /// on window's api dependency with `Buffer`.
 pub trait WinBuffer {
+    /// Return the cursor position, as character index.
+    fn to_char_cursor(&self) -> usize;
+
     /// Return the cursor position, as (col, row) starting from (0,), within
     /// this buffer.
     fn to_xy_cursor(&self) -> buffer::Cursor;
