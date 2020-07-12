@@ -239,7 +239,10 @@ impl WinBuffer for Buffer {
         dp: DP,
     ) -> Result<Box<dyn Iterator<Item = String> + 'a>> {
         let change = self.to_change();
-        let line_idx = cmp::min(change.rope.len_lines(), line_idx);
+        let line_idx = {
+            let n = change.rope.len_lines().saturating_sub(1);
+            cmp::min(n, line_idx)
+        };
         let iter = unsafe {
             let cref: &Change = change.borrow();
             let cref = (cref as *const Change).as_ref().unwrap();
@@ -296,7 +299,12 @@ impl WinBuffer for Buffer {
     }
 
     fn line(&self, line_idx: usize) -> String {
-        self.to_change().rope.line(line_idx).to_string()
+        let change = self.to_change();
+        let line_idx = {
+            let n = change.rope.len_lines().saturating_sub(1);
+            cmp::min(n, line_idx)
+        };
+        change.rope.line(line_idx).to_string()
     }
 
     fn n_chars(&self) -> usize {

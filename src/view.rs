@@ -397,11 +397,11 @@ impl WrapView {
 
         let lines: Vec<usize> = if obc_xy <= nbc_xy {
             let from = obc_xy.row.saturating_sub(hgt);
-            let to = cmp::max(buf.n_lines(), nbc_xy.row + hgt);
+            let to = cmp::min(buf.n_lines(), nbc_xy.row + hgt);
             (from..=to).collect()
         } else {
             let from = nbc_xy.row.saturating_sub(hgt);
-            let to = cmp::max(buf.n_lines(), obc_xy.row + hgt);
+            let to = cmp::min(buf.n_lines(), obc_xy.row + hgt);
             (from..=to).collect()
         };
 
@@ -426,11 +426,12 @@ impl WrapView {
             };
             item.map(|(i, _)| i).unwrap_or(0)
         };
+        debug!("pivot:{} {:?}", pivot, screen_lines);
         let mut screen_lines = match screen_lines.len() {
             0 => vec![],
             n => {
                 let from = pivot.saturating_sub(cursor.row as usize);
-                let to = cmp::max(from + hgt, n);
+                let to = cmp::min(from + hgt, n);
                 screen_lines[from..to].to_vec()
             }
         };
@@ -532,8 +533,17 @@ where
 
     let bc = buf.line_to_char(line_idx);
     let w = wth as usize;
-    match Format::trim_newline(&buf.line(line_idx)).0.chars().count() {
-        0 => vec![ScrLine::new_nu(line_idx, bc, 0)],
+    let n = Format::trim_newline(&buf.line(line_idx)).0.chars().count();
+    let m = buf.line(line_idx).chars().count();
+    //debug!(
+    //    "... {} {} {}",
+    //    line_idx,
+    //    n,
+    //    buf.line(line_idx).chars().count()
+    //);
+    match n {
+        0 if line_idx == 0 || m > 0 => vec![ScrLine::new_nu(line_idx, bc, 0)],
+        0 if m == 0 => vec![],
         n => {
             let mut ns: Vec<u16> = repeat(wth).take(n / w).collect();
             match n % w {
@@ -572,6 +582,12 @@ struct ScrLine {
 impl fmt::Display for ScrLine {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         write!(f, "SL<{},{},{}>", self.colk, self.bc, self.n)
+    }
+}
+
+impl fmt::Debug for ScrLine {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        <Self as fmt::Display>::fmt(self, f)
     }
 }
 
