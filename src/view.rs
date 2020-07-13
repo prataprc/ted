@@ -424,11 +424,12 @@ impl WrapView {
         let pivot = {
             let item = {
                 let iter = screen_lines.iter().enumerate();
-                iter.take_while(|(_, sline)| sline.bc < nbc).next().clone()
+                iter.take_while(|(_, sline)| sline.bc <= nbc).last().clone()
             };
             item.map(|(i, _)| i).unwrap_or(0)
         };
-        debug!("pivot:{} {:?}", pivot, screen_lines);
+        debug!("pivot:{} cursor:{} nbc:{}", pivot, cursor, nbc);
+        debug!("screen_lines: {:?}", screen_lines);
         let mut screen_lines = match screen_lines.len() {
             0 => vec![],
             n => {
