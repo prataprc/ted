@@ -3,16 +3,15 @@
 //! but handled here, acts as the bridge between main.rs and the ted-library.
 
 use dirs;
+#[allow(unused_imports)]
 use log::{debug, error, trace};
 use simplelog;
 use structopt::StructOpt;
 
 use std::{
-    cmp,
     convert::{TryFrom, TryInto},
     fs, path,
     sync::mpsc,
-    time::{Duration, SystemTime},
 };
 
 use crate::{
@@ -23,6 +22,7 @@ use crate::{
     event::Event,
     pubsub::{Notify, PubSub},
     term::Terminal,
+    util,
     window::Coord,
     Error, Result,
 };
@@ -162,150 +162,58 @@ impl State {
 impl State {
     /// main event-loop.
     pub fn event_loop(mut self) -> Result<String> {
-        let (mut stats, mut r_stats) = (Latency::new(), Latency::new());
+        use crossterm::event::read;
+
+        let mut stats = util::Latency::new();
+        let mut r_stats = util::Latency::new();
 
         // initial screen refresh
         self.app.on_refresh()?;
         err_at!(Fatal, termex!(self.app.to_cursor()))?;
 
-        'a: loop {
+        loop {
             // new event
-            let evnt: Event = {
-                use crossterm::event::read;
-
-                let start = SystemTime::now();
+            let evnt: Event = util::time_it(&mut r_stats, || {
                 let evnt: Event = err_at!(Fatal, read())?.into();
-                trace!("{} {}", evnt, self.app.to_cursor());
-                r_stats.sample(start.elapsed().unwrap());
-                evnt
-            };
+                Ok(evnt)
+            })?;
 
-            let start = SystemTime::now();
-
-            hidecr!()?;
-
-            for mut evnt in evnt {
-                // preprocessing
-                match &evnt {
-                    Event::Char('q', _) if evnt.is_control() => break 'a,
-                    _ => (),
-                };
-                // dispatch
-                evnt = {
-                    let evnt = self.app.on_event(evnt)?;
-                    self.app.on_refresh()?;
-                    evnt
-                };
-                // post processing
-                for evnt in evnt {
-                    match evnt {
-                        Event::Char('q', _) => break 'a,
+            let is_break = util::time_it(&mut stats, || {
+                hidecr!()?;
+                for mut evnt in evnt {
+                    // preprocessing
+                    match &evnt {
+                        Event::Char('q', _) if evnt.is_control() => {
+                            return Ok(true);
+                        }
                         _ => (),
+                    };
+                    // dispatch
+                    evnt = {
+                        let evnt = self.app.on_event(evnt)?;
+                        self.app.on_refresh()?;
+                        evnt
+                    };
+                    // post processing
+                    for evnt in evnt {
+                        match evnt {
+                            Event::Char('q', _) => return Ok(true),
+                            _ => (),
+                        }
                     }
                 }
-            }
-            err_at!(Fatal, termex!(self.app.to_cursor()))?;
+                err_at!(Fatal, termex!(self.app.to_cursor()))?;
+                return Ok(false);
+            })?;
 
-            stats.sample(start.elapsed().unwrap());
-        }
-
-        {
-            let mut s = format!("read: {}\n", r_stats.pretty_print());
-            s.push_str(&format!("  {}", stats.pretty_print()));
-            Ok(s)
-        }
-    }
-}
-
-#[derive(Clone, Default, Debug)]
-struct Latency {
-    samples: usize,
-    min: Duration,
-    max: Duration,
-    total: Duration,
-    durations: Vec<usize>,
-}
-
-impl Latency {
-    fn new() -> Latency {
-        let mut stats: Latency = Default::default();
-        stats.durations = Vec::with_capacity(256);
-        stats.durations.resize(256, 0);
-        stats
-    }
-
-    fn sample(&mut self, duration: Duration) {
-        self.samples += 1;
-        self.total += duration;
-        if self.min == Duration::from_nanos(0) || self.min > duration {
-            self.min = duration
-        }
-        if self.max == Duration::from_nanos(0) || self.max < duration {
-            self.max = duration
-        }
-        let off = {
-            let off = (duration.as_nanos() / 1_000_000) as usize;
-            cmp::min(off, 255)
-        };
-        self.durations[off] += 1;
-    }
-
-    #[allow(dead_code)]
-    fn samples(&self) -> usize {
-        self.samples
-    }
-
-    #[allow(dead_code)]
-    fn min(&self) -> Duration {
-        self.min
-    }
-
-    #[allow(dead_code)]
-    fn max(&self) -> Duration {
-        self.max
-    }
-
-    fn mean(&self) -> Duration {
-        if self.samples > 0 {
-            self.total / (self.samples as u32)
-        } else {
-            Duration::from_secs(0)
-        }
-    }
-
-    fn percentiles(&self) -> Vec<(u8, usize)> {
-        let mut percentiles: Vec<(u8, usize)> = vec![];
-        let (mut acc, mut prev_perc) = (0_f64, 90_u8);
-        let iter = self
-            .durations
-            .iter()
-            .enumerate()
-            .filter(|(_, &item)| item > 0);
-        for (duration, samples) in iter {
-            acc += *samples as f64;
-            let perc = ((acc / (self.samples as f64)) * 100_f64) as u8;
-            if perc >= prev_perc {
-                percentiles.push((perc, duration));
-                prev_perc = perc;
-            }
-        }
-        percentiles
-    }
-
-    fn pretty_print(&self) -> String {
-        let mean = self.mean();
-        let mut outs = format!(
-            //
-            "duration (min, avg, max): {:?}",
-            (self.min, mean, self.max)
-        );
-        for (dur, n) in self.percentiles().into_iter() {
-            if n > 0 {
-                outs.push_str(&format!("  {} percentile = {}", dur, n));
+            if is_break {
+                break;
             }
         }
 
-        outs
+        let mut s = format!("read: {}\n", r_stats.pretty_print());
+        s.push_str(&format!("  {}", stats.pretty_print()));
+        Ok(s)
     }
 }
 

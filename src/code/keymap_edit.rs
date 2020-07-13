@@ -1,5 +1,6 @@
 use crossterm::event::KeyModifiers;
-use log::trace;
+#[allow(unused_imports)]
+use log::{debug, trace};
 
 use std::mem;
 
@@ -229,7 +230,7 @@ impl KeyEdit {
             prefix => (prefix, evnt),
         };
 
-        trace!("prefix:{} event:{}", prefix, evnt);
+        debug!("prefix:{} event:{}", prefix, evnt);
 
         self.prefix = prefix;
         Ok(evnt)

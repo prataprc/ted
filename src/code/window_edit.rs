@@ -275,6 +275,7 @@ impl Window for WindowEdit {
             };
             err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?.to_xy_cursor()
         };
+        debug!("obc_xy:{}", self.obc_xy);
 
         Ok(())
     }

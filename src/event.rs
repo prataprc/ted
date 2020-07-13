@@ -183,7 +183,7 @@ impl fmt::Display for Event {
             G(n) => write!(f, "g({})", n),
             F(n, dp) => write!(f, "f({},{})", n, dp),
             T(n, dp) => write!(f, "t({},{})", n, dp),
-            N(n) => write!(f, "b({}", n),
+            N(n) => write!(f, "n({})", n),
             Op(opr) => write!(f, "op({})", opr),
             Md(md) => write!(f, "md({})", md),
             Mt(mt) => write!(f, "mt({})", mt),

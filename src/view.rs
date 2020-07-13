@@ -108,7 +108,9 @@ impl Wrap {
         };
 
         debug!(
-            "SHIFT {}@{} screen_lines:{}",
+            "SHIFT {}->{} {}@{} screen_lines:{}",
+            self.obc_xy,
+            nbc_xy,
             cursor,
             coord,
             screen_lines.len()
@@ -410,8 +412,8 @@ impl WrapView {
         let cursor = if scroll {
             self.cursor
         } else {
-            let arow = cmp::max(0, self.scroll_off);
-            let zrow = cmp::min(self.coord.hgt - 1, self.scroll_off);
+            let arow = self.scroll_off;
+            let zrow = self.coord.hgt.saturating_sub(self.scroll_off + 1);
             match self.to_cursor(buf, screen_lines.clone()) {
                 Cursor { col, row } if row < arow => Cursor { col, row: arow },
                 Cursor { col, row } if row > zrow => Cursor { col, row: zrow },
@@ -452,9 +454,9 @@ impl WrapView {
     {
         let obc_xy = self.obc_xy;
         let nbc_xy = buf.to_xy_cursor();
-
         let obc = buf.line_to_char(obc_xy.row) + obc_xy.col;
         let nbc = buf.line_to_char(nbc_xy.row) + nbc_xy.col;
+
         if obc_xy <= nbc_xy {
             let rows: Vec<ScrLine> = screen_lines
                 .into_iter()
@@ -462,27 +464,27 @@ impl WrapView {
                 .take_while(|sline| sline.bc <= nbc)
                 .collect();
             let row = {
-                let row = (self.cursor.row as usize).saturating_add(rows.len());
+                let mut row = self.cursor.row as usize;
+                row = row.saturating_add(rows.len());
                 cmp::min(self.coord.hgt.saturating_sub(1) as usize, row) as u16
             };
-            Cursor {
-                col: (nbc_xy.col % (self.coord.wth as usize)) as u16,
-                row,
-            }
+            let col = (nbc_xy.col % (self.coord.wth as usize)) as u16;
+            debug!("<< rows:{:?} row:{} col:{}", rows, row, col);
+            Cursor { col, row }
         } else {
             let rows: Vec<ScrLine> = screen_lines
                 .into_iter()
-                .skip_while(|sline| sline.bc < nbc)
-                .take_while(|sline| sline.bc < obc)
+                .skip_while(|sline| sline.bc <= nbc)
+                .take_while(|sline| sline.bc <= obc)
                 .collect();
             let row = {
-                let row = (self.cursor.row as usize).saturating_sub(rows.len());
-                cmp::max(0, row) as u16
+                let mut row = self.cursor.row as usize;
+                row = row.saturating_sub(rows.len());
+                cmp::min(self.coord.hgt.saturating_sub(1) as usize, row) as u16
             };
-            Cursor {
-                col: (nbc_xy.col % (self.coord.wth as usize)) as u16,
-                row,
-            }
+            let col = (nbc_xy.col % (self.coord.wth as usize)) as u16;
+            debug!(">> rows:{:?} row:{} col:{}", rows, row, col);
+            Cursor { col, row }
         }
     }
 }
