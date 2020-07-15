@@ -536,8 +536,12 @@ where
 
     let bc = buf.line_to_char(line_idx);
     let w = wth as usize;
-    let n = Format::trim_newline(&buf.line(line_idx)).0.chars().count();
-    let m = buf.line(line_idx).chars().count();
+    let (m, n) = {
+        let line = buf.line(line_idx);
+        let m = line.chars().count();
+        let n = Format::trim_newline(&line).0.chars().count();
+        (m, n)
+    };
     //debug!(
     //    "... {} {} {}",
     //    line_idx,

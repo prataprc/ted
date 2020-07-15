@@ -9,7 +9,7 @@ use crate::{
     code::{self, keymap::Keymap},
     col_nu::ColNu,
     colors::ColorScheme,
-    event::{self, Event},
+    event::{self, Event, DP},
     syntax::{self, Syntax},
     term::Spanline,
     window::{Coord, Cursor, Render, WinBuffer, Window},
@@ -111,55 +111,75 @@ impl WindowEdit {
         self.cursor.col - nu_wth
     }
 
-    fn mto_screen_end(&self, buf: &mut Buffer, mut n: usize) -> Result<()> {
-        use crate::{event::DP, text::Format};
+    fn mto_screen_home(&self, buf: &mut Buffer, dp: DP) -> Result<Event> {
+        use crate::buffer::mto_left;
+
+        let c = self.to_cursor_col() as usize;
+        let evnt = mto_left(buf, c, DP::None)?;
+        match dp {
+            DP::TextCol => buf.skip_whitespace(DP::Right)?,
+            dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
+        };
+        Ok(evnt)
+    }
+
+    fn mto_screen_end(&self, buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
+        use crate::text;
         use std::cmp;
 
-        let cursor = {
-            let w = self.to_screen_width() as usize;
-            let mut col = (self.obc_xy.col / w) * w;
-            let mut row = self.obc_xy.row;
+        let w = self.to_screen_width() as usize;
+        let mut col = (self.obc_xy.col / w) * w;
+        let mut row = self.obc_xy.row;
 
-            let mut iter = buf.lines_at(self.obc_xy.row, DP::Right)?;
-            loop {
-                match iter.next() {
-                    Some(line) => {
-                        let m = {
-                            let s = line.to_string();
-                            Format::trim_newline(&s).0.chars().count()
-                        };
-                        let ends: Vec<usize> = {
-                            let iter = (0..).map(|i| i * w);
-                            let iter = iter.skip_while(|c| c < &col);
-                            iter.take_while(|c| c <= &m).collect()
-                        };
-                        if ends.len() <= n {
-                            n -= ends.len();
-                            row += 1;
-                            col = 0;
-                        } else {
-                            let cursor = {
-                                let item = ends.into_iter().skip(n).next();
-                                let end = item.unwrap_or(m).saturating_sub(1);
-                                buf.line_to_char(row) + cmp::min(end, m)
-                            };
-                            break cursor;
-                        }
-                    }
-                    None => {
-                        let line_idx = buf.n_lines().saturating_sub(1);
-                        let n = {
-                            let s = buf.line(line_idx);
-                            Format::trim_newline(&s).0.chars().count()
-                        };
-                        break buf.line_to_char(line_idx) + n.saturating_sub(1);
-                    }
+        let mut to_cursor = || -> Result<Option<usize>> {
+            for line in buf.lines_at(self.obc_xy.row, DP::Right)? {
+                let m = {
+                    let s = line.to_string();
+                    text::Format::trim_newline(&s).0.chars().count()
+                };
+                let ends: Vec<usize> = {
+                    let iter = (0..).map(|i| i * w).skip_while(|c| c < &col);
+                    iter.take_while(|c| c <= &m).collect()
+                };
+                if ends.len() < n {
+                    n -= ends.len();
+                    row += 1;
+                    col = 0;
+                } else {
+                    let item = ends.into_iter().skip(n).next();
+                    let end = item.unwrap_or(m).saturating_sub(1);
+                    let cursor = buf.line_to_char(row) + cmp::min(end, m);
+                    return Ok(Some(cursor));
                 }
             }
+            buffer::mto_end(buf)?;
+            Ok(None)
         };
 
-        buf.set_cursor(cursor);
-        Ok(())
+        to_cursor()?.map(|cursor| buf.set_cursor(cursor));
+
+        match dp {
+            DP::TextCol => {
+                buf.skip_whitespace(DP::Left)?;
+            }
+            DP::None => (),
+            dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
+        };
+        Ok(Event::Noop)
+    }
+
+    fn mto_screen_middle(&self, buf: &mut Buffer) -> Result<Event> {
+        let m = self.to_screen_width() / 2;
+        match self.to_cursor_col() {
+            c if m < c => {
+                let n = c.saturating_sub(m) as usize;
+                buffer::mto_left(buf, n, DP::LineBound)
+            }
+            c => {
+                let n = m.saturating_sub(c) as usize;
+                buffer::mto_right(buf, n, DP::LineBound)
+            }
+        }
     }
 }
 
@@ -192,52 +212,26 @@ impl Window for WindowEdit {
     }
 
     fn on_event(&mut self, app: &mut code::Code, evnt: Event) -> Result<Event> {
-        use crate::{
-            buffer::mto_left,
-            event::{Mto, DP},
-            pubsub::Notify,
-        };
+        use crate::{event::Mto, pubsub::Notify};
 
         let (evnt, buf) = match app.take_buffer(&self.curr_buf_id) {
             Some(mut buf) => match self.keymap.fold(app, &mut buf, evnt)? {
+                Event::Mt(Mto::ScreenHome(dp)) => {
+                    let evnt = self.mto_screen_home(&mut buf, dp)?;
+                    (evnt, Some(buf))
+                }
+                Event::Mt(Mto::ScreenEnd(n, dp)) => {
+                    let evnt = self.mto_screen_end(&mut buf, n, dp)?;
+                    (evnt, Some(buf))
+                }
+                Event::Mt(Mto::ScreenMiddle) => {
+                    let evnt = self.mto_screen_middle(&mut buf)?;
+                    (evnt, Some(buf))
+                }
                 Event::Code(event::Code::StatusCursor) => {
                     let msg = vec![self.syn.to_status_cursor()?];
                     app.notify("code", Notify::Status(msg))?;
                     (Event::Noop, Some(buf))
-                }
-                Event::Mt(Mto::ScreenHome(DP::TextCol)) => {
-                    let c = self.to_cursor_col() as usize;
-                    let evnt = mto_left(&mut buf, c, DP::None)?;
-                    buf.skip_whitespace(DP::Right);
-                    (evnt, Some(buf))
-                }
-                Event::Mt(Mto::ScreenHome(DP::None)) => {
-                    let c = self.to_cursor_col() as usize;
-                    let evnt = mto_left(&mut buf, c, DP::None)?;
-                    (evnt, Some(buf))
-                }
-                Event::Mt(Mto::ScreenEnd(n, DP::TextCol)) => {
-                    self.mto_screen_end(&mut buf, n)?;
-                    buf.skip_whitespace(DP::Left);
-                    (Event::Noop, Some(buf))
-                }
-                Event::Mt(Mto::ScreenEnd(n, DP::None)) => {
-                    self.mto_screen_end(&mut buf, n)?;
-                    (Event::Noop, Some(buf))
-                }
-                Event::Mt(Mto::ScreenMiddle(_)) => {
-                    let m = self.to_screen_width() / 2;
-                    let evnt = match self.to_cursor_col() {
-                        c if m < c => {
-                            let n = c.saturating_sub(m) as usize;
-                            buffer::mto_right(&mut buf, n, DP::None)?
-                        }
-                        c => {
-                            let n = m.saturating_sub(c) as usize;
-                            buffer::mto_right(&mut buf, n, DP::None)?
-                        }
-                    };
-                    (evnt, Some(buf))
                 }
                 evnt => {
                     let evnt = buf.on_event(evnt)?;

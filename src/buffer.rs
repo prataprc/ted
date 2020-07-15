@@ -438,8 +438,8 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn skip_whitespace(&mut self, dp: DP) -> usize {
-        self.to_mut_change().skip_alphanumeric(dp)
+    pub fn skip_whitespace(&mut self, dp: DP) -> Result<usize> {
+        self.to_mut_change().skip_whitespace(dp)
     }
 
     #[inline]
@@ -921,37 +921,41 @@ impl Change {
 
     fn skip_non_whitespace(&mut self, dp: DP) -> usize {
         let mut n = 0;
-        let n = loop {
-            match self.iter(dp).next() {
-                Some(ch) if ch.is_whitespace() => n += 1,
-                Some(_) => break n,
-                None => break n,
+        let n = {
+            let mut iter = self.iter(dp);
+            loop {
+                match iter.next() {
+                    Some(ch) if ch.is_whitespace() => n += 1,
+                    Some(_) => break n,
+                    None => break n,
+                }
             }
         };
-        self.cursor = if_else!(
-            //
-            dp == DP::Right,
-            self.cursor + n,
-            self.cursor - n
-        );
+        self.cursor = match dp {
+            DP::Left => self.cursor - n,
+            DP::Right => self.cursor + n,
+            _ => self.cursor,
+        };
         n
     }
 
     fn skip_alphanumeric(&mut self, dp: DP) -> usize {
         let mut n = 0;
-        let n = loop {
-            match self.iter(dp).next() {
-                Some(ch) if ch.is_alphanumeric() => n += 1,
-                Some(_) => break n,
-                None => break n,
+        let n = {
+            let mut iter = self.iter(dp);
+            loop {
+                match iter.next() {
+                    Some(ch) if ch.is_alphanumeric() => n += 1,
+                    Some(_) => break n,
+                    None => break n,
+                }
             }
         };
-        self.cursor = if_else!(
-            //
-            dp == DP::Right,
-            self.cursor + n,
-            self.cursor - n
-        );
+        self.cursor = match dp {
+            DP::Left => self.cursor - n,
+            DP::Right => self.cursor + n,
+            _ => self.cursor,
+        };
         n
     }
 
@@ -1028,19 +1032,18 @@ pub fn mto_left(buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
                 match iter.next() {
                     Some(line_idx) => {
                         let s = buf.line(line_idx);
-                        let m = Format::trim_newline(&s).0.chars().count();
-                        if n == m {
-                            break buf.line_to_char(line_idx);
-                        } else if n < m {
-                            break buf.line_to_char(line_idx) + (m - n);
-                        } else {
-                            n = n - m;
+                        let home = buf.line_to_char(line_idx);
+                        match Format::trim_newline(&s).0.chars().count() {
+                            m if m == n => break home,
+                            m if m > n => break home + (m - n),
+                            m => n = n - m,
                         }
                     }
                     None => break 0,
                 }
             }
         }
+        DP::None => new_cursor,
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
     };
 
@@ -1054,35 +1057,39 @@ pub fn mto_right(buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
 
     let mut cursor = buf.to_char_cursor();
     let line_idx = buf.char_to_line(cursor);
+    let home = buf.to_line_home();
     let end = {
-        let home = buf.to_line_home();
-        home + Format::trim_newline(&buf.line(line_idx)).0.chars().count()
+        let s = buf.line(line_idx);
+        home + Format::trim_newline(&s).0.chars().count()
     };
     let new_cursor = cursor + n;
+
     cursor = match dp {
         DP::LineBound if new_cursor < end => new_cursor,
-        DP::LineBound => end.saturating_sub(1),
+        DP::LineBound if home < end => end.saturating_sub(1),
+        DP::LineBound => end,
         DP::Nobound if new_cursor < end => new_cursor,
         DP::Nobound => {
-            n = n - (end - cursor);
-            let mut iter = {
-                let iter = buf.lines_at(line_idx, DP::Right)?.enumerate();
-                iter.skip(1)
-            };
+            let mut iter = buf.lines_at(line_idx, DP::Right)?.enumerate();
             loop {
                 match iter.next() {
+                    Some((0, _)) => n = n - (end - cursor),
                     Some((i, line)) => {
                         let m = Format::trim_newline(&line).0.chars().count();
-                        let home = buf.line_to_char(line_idx + i);
-                        if n == m {
-                            break home + m.saturating_sub(1);
-                        } else if n < m {
-                            break home + n.saturating_sub(1);
-                        } else {
-                            n = n - m;
+                        match buf.line_to_char(line_idx + i) {
+                            home if n <= m => break home + n.saturating_sub(1),
+                            _ => n = n - m,
                         }
                     }
-                    None => break buf.n_chars().saturating_sub(1),
+                    None => {
+                        let line_idx = to_last_line_idx(buf);
+                        let home = buf.line_to_char(line_idx);
+                        let m = {
+                            let line = buf.line(line_idx);
+                            Format::trim_newline(&line).0.chars().count()
+                        };
+                        break home + m.saturating_sub(1);
+                    }
                 }
             }
         }
@@ -1273,6 +1280,16 @@ pub fn mto_row(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
         n_rows if n <= n_rows => mto_down(buf, n - row, pos),
         n_rows => mto_down(buf, n_rows.saturating_sub(1), pos),
     }
+}
+
+pub fn mto_end(buf: &mut Buffer) -> Result<Event> {
+    let line_idx = buf.n_lines().saturating_sub(1);
+    let n = {
+        let s = buf.line(line_idx);
+        text::Format::trim_newline(&s).0.chars().count()
+    };
+    buf.set_cursor(buf.line_to_char(line_idx) + n.saturating_sub(1));
+    Ok(Event::Noop)
 }
 
 pub fn mto_percent(buf: &mut Buffer, n: usize) -> Result<Event> {
@@ -1709,6 +1726,17 @@ fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
     };
     Ok(n)
+}
+
+fn to_last_line_idx(buf: &Buffer) -> usize {
+    for line_idx in (0..buf.n_lines()).rev() {
+        let home = buf.line_to_char(line_idx);
+        match buf.n_chars() {
+            ln if ln == home => continue,
+            _ => return line_idx,
+        }
+    }
+    0
 }
 
 #[cfg(test)]

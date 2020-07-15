@@ -194,7 +194,7 @@ impl KeyEdit {
                 Char('0', _) => (noop, Mt(Mto::ScreenHome(DP::None))),
                 Char('^', _) => (noop, Mt(Mto::ScreenHome(DP::TextCol))),
                 Char('$', _) => (noop, Mt(Mto::ScreenEnd(n, DP::None))),
-                Char('m', _) => (noop, Mt(Mto::ScreenMiddle(DP::None))),
+                Char('m', _) => (noop, Mt(Mto::ScreenMiddle)),
                 Char('M', _) => (noop, Mt(Mto::LineMiddle(n, DP::None))),
 
                 Char('g', _) if ctrl => (noop, Event::Code(Code::StatusCursor)),

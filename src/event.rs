@@ -378,14 +378,14 @@ impl fmt::Display for Mod {
 #[derive(Clone, Eq, PartialEq)]
 pub enum Mto {
     // characterwise motion
-    Left(usize, DP),                // (n, LineBound/Nobound)
-    Right(usize, DP),               // (n, LineBound/Nobound)
-    LineHome(DP),                   // TextCol/StickyCol/None
-    LineEnd(usize, DP),             // (n, TextCol/StickyCol/None)
-    LineMiddle(usize, DP),          // (n-percent, None)
-    ScreenHome(DP),                 // TextCol/None
-    ScreenEnd(usize, DP),           // (n, TextCol/None)
-    ScreenMiddle(DP),               // None
+    Left(usize, DP),       // (n, LineBound/Nobound)
+    Right(usize, DP),      // (n, LineBound/Nobound)
+    LineHome(DP),          // TextCol/StickyCol/None
+    LineEnd(usize, DP),    // (n, TextCol/StickyCol/None)
+    LineMiddle(usize, DP), // (n-percent, None)
+    ScreenHome(DP),        // TextCol/None
+    ScreenEnd(usize, DP),  // (n, TextCol/None)
+    ScreenMiddle,
     Col(usize),                     // (n,)
     CharF(usize, Option<char>, DP), // (n, ch, Left/Right)
     CharT(usize, Option<char>, DP), // (n, ch, Left/Right)
@@ -425,7 +425,7 @@ impl fmt::Display for Mto {
             Mto::LineMiddle(n, dp) => write!(f, "line-middle({},{})", n, dp),
             Mto::ScreenHome(dp) => write!(f, "screen-home({})", dp),
             Mto::ScreenEnd(n, dp) => write!(f, "screen-end({},{})", n, dp),
-            Mto::ScreenMiddle(dp) => write!(f, "screen-middle({})", dp),
+            Mto::ScreenMiddle => write!(f, "screen-middle"),
             Mto::Row(n, dp) => write!(f, "row({},{})", n, dp),
             Mto::Percent(n) => write!(f, "percent({})", n),
             Mto::Cursor(n) => write!(f, "cursor({})", n),
