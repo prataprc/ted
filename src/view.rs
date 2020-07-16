@@ -429,7 +429,7 @@ impl WrapView {
             item.map(|(i, _)| i).unwrap_or(0)
         };
         debug!("pivot:{} cursor:{} nbc:{}", pivot, cursor, nbc);
-        debug!("screen_lines: {:?}", screen_lines);
+        // debug!("screen_lines: {:?}", screen_lines);
         let mut screen_lines = match screen_lines.len() {
             0 => vec![],
             n => {
@@ -470,7 +470,7 @@ impl WrapView {
                 cmp::min(self.coord.hgt.saturating_sub(1) as usize, row) as u16
             };
             let col = (nbc_xy.col % (self.coord.wth as usize)) as u16;
-            debug!("<< rows:{:?} row:{} col:{}", rows, row, col);
+            // debug!("<< rows:{:?} row:{} col:{}", rows, row, col);
             Cursor { col, row }
         } else {
             let rows: Vec<ScrLine> = screen_lines
@@ -484,7 +484,7 @@ impl WrapView {
                 cmp::min(self.coord.hgt.saturating_sub(1) as usize, row) as u16
             };
             let col = (nbc_xy.col % (self.coord.wth as usize)) as u16;
-            debug!(">> rows:{:?} row:{} col:{}", rows, row, col);
+            // debug!(">> rows:{:?} row:{} col:{}", rows, row, col);
             Cursor { col, row }
         }
     }

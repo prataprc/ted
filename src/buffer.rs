@@ -1171,11 +1171,12 @@ pub fn mto_line_middle(buf: &mut Buffer, p: usize) -> Result<Event> {
 pub fn mto_column(buf: &mut Buffer, n: usize) -> Result<Event> {
     use crate::text::Format;
 
+    let home = buf.to_line_home();
     let n = {
         let s = buf.line(buf.char_to_line(buf.to_char_cursor()));
         cmp::min(Format::trim_newline(&s).0.chars().count(), n)
     };
-    buf.set_cursor(buf.to_line_home() + n);
+    buf.set_cursor(home + n.saturating_sub(1));
     buf.sticky_col = StickyCol::default();
     Ok(Event::Noop)
 }
@@ -1189,23 +1190,15 @@ pub fn mto_char(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     };
 
     let cursor = buf.to_char_cursor();
-    let item = {
-        let change = buf.to_change();
-        let rslice = unsafe {
-            let cref: &Change = change.borrow();
-            let r: &Rope = (cref as *const Change).as_ref().unwrap().as_ref();
-            r.line(buf.char_to_line(cursor))
-        };
-        let mut iter = IterChar {
-            _change: Some(change),
-            iter: rslice.chars_at(cursor),
-            reverse: dp == DP::Right,
-        }
-        .enumerate()
+    let mut iter = buf.chars_at(cursor, dp)?.enumerate();
+    if let DP::Right = dp {
+        iter.next();
+    }
+    let item = iter
         .filter_map(|(i, a)| if_else!(a == ch, Some(i), None))
-        .take(n.saturating_sub(1));
-        iter.next().clone()
-    };
+        .skip(n.saturating_sub(1))
+        .next()
+        .clone();
 
     let cursor = match (item, dp, pos) {
         (Some(i), DP::Right, 'f') => cursor + i,
@@ -1213,7 +1206,7 @@ pub fn mto_char(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
         (Some(i), DP::Left, 'f') => cursor.saturating_sub(i + 1),
         (Some(i), DP::Left, 't') => cursor.saturating_sub(i),
         (None, _, _) => cursor,
-        (_, dp, _) => err_at!(Fatal, msg: format!("unexpected {}", dp))?,
+        (_, dp, pos) => err_at!(Fatal, msg: format!("bad {} {}", dp, pos))?,
     };
 
     buf.set_cursor(cursor);
