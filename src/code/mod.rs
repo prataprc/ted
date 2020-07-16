@@ -351,8 +351,9 @@ impl Application for Code {
         let inner = mem::replace(&mut self.inner, Default::default());
         let (mut inner, evnt) = match (inner, evnt) {
             (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
+                let prefix = edit.wfile.to_event_prefix();
                 let mut val = self.new_window_cmd(self.coord, edit);
-                let evnt = val.wcmd.on_event(self, Event::Char(':', m))?;
+                let evnt = val.wcmd.on_event(self, prefix)?;
                 (Inner::Command(val), evnt)
             }
             (Inner::Edit(mut edit), evnt) => {

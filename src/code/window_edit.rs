@@ -86,6 +86,10 @@ impl WindowEdit {
         }
         self
     }
+
+    pub fn to_event_prefix(&self) -> Event {
+        self.keymap.to_event_prefix()
+    }
 }
 
 impl WindowEdit {

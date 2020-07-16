@@ -53,19 +53,25 @@ Commandline input
 			with a function) may still set the alternate file
 			name.
 
-CTRL-^			Edit the alternate file.  Mostly the alternate file is
+Normal-mode input
+=================
+
+CTRL-^		Edit the alternate file.  Mostly the alternate file is
 			the previously edited file.  This is a quick way to
 			toggle between two files.  It is equivalent to ":e #",
 			except that it also works when there is no file name.
 
 |zf|	zf	define a fold
 
-Normal-mode input
-=================
-
 N   `CTRL-^` -> toggle between current-file and alternate-file.
     `CTRL-G` -> file-status.
   g `CTRL-G` -> cursor status.
+
+:[range]	Set the cursor on the last line number in [range].
+			[range] can also be just one line number, e.g., ":1"
+			or ":'m".
+			In contrast with |G| this command does not modify the
+			|jumplist|.
 
 Postponed
 =========

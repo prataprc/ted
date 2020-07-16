@@ -1,6 +1,6 @@
 [
   {
-    "type": "s",
+    "type": "cmd",
     "named": true,
     "fields": {},
     "children": {
@@ -9,6 +9,44 @@
       "types": [
         {
           "type": "set",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "range",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "range_end",
+          "named": true
+        },
+        {
+          "type": "range_start",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "s",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "cmd",
+          "named": true
+        },
+        {
+          "type": "range",
           "named": true
         }
       ]
@@ -35,8 +73,20 @@
     "fields": {}
   },
   {
+    "type": ",",
+    "named": false
+  },
+  {
     "type": "nowrap",
     "named": false
+  },
+  {
+    "type": "range_end",
+    "named": true
+  },
+  {
+    "type": "range_start",
+    "named": true
   },
   {
     "type": "set",

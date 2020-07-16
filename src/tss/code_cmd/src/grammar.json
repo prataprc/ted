@@ -2,6 +2,39 @@
   "name": "code_cmd",
   "rules": {
     "s": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "range"
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "cmd"
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        }
+      ]
+    },
+    "newline": {
+      "type": "PATTERN",
+      "value": "\\r?\\n"
+    },
+    "cmd": {
       "type": "CHOICE",
       "members": [
         {
@@ -10,9 +43,43 @@
         }
       ]
     },
-    "newline": {
+    "range": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "range_start"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "STRING",
+                  "value": ","
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "range_end"
+                }
+              ]
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        }
+      ]
+    },
+    "range_start": {
       "type": "PATTERN",
-      "value": "\\r?\\n"
+      "value": "([0-9.%]+|(\\?[^?]+\\?)|'[a-z])[+-]?[0-9]*"
+    },
+    "range_end": {
+      "type": "PATTERN",
+      "value": "([0-9.$]+|(\\/.*\\/)|'[a-z])[+-]?[0-9]*"
     },
     "set": {
       "type": "SEQ",

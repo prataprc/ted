@@ -443,17 +443,17 @@ impl Buffer {
     }
 
     #[inline]
-    fn skip_alphanumeric(&mut self, dp: DP) -> usize {
+    pub fn skip_alphanumeric(&mut self, dp: DP) -> usize {
         self.to_mut_change().skip_alphanumeric(dp)
     }
 
     #[inline]
-    fn skip_non_whitespace(&mut self, dp: DP) -> usize {
+    pub fn skip_non_whitespace(&mut self, dp: DP) -> usize {
         self.to_mut_change().skip_non_whitespace(dp)
     }
 
     #[inline]
-    fn cmd_insert_char(&mut self, ch: char) -> Result<()> {
+    pub fn cmd_insert_char(&mut self, ch: char) -> Result<()> {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
@@ -464,7 +464,7 @@ impl Buffer {
     }
 
     #[inline]
-    fn cmd_insert(&mut self, char_idx: usize, text: &str) -> Result<()> {
+    pub fn cmd_insert(&mut self, char_idx: usize, text: &str) -> Result<()> {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
@@ -475,7 +475,7 @@ impl Buffer {
     }
 
     #[inline]
-    fn cmd_backspace(&mut self, n: usize) -> Result<()> {
+    pub fn cmd_backspace(&mut self, n: usize) -> Result<()> {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
@@ -486,7 +486,12 @@ impl Buffer {
     }
 
     #[inline]
-    fn cmd_remove_at(&mut self, a: Bound<usize>, z: Bound<usize>) -> Result<()> {
+    pub fn cmd_remove_at(
+        //
+        &mut self,
+        a: Bound<usize>,
+        z: Bound<usize>,
+    ) -> Result<()> {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,

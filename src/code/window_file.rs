@@ -40,6 +40,10 @@ impl WindowFile {
             we: WindowEdit::new(coord, buf, app),
         }
     }
+
+    pub fn to_event_prefix(&self) -> Event {
+        self.we.to_event_prefix()
+    }
 }
 
 impl WindowFile {

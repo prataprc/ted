@@ -181,19 +181,15 @@ impl State {
             let is_break = util::time_it(&mut stats, || {
                 hidecr!()?;
                 for mut evnt in evnt {
+                    let ctrl = evnt.is_control();
                     // preprocessing
                     match &evnt {
-                        Event::Char('q', _) if evnt.is_control() => {
-                            return Ok(true);
-                        }
+                        Event::Char('q', _) if ctrl => return Ok(true),
                         _ => (),
                     };
                     // dispatch
-                    evnt = {
-                        let evnt = self.app.on_event(evnt)?;
-                        self.app.on_refresh()?;
-                        evnt
-                    };
+                    evnt = self.app.on_event(evnt)?;
+                    self.app.on_refresh()?;
                     // post processing
                     for evnt in evnt {
                         match evnt {
@@ -202,9 +198,10 @@ impl State {
                         }
                     }
                 }
-                err_at!(Fatal, termex!(self.app.to_cursor()))?;
                 return Ok(false);
             })?;
+
+            err_at!(Fatal, termex!(self.app.to_cursor()))?;
 
             if is_break {
                 break;

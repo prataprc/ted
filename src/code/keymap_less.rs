@@ -14,16 +14,14 @@ impl KeyLess {
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
+
+    pub fn to_event_prefix(&self) -> Event {
+        Event::Noop
+    }
 }
 
 impl KeyLess {
     fn normal_fold(&mut self, evnt: Event) -> Result<Event> {
-        //let noop = Event::Noop,
-        //let (m_empty, ctrl) = {
-        //    let m = evnt.to_modifiers();
-        //    (m.is_empty(), m == KeyModifiers::CONTROL)
-        //};
-
         Ok(evnt)
     }
 }

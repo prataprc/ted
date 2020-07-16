@@ -20,7 +20,7 @@ pub struct WindowCmd {
     coord: Coord,
     cursor: Cursor,
     obc_xy: buffer::Cursor,
-    buffer: Buffer,
+    buf: Buffer,
     syn: syntax::Type,
     scheme: ColorScheme,
     keymap: Keymap,
@@ -45,6 +45,7 @@ impl WindowCmd {
             let loc = Location::new_ted("code-cmd", io::empty()).unwrap();
             let mut buf = Buffer::from_reader(io::empty(), loc).unwrap();
             buf.mode_insert();
+            buf.cmd_insert_char(':').unwrap();
             buf
         };
         let cursor = NoWrap::initial_cursor(false /*line_number*/);
@@ -55,7 +56,7 @@ impl WindowCmd {
             coord,
             cursor,
             obc_xy,
-            buffer: buf,
+            buf,
             syn: syntax::Type::CodeCmd(syn_code_cmd),
             scheme,
             keymap: Keymap::new_cmd(),
@@ -94,8 +95,12 @@ impl Window for WindowCmd {
     fn on_event(&mut self, app: &mut code::Code, mut evnt: Event) -> Result<Event> {
         use crate::code::cmd::Command;
 
-        let mut buf = mem::replace(&mut self.buffer, Default::default());
+        let mut buf = mem::replace(&mut self.buf, Default::default());
         evnt = match self.keymap.fold(app, &mut buf, evnt)? {
+            Event::N(n) => {
+                buf.cmd_insert(0, &format!(".,.+{}", n.saturating_sub(1)))?;
+                Event::Noop
+            }
             Event::Enter(_) => {
                 let line = buf.to_string();
                 let syn = mem::replace(&mut self.syn, Default::default());
@@ -115,7 +120,7 @@ impl Window for WindowCmd {
                 self.syn.on_edit(&buf, evnt)?
             }
         };
-        self.buffer = buf;
+        self.buf = buf;
         Ok(evnt)
     }
 
@@ -126,8 +131,8 @@ impl Window for WindowCmd {
         err_at!(Fatal, termqu!(term_cursor::MoveTo(col, row)))?;
 
         let v: NoWrap = (&*self, self.obc_xy).into();
-        self.cursor = v.render(&self.buffer, self, false /*scroll*/)?;
-        self.obc_xy = self.buffer.to_xy_cursor();
+        self.cursor = v.render(&self.buf, self, false /*scroll*/)?;
+        self.obc_xy = self.buf.to_xy_cursor();
 
         Ok(())
     }

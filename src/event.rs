@@ -396,6 +396,8 @@ pub enum Mto {
     Row(usize, DP),                     // (n, TextCol/None)
     Percent(usize),                     // (n,)
     Cursor(usize),                      // (n,)
+    ScreenUp(usize, DP),                // (n, None)
+    ScreenDown(usize, DP),              // (n, None)
     Word(usize, DP, DP),                // (n, Left/Right, Start/End)
     WWord(usize, DP, DP),               // (n, Left/Right, Start/End)
     Sentence(usize, DP),                // (n, Left/Right)
@@ -429,6 +431,8 @@ impl fmt::Display for Mto {
             Mto::Row(n, dp) => write!(f, "row({},{})", n, dp),
             Mto::Percent(n) => write!(f, "percent({})", n),
             Mto::Cursor(n) => write!(f, "cursor({})", n),
+            Mto::ScreenUp(n, dp) => write!(f, "screen-up({},{})", n, dp),
+            Mto::ScreenDown(n, dp) => write!(f, "screen-down({},{})", n, dp),
             Mto::CharF(n, ch, dp) => write!(f, "charf({},{:?},{})", n, ch, dp),
             Mto::CharT(n, ch, dp) => write!(f, "chart({},{:?},{})", n, ch, dp),
             Mto::CharR(n, dp) => write!(f, "charr({},{})", n, dp),
