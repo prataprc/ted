@@ -73,6 +73,11 @@ N   `CTRL-^` -> toggle between current-file and alternate-file.
 			In contrast with |G| this command does not modify the
 			|jumplist|.
 
+:[range]go[to] [count]					*:go* *:goto* *go*
+[count]go		Go to [count] byte in the buffer.  Default [count] is
+			one, start of the file.  When giving [range], the
+			last number in it used as the byte count.
+
 Postponed
 =========
 

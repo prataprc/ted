@@ -391,10 +391,11 @@ pub enum Mto {
     CharT(usize, Option<char>, DP), // (n, ch, Left/Right)
     CharR(usize, DP),               // repeat CharF/CharT (n, Left/Right)
     // linewise motion.
-    Up(usize, DP),                      // (n, TextCol/None)
-    Down(usize, DP),                    // (n, TextCol/None)
-    Row(usize, DP),                     // (n, TextCol/None)
-    Percent(usize),                     // (n,)
+    Up(usize, DP),      // (n, TextCol/StickyCol/None)
+    Down(usize, DP),    // (n, TextCol/StickyCol/None)
+    Row(usize, DP),     // (n, TextCol/None)
+    Percent(usize, DP), // (n, None)
+
     Cursor(usize),                      // (n,)
     ScreenUp(usize, DP),                // (n, None)
     ScreenDown(usize, DP),              // (n, None)
@@ -429,7 +430,7 @@ impl fmt::Display for Mto {
             Mto::ScreenEnd(n, dp) => write!(f, "screen-end({},{})", n, dp),
             Mto::ScreenMiddle => write!(f, "screen-middle"),
             Mto::Row(n, dp) => write!(f, "row({},{})", n, dp),
-            Mto::Percent(n) => write!(f, "percent({})", n),
+            Mto::Percent(n, dp) => write!(f, "percent({},{})", n, dp),
             Mto::Cursor(n) => write!(f, "cursor({})", n),
             Mto::ScreenUp(n, dp) => write!(f, "screen-up({},{})", n, dp),
             Mto::ScreenDown(n, dp) => write!(f, "screen-down({},{})", n, dp),

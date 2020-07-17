@@ -536,11 +536,12 @@ impl Buffer {
                 mto_char(self, e.dir_xor(n, dir)?)?
             }
             // motion command - linewise.
-            Event::Mt(Mto::Row(n, dp)) => mto_row(self, n, dp)?,
-            Event::Mt(Mto::Percent(n)) => mto_percent(self, n)?,
-            Event::Mt(Mto::Cursor(n)) => mto_cursor(self, n)?,
             Event::Mt(Mto::Up(n, dp)) => mto_up(self, n, dp)?,
             Event::Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
+            Event::Mt(Mto::Row(n, dp)) => mto_row(self, n, dp)?,
+            Event::Mt(Mto::Percent(n, dp)) => mto_percent(self, n, dp)?,
+
+            Event::Mt(Mto::Cursor(n)) => mto_cursor(self, n)?,
             Event::Mt(e @ Mto::Word(_, _, _)) => mto_words(self, e)?,
             Event::Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
             Event::Mt(e @ Mto::Sentence(_, _)) => mto_sentence(self, e)?,
@@ -1219,65 +1220,66 @@ pub fn mto_char(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-pub fn mto_up(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
-    let mut cursor = buf.to_char_cursor();
-    match buf.char_to_line(cursor) {
-        0 => Ok(Event::Noop),
-        row => {
-            let row = row.saturating_sub(n);
-            cursor = {
-                let n_chars = buf.len_line(row).saturating_sub(2);
-                let col = cmp::min(n_chars, buf.to_xy_cursor().col);
-                buf.line_to_char(row) + col
-            };
-            buf.set_cursor(cursor);
-            match pos {
-                DP::TextCol => mto_line_home(buf, DP::TextCol),
-                DP::None => Ok(Event::Noop),
-                _ => {
-                    err_at!(Fatal, msg: format!("unreachable"))?;
-                    Ok(Event::Noop)
-                }
-            }
-        }
+pub fn mto_up(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+    let row = buf.char_to_line(buf.to_char_cursor()).saturating_sub(n);
+    let n_chars = text::Format::trim_newline(&buf.line(row)).0.chars().count();
+    let col = cmp::min(n_chars, buf.to_xy_cursor().col);
+
+    let home = buf.line_to_char(row);
+    let (cursor, text_col) = match dp {
+        DP::StickyCol => match buf.sticky_col {
+            StickyCol::Home => (home, false),
+            StickyCol::End => (home + n_chars, false),
+            StickyCol::None => (home + col, false),
+        },
+        DP::TextCol => (home, true),
+        DP::None => (home + col, false),
+        dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
+    };
+    buf.set_cursor(cursor);
+    if text_col {
+        buf.skip_whitespace(DP::Right)?;
     }
+    Ok(Event::Noop)
 }
 
-pub fn mto_down(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
-    let row = buf.char_to_line(buf.to_char_cursor());
-    match buf.n_lines() {
-        0 => Ok(Event::Noop),
-        n_rows if row == n_rows => Ok(Event::Noop),
-        n_rows => {
-            let row = limite!(row.saturating_add(n), n_rows);
-            let cursor = {
-                let n_chars = buf.len_line(row).saturating_sub(2);
-                let col = cmp::min(n_chars, buf.to_xy_cursor().col);
-                buf.line_to_char(row) + col
-            };
-            buf.set_cursor(cursor);
-            match pos {
-                DP::TextCol => mto_line_home(buf, DP::TextCol),
-                DP::None => Ok(Event::Noop),
-                _ => {
-                    err_at!(Fatal, msg: format!("unreachable"))?;
-                    Ok(Event::Noop)
-                }
-            }
-        }
+pub fn mto_down(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+    let row = {
+        let row = buf.char_to_line(buf.to_char_cursor()) + n;
+        cmp::min(row, buf.n_lines().saturating_sub(1))
+    };
+    let n_chars = text::Format::trim_newline(&buf.line(row)).0.chars().count();
+    let col = cmp::min(n_chars, buf.to_xy_cursor().col);
+
+    let home = buf.line_to_char(row);
+    let (cursor, text_col) = match dp {
+        DP::StickyCol => match buf.sticky_col {
+            StickyCol::Home => (home, false),
+            StickyCol::End => (home + n_chars, false),
+            StickyCol::None => (home + col, false),
+        },
+        DP::TextCol => (home, true),
+        DP::None => (home + col, false),
+        dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
+    };
+    buf.set_cursor(cursor);
+    if text_col {
+        buf.skip_whitespace(DP::Right)?;
     }
+    Ok(Event::Noop)
 }
 
-pub fn mto_row(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
-    let row = buf.char_to_line(buf.to_char_cursor());
-    let n = n.saturating_sub(1);
-    match buf.n_lines() {
-        0 => Ok(Event::Noop),
-        n_rows if n == 0 => mto_down(buf, n_rows.saturating_sub(1), pos),
-        _ if n < row => mto_up(buf, row - n, pos),
-        n_rows if n <= n_rows => mto_down(buf, n - row, pos),
-        n_rows => mto_down(buf, n_rows.saturating_sub(1), pos),
+pub fn mto_row(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+    let last_line = buf.n_lines().saturating_sub(1);
+    let cursor = match n {
+        0 => buf.line_to_char(last_line),
+        n => buf.line_to_char(cmp::min(last_line, n)),
+    };
+    buf.set_cursor(cursor);
+    if let DP::TextCol = dp {
+        buf.skip_whitespace(DP::Right)?;
     }
+    Ok(Event::Noop)
 }
 
 pub fn mto_end(buf: &mut Buffer) -> Result<Event> {
@@ -1290,7 +1292,7 @@ pub fn mto_end(buf: &mut Buffer) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-pub fn mto_percent(buf: &mut Buffer, n: usize) -> Result<Event> {
+pub fn mto_percent(buf: &mut Buffer, n: usize, _dp: DP) -> Result<Event> {
     let row = buf.char_to_line(buf.to_char_cursor());
     match buf.n_lines() {
         0 => Ok(Event::Noop),
