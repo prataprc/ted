@@ -239,10 +239,7 @@ impl WinBuffer for Buffer {
         dp: DP,
     ) -> Result<Box<dyn Iterator<Item = String> + 'a>> {
         let change = self.to_change();
-        let line_idx = {
-            let n = change.rope.len_lines().saturating_sub(1);
-            cmp::min(n, line_idx)
-        };
+        let line_idx = cmp::min(change.rope.len_lines(), line_idx);
         let iter = unsafe {
             let cref: &Change = change.borrow();
             let cref = (cref as *const Change).as_ref().unwrap();
@@ -300,10 +297,6 @@ impl WinBuffer for Buffer {
 
     fn line(&self, line_idx: usize) -> String {
         let change = self.to_change();
-        let line_idx = {
-            let n = change.rope.len_lines().saturating_sub(1);
-            cmp::min(n, line_idx)
-        };
         change.rope.line(line_idx).to_string()
     }
 
@@ -312,9 +305,19 @@ impl WinBuffer for Buffer {
         change.rope.len_chars()
     }
 
-    fn n_lines(&self) -> usize {
-        let change = &self.to_change();
-        change.rope.len_lines()
+    fn to_last_line_idx(&self) -> usize {
+        let n_lines = {
+            let change = &self.to_change();
+            change.rope.len_lines()
+        };
+        for line_idx in (0..n_lines).rev() {
+            let home = self.line_to_char(line_idx);
+            match self.n_chars() {
+                ln if ln == home => continue,
+                _ => return line_idx,
+            }
+        }
+        0
     }
 
     fn len_line(&self, line_idx: usize) -> usize {
@@ -542,8 +545,9 @@ impl Buffer {
             Event::Mt(Mto::Percent(n, dp)) => mto_percent(self, n, dp)?,
             Event::Mt(Mto::Cursor(n)) => mto_cursor(self, n)?,
             // motion command - word-wise
-            Event::Mt(e @ Mto::Word(_, _, _)) => mto_words(self, e)?,
+            Event::Mt(Mto::Word(n, dir, pos)) => mto_words(self, n, dir, pos)?,
             Event::Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
+
             Event::Mt(e @ Mto::Sentence(_, _)) => mto_sentence(self, e)?,
             Event::Mt(e @ Mto::Para(_, _)) => mto_para(self, e)?,
             Event::Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(self, e)?,
@@ -1087,15 +1091,7 @@ pub fn mto_right(buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
                             _ => n = n - m,
                         }
                     }
-                    None => {
-                        let line_idx = to_last_line_idx(buf);
-                        let home = buf.line_to_char(line_idx);
-                        let m = {
-                            let line = buf.line(line_idx);
-                            Format::trim_newline(&line).0.chars().count()
-                        };
-                        break home + m.saturating_sub(1);
-                    }
+                    None => break mto_end(buf)?,
                 }
             }
         }
@@ -1246,7 +1242,7 @@ pub fn mto_up(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
 pub fn mto_down(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
     let row = {
         let row = buf.char_to_line(buf.to_char_cursor()) + n;
-        cmp::min(row, buf.n_lines().saturating_sub(1))
+        cmp::min(buf.to_last_line_idx(), row)
     };
     let n_chars = text::Format::trim_newline(&buf.line(row)).0.chars().count();
     let col = cmp::min(n_chars, buf.to_xy_cursor().col);
@@ -1270,7 +1266,7 @@ pub fn mto_down(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
 }
 
 pub fn mto_row(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
-    let last_line = buf.n_lines().saturating_sub(1);
+    let last_line = buf.to_last_line_idx();
     let cursor = match n {
         0 => buf.line_to_char(last_line),
         n => buf.line_to_char(cmp::min(last_line, n)),
@@ -1284,7 +1280,7 @@ pub fn mto_row(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
 
 pub fn mto_percent(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
     let row = {
-        let n_lines = buf.n_lines();
+        let n_lines = buf.to_last_line_idx() + 1;
         cmp::min(((n * n_lines) + 99) / 100, n_lines.saturating_sub(1))
     };
     buf.set_cursor(buf.line_to_char(row));
@@ -1294,14 +1290,13 @@ pub fn mto_percent(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-pub fn mto_end(buf: &mut Buffer) -> Result<Event> {
-    let line_idx = buf.n_lines().saturating_sub(1);
+pub fn mto_end(buf: &Buffer) -> Result<usize> {
+    let line_idx = buf.to_last_line_idx();
     let n = {
         let s = buf.line(line_idx);
         text::Format::trim_newline(&s).0.chars().count()
     };
-    buf.set_cursor(buf.line_to_char(line_idx) + n.saturating_sub(1));
-    Ok(Event::Noop)
+    Ok(buf.line_to_char(line_idx) + n.saturating_sub(1))
 }
 
 pub fn mto_cursor(buf: &mut Buffer, n: usize) -> Result<Event> {
@@ -1310,54 +1305,98 @@ pub fn mto_cursor(buf: &mut Buffer, n: usize) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-pub fn mto_words(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
-    match evnt {
-        Mto::Word(n, DP::Left, pos) => {
-            for _ in 0..n {
-                let n = buf.to_mut_change().skip_whitespace(DP::Left)?;
-                match pos {
-                    DP::End if n == 0 => {
-                        buf.skip_alphanumeric(DP::Left);
-                        mto_right(buf, 1, DP::Nobound)?;
-                    }
-                    DP::End => {
-                        buf.skip_alphanumeric(DP::Left);
-                        mto_right(buf, 1, DP::Nobound)?;
-                    }
-                    DP::Start if n == 0 => {
-                        buf.skip_alphanumeric(DP::Left);
-                        buf.to_mut_change().skip_whitespace(DP::Left)?;
-                    }
-                    DP::Start => (),
-                    _ => unreachable!(),
-                }
-            }
-            Ok(Event::Noop)
+pub fn mto_words(buf: &mut Buffer, n: usize, dir: DP, pos: DP) -> Result<Event> {
+    /// assadf     asdfasdf    asdfsadf
+    let bc_xy = buf.to_xy_cursor();
+    let last_line = buf.to_last_line_idx();
+
+    let rev_chars = |mut chars: Vec<char>| -> Vec<char> {
+        chars.reverse();
+        chars
+    };
+    let to_line_chars = |line: String, dir: DP| -> Vec<char> {
+        use crate::text::Format;
+
+        let chars = Format::trim_newline(&line).0.chars();
+        match dir {
+            DP::Left => chars.collect(),
+            DP::Right => rev_chars(chars.collect()),
+            _ => unreachable!(),
         }
-        Mto::Word(n, DP::Right, pos) => {
-            for _ in 0..n {
-                let n = buf.to_mut_change().skip_whitespace(DP::Right)?;
-                match pos {
-                    DP::End if n == 0 => {
-                        buf.skip_alphanumeric(DP::Right);
-                        mto_left(buf, 1, DP::Nobound)?;
-                    }
-                    DP::End => {
-                        buf.skip_alphanumeric(DP::Right);
-                        mto_left(buf, 1, DP::Nobound)?;
-                    }
-                    DP::Start if n == 0 => {
-                        buf.skip_alphanumeric(DP::Right);
-                        buf.to_mut_change().skip_whitespace(DP::Right)?;
-                    }
-                    DP::Start => (),
-                    _ => unreachable!(),
-                }
-            }
-            Ok(Event::Noop)
-        }
-        _ => err_at!(Fatal, msg: format!("unreachable")),
-    }
+    };
+
+    let head = {
+        let chars: Vec<char> = {
+            let s = buf.line(bc_xy.row);
+            text::Format::trim_newline(&s).0.chars().collect()
+        };
+        let chars = match dir {
+            DP::Left => rev_chars(chars[..bc_xy.col].to_vec()),
+            DP::Right => chars[(bc_xy.col + 1)..].to_vec(),
+            dir => err_at!(Fatal, msg: format!("invalid direction: {}", dir))?,
+        };
+        vec![chars].into_iter()
+    };
+
+    let lines = match (dir, bc_xy.row) {
+        (DP::Left, 0) => buf.lines_at(last_line + 1, dir)?,
+        (DP::Left, row) => buf.lines_at(row, dir)?,
+        (DP::Right, row) if row == last_line => buf.lines_at(row + 1, dir)?,
+        (DP::Right, row) => buf.lines_at(row + 1, dir)?,
+        (dir, _) => err_at!(Fatal, msg: format!("invalid direction: {}", dir))?,
+    };
+    let tail = lines.map(|line| to_line_chars(line, dir));
+
+    let iter = head.chain(tail);
+
+    Ok(Event::Noop)
+    //match evnt {
+    //    Mto::Word(n, DP::Left, pos) => {
+    //        for _ in 0..n {
+    //            let n = buf.to_mut_change().skip_whitespace(DP::Left)?;
+    //            match pos {
+    //                DP::End if n == 0 => {
+    //                    buf.skip_alphanumeric(DP::Left);
+    //                    mto_right(buf, 1, DP::Nobound)?;
+    //                }
+    //                DP::End => {
+    //                    buf.skip_alphanumeric(DP::Left);
+    //                    mto_right(buf, 1, DP::Nobound)?;
+    //                }
+    //                DP::Start if n == 0 => {
+    //                    buf.skip_alphanumeric(DP::Left);
+    //                    buf.to_mut_change().skip_whitespace(DP::Left)?;
+    //                }
+    //                DP::Start => (),
+    //                _ => unreachable!(),
+    //            }
+    //        }
+    //        Ok(Event::Noop)
+    //    }
+    //    Mto::Word(n, DP::Right, pos) => {
+    //        for _ in 0..n {
+    //            let n = buf.to_mut_change().skip_whitespace(DP::Right)?;
+    //            match pos {
+    //                DP::End if n == 0 => {
+    //                    buf.skip_alphanumeric(DP::Right);
+    //                    mto_left(buf, 1, DP::Nobound)?;
+    //                }
+    //                DP::End => {
+    //                    buf.skip_alphanumeric(DP::Right);
+    //                    mto_left(buf, 1, DP::Nobound)?;
+    //                }
+    //                DP::Start if n == 0 => {
+    //                    buf.skip_alphanumeric(DP::Right);
+    //                    buf.to_mut_change().skip_whitespace(DP::Right)?;
+    //                }
+    //                DP::Start => (),
+    //                _ => unreachable!(),
+    //            }
+    //        }
+    //        Ok(Event::Noop)
+    //    }
+    //    _ => err_at!(Fatal, msg: format!("unreachable")),
+    //}
 }
 
 pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
@@ -1723,17 +1762,6 @@ fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
     };
     Ok(n)
-}
-
-fn to_last_line_idx(buf: &Buffer) -> usize {
-    for line_idx in (0..buf.n_lines()).rev() {
-        let home = buf.line_to_char(line_idx);
-        match buf.n_chars() {
-            ln if ln == home => continue,
-            _ => return line_idx,
-        }
-    }
-    0
 }
 
 #[cfg(test)]

@@ -55,7 +55,7 @@ pub trait WinBuffer {
     /// iteration. In the forward direction, iteration will start from
     /// the cursor's current line. In reverse direction, iteration will start
     /// from the one before cursor's current line. Note that,
-    /// `0 <= line_idx < n_lines`.
+    /// `0 <= line_idx <= last_line_idx`.
     fn lines_at<'a>(
         &'a self,
         line_idx: usize,
@@ -75,7 +75,7 @@ pub trait WinBuffer {
     ) -> Result<Box<dyn Iterator<Item = char> + 'a>>;
 
     /// Return the character offset of first character for the requested
-    /// `line_idx`. Note that, `0 <= line_idx < n_lines`.
+    /// `line_idx`. Note that, `0 <= line_idx < last_line_idx`.
     fn line_to_char(&self, line_idx: usize) -> usize;
 
     fn line(&self, line_idx: usize) -> String;
@@ -84,7 +84,7 @@ pub trait WinBuffer {
     fn n_chars(&self) -> usize;
 
     /// Return the number of lines in the buffer.
-    fn n_lines(&self) -> usize;
+    fn to_last_line_idx(&self) -> usize;
 
     /// Return the number of characters in line `line_idx`, starts from ZERO.
     fn len_line(&self, line_idx: usize) -> usize;

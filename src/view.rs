@@ -294,7 +294,10 @@ impl NoWrap {
             let wth = coord.wth;
             let lines: Vec<usize> = {
                 let from = nbc_xy.row.saturating_sub(cursor.row as usize);
-                let to = cmp::max(buf.n_lines(), from + (coord.hgt as usize));
+                let to = {
+                    let n_lines = buf.to_last_line_idx();
+                    cmp::max(n_lines, from + (coord.hgt as usize))
+                };
                 (from..=to).collect()
             };
             let mut screen_lines = nowrap_lines(buf, lines, col, wth);
@@ -399,11 +402,17 @@ impl WrapView {
 
         let lines: Vec<usize> = if obc_xy <= nbc_xy {
             let from = obc_xy.row.saturating_sub(hgt);
-            let to = cmp::min(buf.n_lines(), nbc_xy.row + hgt);
+            let to = {
+                let n_lines = buf.to_last_line_idx();
+                cmp::min(n_lines, nbc_xy.row + hgt)
+            };
             (from..=to).collect()
         } else {
             let from = nbc_xy.row.saturating_sub(hgt);
-            let to = cmp::min(buf.n_lines(), obc_xy.row + hgt);
+            let to = {
+                let n_lines = buf.to_last_line_idx();
+                cmp::min(n_lines, obc_xy.row + hgt)
+            };
             (from..=to).collect()
         };
 

@@ -134,7 +134,7 @@ impl WindowEdit {
         let mut col = (self.obc_xy.col / w) * w;
         let mut row = self.obc_xy.row;
 
-        let mut to_cursor = || -> Result<Option<usize>> {
+        let mut to_cursor = || -> Result<usize> {
             for line in buf.lines_at(self.obc_xy.row, DP::Right)? {
                 let m = {
                     let s = line.to_string();
@@ -152,14 +152,14 @@ impl WindowEdit {
                     let item = ends.into_iter().skip(n).next();
                     let end = item.unwrap_or(m).saturating_sub(1);
                     let cursor = buf.line_to_char(row) + cmp::min(end, m);
-                    return Ok(Some(cursor));
+                    return Ok(cursor);
                 }
             }
-            buffer::mto_end(buf)?;
-            Ok(None)
+            buffer::mto_end(buf)
         };
 
-        to_cursor()?.map(|cursor| buf.set_cursor(cursor));
+        let cursor = to_cursor()?;
+        buf.set_cursor(cursor);
 
         match dp {
             DP::TextCol => {
@@ -233,7 +233,7 @@ impl WindowEdit {
 
             let slines = {
                 let bc_xy = buf.to_xy_cursor();
-                let last_line = buf.n_lines().saturating_sub(1);
+                let last_line = buf.to_last_line_idx();
                 let from = bc_xy.row;
                 let to = cmp::min(last_line, bc_xy.row + n.saturating_sub(1));
                 view::wrap_lines(buf, (from..=to).collect(), scr_wth)
