@@ -84,7 +84,7 @@ impl KeyEdit {
                 Enter(_m) => (noop, Mt(Mto::Down(1, DP::TextCol))),
                 Char('+', _m) => (noop, Mt(Mto::Down(1, DP::TextCol))),
                 Char('G', _) => (noop, Mt(Mto::Row(0, DP::TextCol))),
-                Char('%', _) => (noop, Mt(Mto::Percent(1, DP::None))),
+                Char('%', _) => (noop, Mt(Mto::Percent(1, DP::TextCol))),
 
                 Char('b', _) => (noop, Mt(Mto::Word(1, DP::Left, DP::Start))),
                 Char('B', _) => (noop, Mt(Mto::WWord(1, DP::Left, DP::Start))),
@@ -152,7 +152,7 @@ impl KeyEdit {
                 Enter(_m) => (noop, Mt(Mto::Down(n, DP::TextCol))),
                 Char('+', _m) => (noop, Mt(Mto::Down(n, DP::TextCol))),
                 Char('G', _) => (noop, Mt(Mto::Row(n, DP::TextCol))),
-                Char('%', _) => (noop, Mt(Mto::Percent(n, DP::None))),
+                Char('%', _) => (noop, Mt(Mto::Percent(n, DP::TextCol))),
 
                 Char('b', _) => (noop, Mt(Mto::Word(n, DP::Left, DP::Start))),
                 Char('B', _) => (noop, Mt(Mto::WWord(n, DP::Left, DP::Start))),

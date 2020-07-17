@@ -1282,6 +1282,18 @@ pub fn mto_row(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
     Ok(Event::Noop)
 }
 
+pub fn mto_percent(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+    let row = {
+        let n_lines = buf.n_lines();
+        cmp::min(((n * n_lines) + 99) / 100, n_lines.saturating_sub(1))
+    };
+    buf.set_cursor(buf.line_to_char(row));
+    if let DP::TextCol = dp {
+        buf.skip_whitespace(DP::Right)?;
+    }
+    Ok(Event::Noop)
+}
+
 pub fn mto_end(buf: &mut Buffer) -> Result<Event> {
     let line_idx = buf.n_lines().saturating_sub(1);
     let n = {
@@ -1290,21 +1302,6 @@ pub fn mto_end(buf: &mut Buffer) -> Result<Event> {
     };
     buf.set_cursor(buf.line_to_char(line_idx) + n.saturating_sub(1));
     Ok(Event::Noop)
-}
-
-pub fn mto_percent(buf: &mut Buffer, n: usize, _dp: DP) -> Result<Event> {
-    let row = buf.char_to_line(buf.to_char_cursor());
-    match buf.n_lines() {
-        0 => Ok(Event::Noop),
-        mut n_rows if n < 100 => {
-            n_rows = n_rows.saturating_sub(1);
-            match (((n_rows as f64) * (n as f64)) / (100 as f64)) as usize {
-                n if n < row => mto_up(buf, row - n, DP::TextCol),
-                n => mto_down(buf, n - row, DP::TextCol),
-            }
-        }
-        n_rows => mto_down(buf, n_rows.saturating_sub(1), DP::TextCol),
-    }
 }
 
 pub fn mto_cursor(buf: &mut Buffer, n: usize) -> Result<Event> {

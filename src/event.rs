@@ -394,7 +394,7 @@ pub enum Mto {
     Up(usize, DP),      // (n, TextCol/StickyCol/None)
     Down(usize, DP),    // (n, TextCol/StickyCol/None)
     Row(usize, DP),     // (n, TextCol/None)
-    Percent(usize, DP), // (n, None)
+    Percent(usize, DP), // (n, TextCol/None)
 
     Cursor(usize),                      // (n,)
     ScreenUp(usize, DP),                // (n, None)
