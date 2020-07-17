@@ -514,7 +514,7 @@ where
     ScrLine::new_nu(line_idx, bc + col, n)
 }
 
-fn wrap_lines<B>(buf: &B, lines: Vec<usize>, wth: u16) -> Vec<ScrLine>
+pub fn wrap_lines<B>(buf: &B, lines: Vec<usize>, wth: u16) -> Vec<ScrLine>
 where
     B: WinBuffer,
 {
@@ -579,11 +579,11 @@ fn col_kinds(nu: usize, n: usize) -> Vec<ColKind> {
 }
 
 #[derive(Clone)]
-struct ScrLine {
-    colk: ColKind,
-    line_idx: usize,
-    bc: usize,
-    n: u16,
+pub struct ScrLine {
+    pub colk: ColKind,
+    pub line_idx: usize,
+    pub bc: usize,
+    pub n: u16,
 }
 
 impl fmt::Display for ScrLine {

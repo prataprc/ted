@@ -153,6 +153,9 @@ impl KeyEdit {
                 Char('+', _m) => (noop, Mt(Mto::Down(n, DP::TextCol))),
                 Char('G', _) => (noop, Mt(Mto::Row(n, DP::TextCol))),
                 Char('%', _) => (noop, Mt(Mto::Percent(n, DP::TextCol))),
+                // motion command - wordwise
+                Char('w', _) => (noop, Mt(Mto::Word(n, DP::Right, DP::Start))),
+                Char('W', _) => (noop, Mt(Mto::WWord(n, DP::Right, DP::Start))),
 
                 Char('b', _) => (noop, Mt(Mto::Word(n, DP::Left, DP::Start))),
                 Char('B', _) => (noop, Mt(Mto::WWord(n, DP::Left, DP::Start))),
@@ -162,8 +165,6 @@ impl KeyEdit {
                 Char('}', _) => (noop, Mt(Mto::Para(n, DP::Right))),
                 Char('(', _) => (noop, Mt(Mto::Sentence(n, DP::Left))),
                 Char(')', _) => (noop, Mt(Mto::Sentence(n, DP::Right))),
-                Char('w', _) => (noop, Mt(Mto::Word(n, DP::Right, DP::Start))),
-                Char('W', _) => (noop, Mt(Mto::WWord(n, DP::Right, DP::Start))),
                 Char('n', _) => (noop, Mt(Mto::PatternR(n, DP::Right))),
                 Char('N', _) => (noop, Mt(Mto::PatternR(n, DP::Left))),
                 //

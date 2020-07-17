@@ -540,8 +540,8 @@ impl Buffer {
             Event::Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
             Event::Mt(Mto::Row(n, dp)) => mto_row(self, n, dp)?,
             Event::Mt(Mto::Percent(n, dp)) => mto_percent(self, n, dp)?,
-
             Event::Mt(Mto::Cursor(n)) => mto_cursor(self, n)?,
+            // motion command - word-wise
             Event::Mt(e @ Mto::Word(_, _, _)) => mto_words(self, e)?,
             Event::Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
             Event::Mt(e @ Mto::Sentence(_, _)) => mto_sentence(self, e)?,
