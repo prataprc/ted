@@ -222,6 +222,22 @@ impl Buffer {
         self.format = format;
         self
     }
+
+    pub fn clear_sticky_col(&mut self) -> &mut Self {
+        self.sticky_col = StickyCol::default();
+        self
+    }
+
+    pub fn set_sticky_col(&mut self, pos: DP, at: &str) -> &mut Self {
+        match (pos, at) {
+            (DP::TextCol, _) => self.sticky_col = StickyCol::default(),
+            (DP::None, _) => self.sticky_col = StickyCol::default(),
+            (DP::StickyCol, "home") => self.sticky_col = StickyCol::Home,
+            (DP::StickyCol, "end") => self.sticky_col = StickyCol::End,
+            (pos, at) => panic!("invalid position: {} {}", pos, at),
+        };
+        self
+    }
 }
 
 impl WinBuffer for Buffer {
@@ -230,7 +246,7 @@ impl WinBuffer for Buffer {
     }
 
     fn to_xy_cursor(&self) -> Cursor {
-        self.to_change().to_xy_cursor()
+        self.to_change().to_xy_cursor(None)
     }
 
     fn lines_at<'a>(
@@ -408,10 +424,13 @@ impl Buffer {
     }
 
     #[inline]
-    fn to_line_home(&self) -> usize {
-        let change = self.to_change();
-        let line_idx = change.rope.char_to_line(self.to_char_cursor());
-        change.rope.line_to_char(line_idx)
+    fn to_line_home(&self, cursor: Option<usize>) -> usize {
+        let cursor = cursor.unwrap_or(self.to_char_cursor());
+        {
+            let change = self.to_change();
+            let line_idx = change.rope.char_to_line(cursor);
+            change.rope.line_to_char(line_idx)
+        }
     }
 }
 
@@ -519,31 +538,75 @@ impl Buffer {
         let evnt = match evnt {
             Event::Noop => Event::Noop,
             // motion command - characterwise.
-            Event::Mt(Mto::Left(n, dp)) => mto_left(self, n, dp)?,
-            Event::Mt(Mto::Right(n, dp)) => mto_right(self, n, dp)?,
-            Event::Mt(Mto::LineHome(dp)) => mto_line_home(self, dp)?,
-            Event::Mt(Mto::LineEnd(n, dp)) => mto_line_end(self, n, dp)?,
-            Event::Mt(Mto::LineMiddle(1, _)) => mto_line_middle(self, 50)?,
-            Event::Mt(Mto::LineMiddle(p, _)) => mto_line_middle(self, p)?,
-            Event::Mt(Mto::Col(n)) => mto_column(self, n)?,
+            Event::Mt(Mto::Left(n, dp)) => {
+                self.set_cursor(mto_left(self, n, dp)?).clear_sticky_col();
+                Event::Noop
+            }
+            Event::Mt(Mto::Right(n, dp)) => {
+                self.set_cursor(mto_right(self, n, dp)?).clear_sticky_col();
+                Event::Noop
+            }
+            Event::Mt(Mto::LineHome(dp)) => {
+                self.set_cursor(mto_line_home(self, dp)?)
+                    .set_sticky_col(dp, "home");
+                Event::Noop
+            }
+            Event::Mt(Mto::LineEnd(n, dp)) => {
+                self.set_cursor(mto_line_end(self, n, dp)?)
+                    .set_sticky_col(dp, "end");
+                Event::Noop
+            }
+            Event::Mt(Mto::LineMiddle(1, _)) => {
+                self.set_cursor(mto_line_middle(self, 50)?)
+                    .clear_sticky_col();
+                Event::Noop
+            }
+            Event::Mt(Mto::LineMiddle(p, _)) => {
+                self.set_cursor(mto_line_middle(self, p)?)
+                    .clear_sticky_col();
+                Event::Noop
+            }
+            Event::Mt(Mto::Col(n)) => {
+                self.set_cursor(mto_column(self, n)?).clear_sticky_col();
+                Event::Noop
+            }
             Event::Mt(e @ Mto::CharF(_, _, _)) => {
                 self.mto_find_char = e.clone();
-                mto_char(self, e)?
+                self.set_cursor(mto_char(self, e)?).clear_sticky_col();
+                Event::Noop
             }
             Event::Mt(e @ Mto::CharT(_, _, _)) => {
                 self.mto_find_char = e.clone();
-                mto_char(self, e)?
+                self.set_cursor(mto_char(self, e)?).clear_sticky_col();
+                Event::Noop
             }
             Event::Mt(Mto::CharR(n, dir)) => {
                 let e = self.mto_find_char.clone();
-                mto_char(self, e.dir_xor(n, dir)?)?
+                self.set_cursor(mto_char(self, e.dir_xor(n, dir)?)?)
+                    .clear_sticky_col();
+                Event::Noop
             }
             // motion command - linewise.
-            Event::Mt(Mto::Up(n, dp)) => mto_up(self, n, dp)?,
-            Event::Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
-            Event::Mt(Mto::Row(n, dp)) => mto_row(self, n, dp)?,
-            Event::Mt(Mto::Percent(n, dp)) => mto_percent(self, n, dp)?,
-            Event::Mt(Mto::Cursor(n)) => mto_cursor(self, n)?,
+            Event::Mt(Mto::Up(n, dp)) => {
+                self.set_cursor(mto_up(self, n, dp)?);
+                Event::Noop
+            }
+            Event::Mt(Mto::Down(n, dp)) => {
+                self.set_cursor(mto_down(self, n, dp)?);
+                Event::Noop
+            }
+            Event::Mt(Mto::Row(n, dp)) => {
+                self.set_cursor(mto_row(self, n, dp)?);
+                Event::Noop
+            }
+            Event::Mt(Mto::Percent(n, dp)) => {
+                self.set_cursor(mto_percent(self, n, dp)?);
+                Event::Noop
+            }
+            Event::Mt(Mto::Cursor(n)) => {
+                self.set_cursor(mto_cursor(self, n)?);
+                Event::Noop
+            }
             // motion command - word-wise
             Event::Mt(Mto::Word(n, dir, pos)) => mto_words(self, n, dir, pos)?,
             Event::Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
@@ -585,29 +648,33 @@ impl Buffer {
                 Md(Mod::Insert(n, pos)) if n > 0 => {
                     self.insert_repeat = n - 1;
                     if pos == DP::TextCol {
-                        mto_line_home(self, DP::TextCol)?;
+                        self.set_cursor(mto_line_home(self, DP::TextCol)?)
+                            .set_sticky_col(DP::TextCol, "home");
                     }
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Append(n, pos)) if n > 0 => {
                     self.insert_repeat = n - 1;
                     if pos == DP::End {
-                        mto_line_end(self, 1, DP::None)?;
+                        self.set_cursor(mto_line_end(self, 1, DP::None)?);
                     }
-                    mto_right(self, 1, DP::Nobound)?;
+                    self.set_cursor(mto_right(self, 1, DP::Nobound)?)
+                        .clear_sticky_col();
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Open(n, DP::Left)) if n > 0 => {
                     self.insert_repeat = n - 1;
-                    mto_line_home(self, DP::None)?;
+                    self.set_cursor(mto_line_home(self, DP::None)?);
                     self.cmd_insert_char(NL)?;
-                    mto_left(self, 1, DP::Nobound)?;
+                    self.set_cursor(mto_left(self, 1, DP::Nobound)?)
+                        .clear_sticky_col();
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Open(n, DP::Right)) if n > 0 => {
                     self.insert_repeat = n - 1;
-                    mto_line_end(self, 1, DP::None)?;
-                    mto_right(self, 1, DP::Nobound)?;
+                    self.set_cursor(mto_line_end(self, 1, DP::None)?);
+                    self.set_cursor(mto_right(self, 1, DP::Nobound)?)
+                        .clear_sticky_col();
                     self.cmd_insert_char(NL)?;
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
@@ -635,16 +702,37 @@ impl Buffer {
 
         let evnt = match evnt {
             // movement
-            Mt(Mto::Left(n, dp)) => mto_left(self, n, dp)?,
-            Mt(Mto::Right(n, dp)) => mto_right(self, n, dp)?,
-            Mt(Mto::Up(n, dp)) => mto_up(self, n, dp)?,
-            Mt(Mto::Down(n, dp)) => mto_down(self, n, dp)?,
-            Mt(Mto::LineHome(dp)) => mto_line_home(self, dp)?,
-            Mt(Mto::LineEnd(n, dp)) => mto_line_end(self, n, dp)?,
+            Mt(Mto::Left(n, dp)) => {
+                self.set_cursor(mto_left(self, n, dp)?).clear_sticky_col();
+                Event::Noop
+            }
+            Mt(Mto::Right(n, dp)) => {
+                self.set_cursor(mto_right(self, n, dp)?).clear_sticky_col();
+                Event::Noop
+            }
+            Mt(Mto::Up(n, dp)) => {
+                self.set_cursor(mto_up(self, n, dp)?);
+                Event::Noop
+            }
+            Mt(Mto::Down(n, dp)) => {
+                self.set_cursor(mto_down(self, n, dp)?);
+                Event::Noop
+            }
+            Mt(Mto::LineHome(dp)) => {
+                self.set_cursor(mto_line_home(self, dp)?)
+                    .set_sticky_col(dp, "home");
+                Event::Noop
+            }
+            Mt(Mto::LineEnd(n, dp)) => {
+                self.set_cursor(mto_line_end(self, n, dp)?)
+                    .set_sticky_col(dp, "end");
+                Event::Noop
+            }
             // Handle mode events.
             Esc => {
                 self.repeat()?;
-                mto_left(self, 1, DP::LineBound)?;
+                self.set_cursor(mto_left(self, 1, DP::LineBound)?)
+                    .clear_sticky_col();
                 self.mode_normal();
                 Event::Noop
             }
@@ -856,9 +944,10 @@ impl Change {
         self.cursor
     }
 
-    fn to_xy_cursor(&self) -> Cursor {
-        let row_at = self.rope.char_to_line(self.cursor);
-        let col_at = self.cursor - self.rope.line_to_char(row_at);
+    fn to_xy_cursor(&self, cursor: Option<usize>) -> Cursor {
+        let cursor = cursor.unwrap_or(self.cursor);
+        let row_at = self.rope.char_to_line(cursor);
+        let col_at = cursor - self.rope.line_to_char(row_at);
         (col_at, row_at).into()
     }
 }
@@ -1024,14 +1113,14 @@ impl Change {
     }
 }
 
-pub fn mto_left(buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
+pub fn mto_left(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
     use crate::text::Format;
 
-    let mut cursor = buf.to_char_cursor();
-    let home = buf.to_line_home();
+    let cursor = buf.to_char_cursor();
+    let home = buf.to_line_home(Some(cursor));
     let new_cursor = cursor.saturating_sub(n);
 
-    cursor = match dp {
+    let cursor = match dp {
         DP::LineBound if new_cursor >= home => new_cursor,
         DP::LineBound => home,
         DP::Nobound if new_cursor >= home => new_cursor,
@@ -1056,25 +1145,22 @@ pub fn mto_left(buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
         DP::None => new_cursor,
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
     };
-
-    buf.set_cursor(cursor);
-    buf.sticky_col = StickyCol::default();
-    Ok(Event::Noop)
+    Ok(cursor)
 }
 
-pub fn mto_right(buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
+pub fn mto_right(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
     use crate::text::Format;
 
-    let mut cursor = buf.to_char_cursor();
+    let cursor = buf.to_char_cursor();
     let line_idx = buf.char_to_line(cursor);
-    let home = buf.to_line_home();
+    let home = buf.to_line_home(Some(cursor));
     let end = {
         let s = buf.line(line_idx);
         home + Format::trim_newline(&s).0.chars().count()
     };
     let new_cursor = cursor + n;
 
-    cursor = match dp {
+    let cursor = match dp {
         DP::LineBound if new_cursor < end => new_cursor,
         DP::LineBound if home < end => end.saturating_sub(1),
         DP::LineBound => end,
@@ -1097,64 +1183,48 @@ pub fn mto_right(buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
         }
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
     };
-
-    buf.set_cursor(cursor);
-    buf.sticky_col = StickyCol::default();
-    Ok(Event::Noop)
+    Ok(cursor)
 }
 
-pub fn mto_line_home(buf: &mut Buffer, pos: DP) -> Result<Event> {
-    buf.set_cursor(buf.to_line_home());
-    match pos {
+pub fn mto_line_home(buf: &Buffer, pos: DP) -> Result<usize> {
+    let cursor = buf.to_line_home(None);
+    let cursor = match pos {
         DP::TextCol => {
-            let xy = buf.to_xy_cursor();
+            let xy = buf.to_change().to_xy_cursor(Some(cursor));
             let n = skip_whitespace(&buf.line(xy.row), xy.col, DP::Right)?;
-            buf.set_cursor(buf.to_char_cursor() + n);
-            buf.sticky_col = StickyCol::default();
+            cursor + n
         }
-        DP::StickyCol => {
-            buf.sticky_col = StickyCol::Home;
-        }
-        DP::None => {
-            buf.sticky_col = StickyCol::default();
-        }
+        DP::StickyCol | DP::None => cursor,
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
-    }
-    Ok(Event::Noop)
+    };
+    Ok(cursor)
 }
 
-pub fn mto_line_end(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+pub fn mto_line_end(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     use crate::text::Format;
 
     // When a `n` is given also go `n-1` lines downward.
-    mto_down(buf, n.saturating_sub(1), DP::None)?;
-
-    let m = {
-        let s = buf.line(buf.char_to_line(buf.to_char_cursor()));
-        Format::trim_newline(&s).0.chars().count().saturating_sub(1)
+    let cursor = {
+        let cursor = mto_down(buf, n.saturating_sub(1), DP::None)?;
+        let s = buf.line(buf.char_to_line(cursor));
+        let m = Format::trim_newline(&s).0.chars().count().saturating_sub(1);
+        buf.to_line_home(Some(cursor)) + m
     };
-    buf.set_cursor(buf.to_line_home() + m);
 
-    match dp {
+    let cursor = match dp {
         DP::TextCol => {
-            let xy = buf.to_xy_cursor();
+            let xy = buf.to_change().to_xy_cursor(Some(cursor));
             let n = skip_whitespace(&buf.line(xy.row), xy.col, DP::Left)?;
-            buf.set_cursor(buf.to_char_cursor().saturating_sub(n));
-            buf.sticky_col = StickyCol::default();
+            cursor.saturating_sub(n)
         }
-        DP::StickyCol => {
-            buf.sticky_col = StickyCol::End;
-        }
-        DP::None => {
-            buf.sticky_col = StickyCol::default();
-        }
+        DP::StickyCol | DP::None => cursor,
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
-    }
+    };
 
-    Ok(Event::Noop)
+    Ok(cursor)
 }
 
-pub fn mto_line_middle(buf: &mut Buffer, p: usize) -> Result<Event> {
+pub fn mto_line_middle(buf: &Buffer, p: usize) -> Result<usize> {
     use crate::text::Format;
 
     let n = {
@@ -1163,35 +1233,32 @@ pub fn mto_line_middle(buf: &mut Buffer, p: usize) -> Result<Event> {
     };
     let cursor = {
         let n = (((p as f64) / 100.0) * (n as f64)) as usize;
-        buf.to_line_home() + n
+        buf.to_line_home(None) + n
     };
-    buf.set_cursor(cursor);
-    buf.sticky_col = StickyCol::default();
-    Ok(Event::Noop)
+    Ok(cursor)
 }
 
-pub fn mto_column(buf: &mut Buffer, n: usize) -> Result<Event> {
+pub fn mto_column(buf: &Buffer, n: usize) -> Result<usize> {
     use crate::text::Format;
 
-    let home = buf.to_line_home();
+    let home = buf.to_line_home(None);
     let n = {
         let s = buf.line(buf.char_to_line(buf.to_char_cursor()));
         cmp::min(Format::trim_newline(&s).0.chars().count(), n)
     };
-    buf.set_cursor(home + n.saturating_sub(1));
-    buf.sticky_col = StickyCol::default();
-    Ok(Event::Noop)
+    Ok(home + n.saturating_sub(1))
 }
 
-pub fn mto_char(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
+pub fn mto_char(buf: &Buffer, evnt: Mto) -> Result<usize> {
+    let cursor = buf.to_char_cursor();
+
     let (n, ch, dp, pos) = match evnt {
         Mto::CharF(n, Some(ch), dp) => (n, ch, dp, 'f'),
         Mto::CharT(n, Some(ch), dp) => (n, ch, dp, 't'),
-        Mto::CharT(_, None, _) | Mto::None => return Ok(Event::Noop),
+        Mto::CharT(_, None, _) | Mto::None => return Ok(cursor),
         mto => err_at!(Fatal, msg: format!("unexpected {}", mto))?,
     };
 
-    let cursor = buf.to_char_cursor();
     let mut iter = buf.chars_at(cursor, dp)?.enumerate();
     if let DP::Right = dp {
         iter.next();
@@ -1210,36 +1277,31 @@ pub fn mto_char(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
         (None, _, _) => cursor,
         (_, dp, pos) => err_at!(Fatal, msg: format!("bad {} {}", dp, pos))?,
     };
-
-    buf.set_cursor(cursor);
-    buf.sticky_col = StickyCol::default();
-    Ok(Event::Noop)
+    Ok(cursor)
 }
 
-pub fn mto_up(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
-    let row = buf.char_to_line(buf.to_char_cursor()).saturating_sub(n);
-    let n_chars = text::Format::trim_newline(&buf.line(row)).0.chars().count();
-    let col = cmp::min(n_chars, buf.to_xy_cursor().col);
+pub fn mto_up(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
+    let bc_xy = buf.to_xy_cursor();
+    let row = bc_xy.row.saturating_sub(n);
+    let line = &buf.line(row);
+    let n_chars = text::Format::trim_newline(&line).0.chars().count();
+    let col = cmp::min(n_chars, bc_xy.col);
 
     let home = buf.line_to_char(row);
-    let (cursor, text_col) = match dp {
+    let cursor = match dp {
         DP::StickyCol => match buf.sticky_col {
-            StickyCol::Home => (home, false),
-            StickyCol::End => (home + n_chars, false),
-            StickyCol::None => (home + col, false),
+            StickyCol::Home => home,
+            StickyCol::End => home + n_chars,
+            StickyCol::None => home + col,
         },
-        DP::TextCol => (home, true),
-        DP::None => (home + col, false),
+        DP::TextCol => home + skip_whitespace(&line, bc_xy.col, DP::Right)?,
+        DP::None => home + col,
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
     };
-    buf.set_cursor(cursor);
-    if text_col {
-        buf.skip_whitespace(DP::Right)?;
-    }
-    Ok(Event::Noop)
+    Ok(cursor)
 }
 
-pub fn mto_down(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+pub fn mto_down(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let row = {
         let row = buf.char_to_line(buf.to_char_cursor()) + n;
         cmp::min(buf.to_last_line_idx(), row)
@@ -1248,46 +1310,52 @@ pub fn mto_down(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
     let col = cmp::min(n_chars, buf.to_xy_cursor().col);
 
     let home = buf.line_to_char(row);
-    let (cursor, text_col) = match dp {
+    let cursor = match dp {
         DP::StickyCol => match buf.sticky_col {
-            StickyCol::Home => (home, false),
-            StickyCol::End => (home + n_chars, false),
-            StickyCol::None => (home + col, false),
+            StickyCol::Home => home,
+            StickyCol::End => home + n_chars,
+            StickyCol::None => home + col,
         },
-        DP::TextCol => (home, true),
-        DP::None => (home + col, false),
+        DP::TextCol => {
+            let xy = buf.to_change().to_xy_cursor(Some(home));
+            home + skip_whitespace(&buf.line(xy.row), xy.col, DP::Right)?
+        }
+        DP::None => home + col,
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
     };
-    buf.set_cursor(cursor);
-    if text_col {
-        buf.skip_whitespace(DP::Right)?;
-    }
-    Ok(Event::Noop)
+    Ok(cursor)
 }
 
-pub fn mto_row(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+pub fn mto_row(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let last_line = buf.to_last_line_idx();
     let cursor = match n {
         0 => buf.line_to_char(last_line),
         n => buf.line_to_char(cmp::min(last_line, n)),
     };
-    buf.set_cursor(cursor);
-    if let DP::TextCol = dp {
-        buf.skip_whitespace(DP::Right)?;
-    }
-    Ok(Event::Noop)
+    let cursor = match dp {
+        DP::TextCol => {
+            let xy = buf.to_change().to_xy_cursor(Some(cursor));
+            cursor + skip_whitespace(&buf.line(xy.row), xy.col, DP::Right)?
+        }
+        _ => cursor,
+    };
+    Ok(cursor)
 }
 
-pub fn mto_percent(buf: &mut Buffer, n: usize, dp: DP) -> Result<Event> {
+pub fn mto_percent(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let row = {
         let n_lines = buf.to_last_line_idx() + 1;
         cmp::min(((n * n_lines) + 99) / 100, n_lines.saturating_sub(1))
     };
-    buf.set_cursor(buf.line_to_char(row));
-    if let DP::TextCol = dp {
-        buf.skip_whitespace(DP::Right)?;
-    }
-    Ok(Event::Noop)
+    let cursor = buf.line_to_char(row);
+    let cursor = match dp {
+        DP::TextCol => {
+            let xy = buf.to_change().to_xy_cursor(Some(cursor));
+            cursor + skip_whitespace(&buf.line(xy.row), xy.col, DP::Right)?
+        }
+        _ => cursor,
+    };
+    Ok(cursor)
 }
 
 pub fn mto_end(buf: &Buffer) -> Result<usize> {
@@ -1299,104 +1367,63 @@ pub fn mto_end(buf: &Buffer) -> Result<usize> {
     Ok(buf.line_to_char(line_idx) + n.saturating_sub(1))
 }
 
-pub fn mto_cursor(buf: &mut Buffer, n: usize) -> Result<Event> {
+pub fn mto_cursor(buf: &Buffer, n: usize) -> Result<usize> {
     let cursor = buf.to_char_cursor();
-    buf.set_cursor(limite!(cursor + n, buf.n_chars()));
-    Ok(Event::Noop)
+    Ok(limite!(cursor + n, buf.n_chars().saturating_sub(1)))
 }
 
 pub fn mto_words(buf: &mut Buffer, n: usize, dir: DP, pos: DP) -> Result<Event> {
-    /// assadf     asdfasdf    asdfsadf
-    let bc_xy = buf.to_xy_cursor();
-    let last_line = buf.to_last_line_idx();
-
-    let rev_chars = |mut chars: Vec<char>| -> Vec<char> {
-        chars.reverse();
-        chars
-    };
-    let to_line_chars = |line: String, dir: DP| -> Vec<char> {
-        use crate::text::Format;
-
-        let chars = Format::trim_newline(&line).0.chars();
-        match dir {
-            DP::Left => chars.collect(),
-            DP::Right => rev_chars(chars.collect()),
-            _ => unreachable!(),
+    match dir {
+        DP::Left => {
+            for _ in 0..n {
+                let n = buf.to_mut_change().skip_whitespace(DP::Left)?;
+                match pos {
+                    DP::End if n == 0 => {
+                        buf.skip_alphanumeric(DP::Left);
+                        buf.set_cursor(mto_right(buf, 1, DP::Nobound)?)
+                            .clear_sticky_col();
+                    }
+                    DP::End => {
+                        buf.skip_alphanumeric(DP::Left);
+                        buf.set_cursor(mto_right(buf, 1, DP::Nobound)?)
+                            .clear_sticky_col();
+                    }
+                    DP::Start if n == 0 => {
+                        buf.skip_alphanumeric(DP::Left);
+                        buf.to_mut_change().skip_whitespace(DP::Left)?;
+                    }
+                    DP::Start => (),
+                    _ => unreachable!(),
+                }
+            }
+            Ok(Event::Noop)
         }
-    };
-
-    let head = {
-        let chars: Vec<char> = {
-            let s = buf.line(bc_xy.row);
-            text::Format::trim_newline(&s).0.chars().collect()
-        };
-        let chars = match dir {
-            DP::Left => rev_chars(chars[..bc_xy.col].to_vec()),
-            DP::Right => chars[(bc_xy.col + 1)..].to_vec(),
-            dir => err_at!(Fatal, msg: format!("invalid direction: {}", dir))?,
-        };
-        vec![chars].into_iter()
-    };
-
-    let lines = match (dir, bc_xy.row) {
-        (DP::Left, 0) => buf.lines_at(last_line + 1, dir)?,
-        (DP::Left, row) => buf.lines_at(row, dir)?,
-        (DP::Right, row) if row == last_line => buf.lines_at(row + 1, dir)?,
-        (DP::Right, row) => buf.lines_at(row + 1, dir)?,
-        (dir, _) => err_at!(Fatal, msg: format!("invalid direction: {}", dir))?,
-    };
-    let tail = lines.map(|line| to_line_chars(line, dir));
-
-    let iter = head.chain(tail);
-
-    Ok(Event::Noop)
-    //match evnt {
-    //    Mto::Word(n, DP::Left, pos) => {
-    //        for _ in 0..n {
-    //            let n = buf.to_mut_change().skip_whitespace(DP::Left)?;
-    //            match pos {
-    //                DP::End if n == 0 => {
-    //                    buf.skip_alphanumeric(DP::Left);
-    //                    mto_right(buf, 1, DP::Nobound)?;
-    //                }
-    //                DP::End => {
-    //                    buf.skip_alphanumeric(DP::Left);
-    //                    mto_right(buf, 1, DP::Nobound)?;
-    //                }
-    //                DP::Start if n == 0 => {
-    //                    buf.skip_alphanumeric(DP::Left);
-    //                    buf.to_mut_change().skip_whitespace(DP::Left)?;
-    //                }
-    //                DP::Start => (),
-    //                _ => unreachable!(),
-    //            }
-    //        }
-    //        Ok(Event::Noop)
-    //    }
-    //    Mto::Word(n, DP::Right, pos) => {
-    //        for _ in 0..n {
-    //            let n = buf.to_mut_change().skip_whitespace(DP::Right)?;
-    //            match pos {
-    //                DP::End if n == 0 => {
-    //                    buf.skip_alphanumeric(DP::Right);
-    //                    mto_left(buf, 1, DP::Nobound)?;
-    //                }
-    //                DP::End => {
-    //                    buf.skip_alphanumeric(DP::Right);
-    //                    mto_left(buf, 1, DP::Nobound)?;
-    //                }
-    //                DP::Start if n == 0 => {
-    //                    buf.skip_alphanumeric(DP::Right);
-    //                    buf.to_mut_change().skip_whitespace(DP::Right)?;
-    //                }
-    //                DP::Start => (),
-    //                _ => unreachable!(),
-    //            }
-    //        }
-    //        Ok(Event::Noop)
-    //    }
-    //    _ => err_at!(Fatal, msg: format!("unreachable")),
-    //}
+        DP::Right => {
+            for _ in 0..n {
+                let n = buf.to_mut_change().skip_whitespace(DP::Right)?;
+                match pos {
+                    DP::End if n == 0 => {
+                        buf.skip_alphanumeric(DP::Right);
+                        buf.set_cursor(mto_left(buf, 1, DP::Nobound)?)
+                            .clear_sticky_col();
+                    }
+                    DP::End => {
+                        buf.skip_alphanumeric(DP::Right);
+                        buf.set_cursor(mto_left(buf, 1, DP::Nobound)?)
+                            .clear_sticky_col();
+                    }
+                    DP::Start if n == 0 => {
+                        buf.skip_alphanumeric(DP::Right);
+                        buf.to_mut_change().skip_whitespace(DP::Right)?;
+                    }
+                    DP::Start => (),
+                    _ => unreachable!(),
+                }
+            }
+            Ok(Event::Noop)
+        }
+        dir => err_at!(Fatal, msg: format!("invalid direction: {}", dir))?,
+    }
 }
 
 pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
@@ -1407,11 +1434,13 @@ pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
                 match pos {
                     DP::Start if n == 0 => {
                         buf.skip_non_whitespace(DP::Left);
-                        mto_right(buf, 1, DP::Nobound)?;
+                        buf.set_cursor(mto_right(buf, 1, DP::Nobound)?)
+                            .clear_sticky_col();
                     }
                     DP::Start => {
                         buf.skip_non_whitespace(DP::Left);
-                        mto_right(buf, 1, DP::Nobound)?;
+                        buf.set_cursor(mto_right(buf, 1, DP::Nobound)?)
+                            .clear_sticky_col();
                     }
                     DP::End if n == 0 => {
                         buf.skip_non_whitespace(DP::Left);
@@ -1429,11 +1458,13 @@ pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
                 match pos {
                     DP::End if n == 0 => {
                         buf.skip_non_whitespace(DP::Right);
-                        mto_left(buf, 1, DP::Nobound)?;
+                        buf.set_cursor(mto_left(buf, 1, DP::Nobound)?)
+                            .clear_sticky_col();
                     }
                     DP::End => {
                         buf.skip_non_whitespace(DP::Right);
-                        mto_left(buf, 1, DP::Nobound)?;
+                        buf.set_cursor(mto_left(buf, 1, DP::Nobound)?)
+                            .clear_sticky_col();
                     }
                     DP::Start if n == 0 => {
                         buf.skip_non_whitespace(DP::Right);

@@ -119,12 +119,13 @@ impl WindowEdit {
         use crate::buffer::mto_left;
 
         let c = self.to_cursor_col() as usize;
-        let evnt = mto_left(buf, c, DP::None)?;
+        buf.set_cursor(mto_left(buf, c, DP::None)?)
+            .clear_sticky_col();
         match dp {
             DP::TextCol => buf.skip_whitespace(DP::Right)?,
             dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
         };
-        Ok(evnt)
+        Ok(Event::Noop)
     }
 
     fn mto_screen_end(&self, buf: &mut Buffer, mut n: usize, dp: DP) -> Result<Event> {
@@ -172,17 +173,22 @@ impl WindowEdit {
     }
 
     fn mto_screen_middle(&self, buf: &mut Buffer) -> Result<Event> {
+        use crate::buffer::{mto_left, mto_right};
+
         let m = self.to_screen_width() / 2;
         match self.to_cursor_col() {
             c if m < c => {
                 let n = c.saturating_sub(m) as usize;
-                buffer::mto_left(buf, n, DP::LineBound)
+                buf.set_cursor(mto_left(buf, n, DP::LineBound)?)
+                    .clear_sticky_col();
             }
             c => {
                 let n = m.saturating_sub(c) as usize;
-                buffer::mto_right(buf, n, DP::LineBound)
+                buf.set_cursor(mto_right(buf, n, DP::LineBound)?)
+                    .clear_sticky_col();
             }
         }
+        Ok(Event::Noop)
     }
 
     fn mto_screen_up(
@@ -211,10 +217,10 @@ impl WindowEdit {
                 iter.skip(n.saturating_sub(1)).next().clone()
             };
             buf.set_cursor(item.map(|sl| sl.bc + scr_col).unwrap_or(scr_col));
-            Ok(Event::Noop)
         } else {
-            buffer::mto_up(buf, n, dp)
+            buf.set_cursor(buffer::mto_up(buf, n, dp)?);
         }
+        Ok(Event::Noop)
     }
 
     fn mto_screen_down(
@@ -243,10 +249,10 @@ impl WindowEdit {
                 iter.skip(n.saturating_sub(1)).next().clone()
             };
             buf.set_cursor(item.map(|sl| sl.bc + scr_col).unwrap_or(scr_col));
-            Ok(Event::Noop)
         } else {
-            buffer::mto_up(buf, n, dp)
+            buf.set_cursor(buffer::mto_up(buf, n, dp)?);
         }
+        Ok(Event::Noop)
     }
 }
 
