@@ -47,8 +47,9 @@ pub trait WinBuffer {
     fn to_char_cursor(&self) -> usize;
 
     /// Return the cursor position, as (col, row) starting from (0,), within
-    /// this buffer.
-    fn to_xy_cursor(&self) -> buffer::Cursor;
+    /// this buffer. If cursor is None, use the buffer's current cursor,
+    /// else use the supplied cursor as cursor position.
+    fn to_xy_cursor(&self, cursor: Option<usize>) -> buffer::Cursor;
 
     /// Return an iterator starting from line_idx. `dp` can either be
     /// [DP::Right] or [DP::Left] for either forward iteration or reverse

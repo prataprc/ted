@@ -245,8 +245,8 @@ impl WinBuffer for Buffer {
         self.to_change().to_char_cursor()
     }
 
-    fn to_xy_cursor(&self) -> Cursor {
-        self.to_change().to_xy_cursor(None)
+    fn to_xy_cursor(&self, cursor: Option<usize>) -> Cursor {
+        self.to_change().to_xy_cursor(cursor)
     }
 
     fn lines_at<'a>(
@@ -1281,7 +1281,7 @@ pub fn mto_char(buf: &Buffer, evnt: Mto) -> Result<usize> {
 }
 
 pub fn mto_up(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
-    let bc_xy = buf.to_xy_cursor();
+    let bc_xy = buf.to_xy_cursor(None);
     let row = bc_xy.row.saturating_sub(n);
     let line = &buf.line(row);
     let n_chars = text::Format::trim_newline(&line).0.chars().count();
@@ -1307,7 +1307,7 @@ pub fn mto_down(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
         cmp::min(buf.to_last_line_idx(), row)
     };
     let n_chars = text::Format::trim_newline(&buf.line(row)).0.chars().count();
-    let col = cmp::min(n_chars, buf.to_xy_cursor().col);
+    let col = cmp::min(n_chars, buf.to_xy_cursor(None).col);
 
     let home = buf.line_to_char(row);
     let cursor = match dp {
@@ -1668,6 +1668,107 @@ pub fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     Ok(Event::Noop)
 }
 
+// skip whitespace from `offset` in specified direction `dp` and returned
+// the number of position skipped.
+pub fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
+    let line = text::Format::trim_newline(&line).0;
+    let chars: Vec<char> = line.chars().collect();
+    let ln = chars.len();
+
+    let n = match dp {
+        DP::Right => {
+            let item = {
+                let iter = chars.into_iter().skip(off).enumerate();
+                iter.skip_while(|(_, ch)| ch.is_whitespace()).next().clone()
+            };
+            item.map(|x| x.0)
+                .unwrap_or(ln.saturating_sub(off).saturating_sub(1))
+        }
+        DP::Left => {
+            let item = {
+                let m = chars.len().saturating_sub(off).saturating_sub(1);
+                let iter = chars.into_iter().rev().skip(m).enumerate();
+                iter.skip_while(|(_, ch)| ch.is_whitespace()).next().clone()
+            };
+            item.map(|x| x.0).unwrap_or(off)
+        }
+        dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
+    };
+    Ok(n)
+}
+
+fn skip_word(chars: &[char], pos: DP) -> usize {
+    let skip1 = |(_, ch): &(usize, &char)| -> bool {
+        let ok = ch.is_alphanumeric();
+        ok || **ch == '_'
+    };
+    let skip2 = |(_, ch): &(usize, &char)| -> bool { ch.is_whitespace() };
+    let skip3 = |(_, ch): &(usize, &char)| -> bool {
+        let ok = !ch.is_whitespace();
+        ok && !ch.is_alphanumeric()
+    };
+
+    match pos {
+        DP::Start => match chars[0].clone() {
+            ch if ch.is_whitespace() => {
+                let mut iter = chars.iter().enumerate().skip_while(skip2);
+                iter.next().clone().map(|(i, _)| i).unwrap_or(chars.len())
+            }
+            ch if ch.is_alphanumeric() => {
+                let mut iter = chars.iter().enumerate().skip_while(skip1);
+                match iter.next().clone() {
+                    Some((i, ch)) if ch.is_whitespace() => {
+                        let iter = chars[i..].iter().enumerate();
+                        let item = iter.skip_while(skip2).next().clone();
+                        item.map(|(j, _)| i + j).unwrap_or(chars.len())
+                    }
+                    Some((i, _)) => i,
+                    None => chars.len(),
+                }
+            }
+            _ => {
+                let mut iter = chars.iter().enumerate().skip_while(skip3);
+                match iter.next().clone() {
+                    Some((i, ch)) if ch.is_whitespace() => {
+                        let iter = chars[i..].iter().enumerate();
+                        let item = iter.skip_while(skip2).next().clone();
+                        item.map(|(j, _)| i + j).unwrap_or(chars.len())
+                    }
+                    Some((i, _)) => i,
+                    None => chars.len(),
+                }
+            }
+        },
+        DP::End => match chars[0].clone() {
+            ch if ch.is_whitespace() => {
+                let mut iter = chars.iter().enumerate().skip_while(skip2);
+                match iter.next().clone() {
+                    Some((i, ch)) if ch.is_alphanumeric() => {
+                        let iter = chars[i..].iter().enumerate();
+                        let item = iter.skip_while(skip1).next().clone();
+                        item.map(|(j, _)| i + j).unwrap_or(chars.len())
+                    }
+                    Some((i, _)) => {
+                        let iter = chars[i..].iter().enumerate();
+                        let item = iter.skip_while(skip3).next().clone();
+                        item.map(|(j, _)| i + j).unwrap_or(chars.len())
+                    }
+                    None => chars.len(),
+                }
+            }
+            ch if ch.is_alphanumeric() => {
+                let mut iter = chars.iter().enumerate().skip_while(skip1);
+                iter.next().clone().map(|(i, _)| i).unwrap_or(chars.len())
+            }
+            _ => {
+                let mut iter = chars.iter().enumerate().skip_while(skip3);
+                iter.next().clone().map(|(i, _)| i).unwrap_or(chars.len())
+            }
+        },
+        pos => panic!("invalid position: {}", pos),
+    }
+}
+
 pub struct IterLine<'a> {
     _change: cell::Ref<'a, Change>, // holding a reference.
     iter: ropey::iter::Lines<'a>,
@@ -1764,35 +1865,6 @@ pub fn to_span_line(buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
         String::from_iter(iter).into()
     };
     Ok(span.into())
-}
-
-// skip whitespace from `offset` in specified direction `dp` and returned
-// the number of position skipped.
-fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
-    let line = text::Format::trim_newline(&line).0;
-    let chars: Vec<char> = line.chars().collect();
-    let ln = chars.len();
-
-    let n = match dp {
-        DP::Right => {
-            let item = {
-                let iter = chars.into_iter().skip(off).enumerate();
-                iter.skip_while(|(_, ch)| ch.is_whitespace()).next().clone()
-            };
-            item.map(|x| x.0)
-                .unwrap_or(ln.saturating_sub(off).saturating_sub(1))
-        }
-        DP::Left => {
-            let item = {
-                let m = chars.len().saturating_sub(off).saturating_sub(1);
-                let iter = chars.into_iter().rev().skip(m).enumerate();
-                iter.skip_while(|(_, ch)| ch.is_whitespace()).next().clone()
-            };
-            item.map(|x| x.0).unwrap_or(off)
-        }
-        dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
-    };
-    Ok(n)
 }
 
 #[cfg(test)]

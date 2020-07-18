@@ -132,7 +132,7 @@ impl Window for WindowCmd {
 
         let v: NoWrap = (&*self, self.obc_xy).into();
         self.cursor = v.render(&self.buf, self, false /*scroll*/)?;
-        self.obc_xy = self.buf.to_xy_cursor();
+        self.obc_xy = self.buf.to_xy_cursor(None);
 
         Ok(())
     }

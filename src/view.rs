@@ -76,7 +76,7 @@ impl Wrap {
         <R as Render>::Buf: WinBuffer,
     {
         let nu_wth = self.nu.to_width();
-        let nbc_xy = buf.to_xy_cursor();
+        let nbc_xy = buf.to_xy_cursor(None);
         self.discount_nu(nu_wth);
         let screen_lines = {
             let (coord, cursor, screen_lines) = self.shift_cursor(buf, scroll);
@@ -97,7 +97,7 @@ impl Wrap {
             let view: WrapView = self.clone().into();
             view.to_view_rows(buf, scroll)
         };
-        let nbc_xy = buf.to_xy_cursor();
+        let nbc_xy = buf.to_xy_cursor(None);
         let coord = {
             let old_nu = ColNu::new(self.obc_xy.row, self.line_number);
             let nu = ColNu::new(nbc_xy.row, self.line_number);
@@ -233,7 +233,7 @@ impl NoWrap {
         <R as Render>::Buf: WinBuffer,
     {
         let nu_wth = self.nu.to_width();
-        let nbc_xy = buf.to_xy_cursor();
+        let nbc_xy = buf.to_xy_cursor(None);
         self.discount_nu(nu_wth);
         let screen_lines = {
             let (coord, cursor, screen_lines) = self.shift_cursor(buf, scroll);
@@ -252,7 +252,7 @@ impl NoWrap {
     {
         use std::iter::repeat;
 
-        let nbc_xy = buf.to_xy_cursor();
+        let nbc_xy = buf.to_xy_cursor(None);
         let r_min = cmp::max(0, self.scroll_off) as isize;
         let r_max = {
             let r_max = self.coord.hgt.saturating_sub(1);
@@ -396,7 +396,7 @@ impl WrapView {
         use std::iter::repeat;
 
         let obc_xy = self.obc_xy;
-        let nbc_xy = buf.to_xy_cursor();
+        let nbc_xy = buf.to_xy_cursor(None);
         let hgt = self.coord.hgt as usize;
         let nbc = buf.line_to_char(nbc_xy.row) + nbc_xy.col;
 
@@ -463,7 +463,7 @@ impl WrapView {
         B: WinBuffer,
     {
         let obc_xy = self.obc_xy;
-        let nbc_xy = buf.to_xy_cursor();
+        let nbc_xy = buf.to_xy_cursor(None);
         let obc = buf.line_to_char(obc_xy.row) + obc_xy.col;
         let nbc = buf.line_to_char(nbc_xy.row) + nbc_xy.col;
 
