@@ -41,6 +41,68 @@ lazy_static! {
     static ref BUFFER_NUM: Mutex<usize> = Mutex::new(0);
 }
 
+macro_rules! skip_words {
+    ($iter:ident, $n:ident, $pos:ident) => {{
+        let mut offs = vec![]; // (row, row-off, n_chars)
+        let mut skip_ws = false;
+        loop {
+            let item = match $iter.next() {
+                Some((_, chars)) if chars.len() == 0 && skip_ws => continue,
+                Some((row, chars)) if chars.len() == 0 => {
+                    offs.push((row, 0, 0));
+                    Some(())
+                }
+                Some((row, chars)) => {
+                    let mut off = if_else!(skip_ws, skip_ws!(chars), 0_usize);
+                    while off < chars.len() {
+                        offs.push((row, off, chars.len()));
+                        off += skip_word(&chars[off..], $pos);
+                    }
+                    skip_ws = DP::Start == $pos;
+                    debug!("skip_words {:?}", offs);
+                    Some(())
+                }
+                None => None,
+            };
+            match item {
+                Some(_) if $n < offs.len() => break Some(offs),
+                Some(_) => (),
+                None => break None,
+            }
+        }
+    }};
+}
+
+macro_rules! skip_ws {
+    ($chars:expr) => {{
+        let skip = |(_, ch): &(usize, &char)| -> bool { ch.is_whitespace() };
+        let mut iter = $chars.iter().enumerate().skip_while(skip);
+        iter.next().clone().map(|(i, _)| i).unwrap_or($chars.len())
+    }};
+}
+
+macro_rules! skip_an {
+    ($chars:expr) => {{
+        let skip = |(_, ch): &(usize, &char)| -> bool {
+            let ok = ch.is_alphanumeric();
+            ok || **ch == '_'
+        };
+        let mut iter = $chars.iter().enumerate().skip_while(skip);
+        iter.next().clone().map(|(i, _)| i).unwrap_or($chars.len())
+    }};
+}
+
+macro_rules! skip_ch {
+    ($chars:expr) => {{
+        let skip = |(_, ch): &(usize, &char)| -> bool {
+            let ok = !ch.is_whitespace();
+            ok && !ch.is_alphanumeric()
+        };
+        let mut iter = $chars.iter().enumerate().skip_while(skip);
+        iter.next().clone().map(|(i, _)| i).unwrap_or($chars.len())
+    }};
+}
+
 /// Cursor within the buffer, where the first row, first column
 /// start from (0, 0).
 #[derive(Clone, Copy, Default, Debug)]
@@ -539,76 +601,95 @@ impl Buffer {
             Event::Noop => Event::Noop,
             // motion command - characterwise.
             Event::Mt(Mto::Left(n, dp)) => {
-                self.set_cursor(mto_left(self, n, dp)?).clear_sticky_col();
+                let cursor = mto_left(self, n, dp)?;
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Event::Mt(Mto::Right(n, dp)) => {
-                self.set_cursor(mto_right(self, n, dp)?).clear_sticky_col();
+                let cursor = mto_right(self, n, dp)?;
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Event::Mt(Mto::LineHome(dp)) => {
-                self.set_cursor(mto_line_home(self, dp)?)
-                    .set_sticky_col(dp, "home");
+                let cursor = mto_line_home(self, dp)?;
+                self.set_cursor(cursor).set_sticky_col(dp, "home");
                 Event::Noop
             }
             Event::Mt(Mto::LineEnd(n, dp)) => {
-                self.set_cursor(mto_line_end(self, n, dp)?)
-                    .set_sticky_col(dp, "end");
+                let cursor = mto_line_end(self, n, dp)?;
+                self.set_cursor(cursor).set_sticky_col(dp, "end");
                 Event::Noop
             }
             Event::Mt(Mto::LineMiddle(1, _)) => {
-                self.set_cursor(mto_line_middle(self, 50)?)
-                    .clear_sticky_col();
+                let cursor = mto_line_middle(self, 50)?;
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Event::Mt(Mto::LineMiddle(p, _)) => {
-                self.set_cursor(mto_line_middle(self, p)?)
-                    .clear_sticky_col();
+                let cursor = mto_line_middle(self, p)?;
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Event::Mt(Mto::Col(n)) => {
-                self.set_cursor(mto_column(self, n)?).clear_sticky_col();
+                let cursor = mto_column(self, n)?;
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Event::Mt(e @ Mto::CharF(_, _, _)) => {
                 self.mto_find_char = e.clone();
-                self.set_cursor(mto_char(self, e)?).clear_sticky_col();
+                let cursor = mto_char(self, e)?;
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Event::Mt(e @ Mto::CharT(_, _, _)) => {
                 self.mto_find_char = e.clone();
-                self.set_cursor(mto_char(self, e)?).clear_sticky_col();
+                let cursor = mto_char(self, e)?;
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Event::Mt(Mto::CharR(n, dir)) => {
                 let e = self.mto_find_char.clone();
-                self.set_cursor(mto_char(self, e.dir_xor(n, dir)?)?)
-                    .clear_sticky_col();
+                let cursor = mto_char(self, e.dir_xor(n, dir)?)?;
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             // motion command - linewise.
             Event::Mt(Mto::Up(n, dp)) => {
-                self.set_cursor(mto_up(self, n, dp)?);
+                let cursor = mto_up(self, n, dp)?;
+                self.set_cursor(cursor);
                 Event::Noop
             }
             Event::Mt(Mto::Down(n, dp)) => {
-                self.set_cursor(mto_down(self, n, dp)?);
+                let cursor = mto_down(self, n, dp)?;
+                self.set_cursor(cursor);
                 Event::Noop
             }
             Event::Mt(Mto::Row(n, dp)) => {
-                self.set_cursor(mto_row(self, n, dp)?);
+                let cursor = mto_row(self, n, dp)?;
+                self.set_cursor(cursor);
                 Event::Noop
             }
             Event::Mt(Mto::Percent(n, dp)) => {
-                self.set_cursor(mto_percent(self, n, dp)?);
+                let cursor = mto_percent(self, n, dp)?;
+                self.set_cursor(cursor);
                 Event::Noop
             }
             Event::Mt(Mto::Cursor(n)) => {
-                self.set_cursor(mto_cursor(self, n)?);
+                let cursor = mto_cursor(self, n)?;
+                self.set_cursor(cursor);
                 Event::Noop
             }
             // motion command - word-wise
-            Event::Mt(Mto::Word(n, dir, pos)) => mto_words(self, n, dir, pos)?,
+            Event::Mt(Mto::Word(n, DP::Left, pos)) => {
+                let cursor = mto_words_left(self, n, pos)?;
+                self.set_cursor(cursor);
+                Event::Noop
+            }
+            Event::Mt(Mto::Word(n, DP::Right, pos)) => {
+                let cursor = mto_words_right(self, n, pos)?;
+                self.set_cursor(cursor);
+                Event::Noop
+            }
             Event::Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
 
             Event::Mt(e @ Mto::Sentence(_, _)) => mto_sentence(self, e)?,
@@ -648,33 +729,40 @@ impl Buffer {
                 Md(Mod::Insert(n, pos)) if n > 0 => {
                     self.insert_repeat = n - 1;
                     if pos == DP::TextCol {
-                        self.set_cursor(mto_line_home(self, DP::TextCol)?)
-                            .set_sticky_col(DP::TextCol, "home");
+                        let cursor = mto_line_home(self, pos)?;
+                        self.set_cursor(cursor).set_sticky_col(pos, "home");
                     }
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Append(n, pos)) if n > 0 => {
                     self.insert_repeat = n - 1;
                     if pos == DP::End {
-                        self.set_cursor(mto_line_end(self, 1, DP::None)?);
+                        let cursor = mto_line_end(self, 1, pos)?;
+                        self.set_cursor(cursor);
                     }
-                    self.set_cursor(mto_right(self, 1, DP::Nobound)?)
-                        .clear_sticky_col();
+                    let cursor = mto_right(self, 1, DP::Nobound)?;
+                    self.set_cursor(cursor).clear_sticky_col();
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Open(n, DP::Left)) if n > 0 => {
                     self.insert_repeat = n - 1;
-                    self.set_cursor(mto_line_home(self, DP::None)?);
+                    {
+                        let cursor = mto_line_home(self, DP::None)?;
+                        self.set_cursor(cursor);
+                    }
                     self.cmd_insert_char(NL)?;
-                    self.set_cursor(mto_left(self, 1, DP::Nobound)?)
-                        .clear_sticky_col();
+                    let cursor = mto_left(self, 1, DP::Nobound)?;
+                    self.set_cursor(cursor).clear_sticky_col();
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 Md(Mod::Open(n, DP::Right)) if n > 0 => {
                     self.insert_repeat = n - 1;
-                    self.set_cursor(mto_line_end(self, 1, DP::None)?);
-                    self.set_cursor(mto_right(self, 1, DP::Nobound)?)
-                        .clear_sticky_col();
+                    {
+                        let cursor = mto_line_end(self, 1, DP::None)?;
+                        self.set_cursor(cursor);
+                    }
+                    let cursor = mto_right(self, 1, DP::Nobound)?;
+                    self.set_cursor(cursor).clear_sticky_col();
                     self.cmd_insert_char(NL)?;
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
@@ -703,36 +791,40 @@ impl Buffer {
         let evnt = match evnt {
             // movement
             Mt(Mto::Left(n, dp)) => {
-                self.set_cursor(mto_left(self, n, dp)?).clear_sticky_col();
+                let cursor = mto_left(self, n, dp)?;
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Mt(Mto::Right(n, dp)) => {
-                self.set_cursor(mto_right(self, n, dp)?).clear_sticky_col();
+                let cursor = mto_right(self, n, dp)?;
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Mt(Mto::Up(n, dp)) => {
-                self.set_cursor(mto_up(self, n, dp)?);
+                let cursor = mto_up(self, n, dp)?;
+                self.set_cursor(cursor);
                 Event::Noop
             }
             Mt(Mto::Down(n, dp)) => {
-                self.set_cursor(mto_down(self, n, dp)?);
+                let cursor = mto_down(self, n, dp)?;
+                self.set_cursor(cursor);
                 Event::Noop
             }
             Mt(Mto::LineHome(dp)) => {
-                self.set_cursor(mto_line_home(self, dp)?)
-                    .set_sticky_col(dp, "home");
+                let cursor = mto_line_home(self, dp)?;
+                self.set_cursor(cursor).set_sticky_col(dp, "home");
                 Event::Noop
             }
             Mt(Mto::LineEnd(n, dp)) => {
-                self.set_cursor(mto_line_end(self, n, dp)?)
-                    .set_sticky_col(dp, "end");
+                let cursor = mto_line_end(self, n, dp)?;
+                self.set_cursor(cursor).set_sticky_col(dp, "end");
                 Event::Noop
             }
             // Handle mode events.
             Esc => {
                 self.repeat()?;
-                self.set_cursor(mto_left(self, 1, DP::LineBound)?)
-                    .clear_sticky_col();
+                let cursor = mto_left(self, 1, DP::LineBound)?;
+                self.set_cursor(cursor).clear_sticky_col();
                 self.mode_normal();
                 Event::Noop
             }
@@ -1284,14 +1376,17 @@ pub fn mto_up(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let bc_xy = buf.to_xy_cursor(None);
     let row = bc_xy.row.saturating_sub(n);
     let line = &buf.line(row);
-    let n_chars = text::Format::trim_newline(&line).0.chars().count();
-    let col = cmp::min(n_chars, bc_xy.col);
+    let char_end = {
+        let n = text::Format::trim_newline(&line).0.chars().count();
+        n.saturating_sub(1)
+    };
+    let col = cmp::min(char_end, bc_xy.col);
 
     let home = buf.line_to_char(row);
     let cursor = match dp {
         DP::StickyCol => match buf.sticky_col {
             StickyCol::Home => home,
-            StickyCol::End => home + n_chars,
+            StickyCol::End => home + char_end,
             StickyCol::None => home + col,
         },
         DP::TextCol => home + skip_whitespace(&line, bc_xy.col, DP::Right)?,
@@ -1306,14 +1401,17 @@ pub fn mto_down(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
         let row = buf.char_to_line(buf.to_char_cursor()) + n;
         cmp::min(buf.to_last_line_idx(), row)
     };
-    let n_chars = text::Format::trim_newline(&buf.line(row)).0.chars().count();
-    let col = cmp::min(n_chars, buf.to_xy_cursor(None).col);
+    let char_end = {
+        let n = text::Format::trim_newline(&buf.line(row)).0.chars().count();
+        n.saturating_sub(1)
+    };
+    let col = cmp::min(char_end, buf.to_xy_cursor(None).col);
 
     let home = buf.line_to_char(row);
     let cursor = match dp {
         DP::StickyCol => match buf.sticky_col {
             StickyCol::Home => home,
-            StickyCol::End => home + n_chars,
+            StickyCol::End => home + char_end,
             StickyCol::None => home + col,
         },
         DP::TextCol => {
@@ -1372,58 +1470,80 @@ pub fn mto_cursor(buf: &Buffer, n: usize) -> Result<usize> {
     Ok(limite!(cursor + n, buf.n_chars().saturating_sub(1)))
 }
 
-pub fn mto_words(buf: &mut Buffer, n: usize, dir: DP, pos: DP) -> Result<Event> {
-    match dir {
-        DP::Left => {
-            for _ in 0..n {
-                let n = buf.to_mut_change().skip_whitespace(DP::Left)?;
-                match pos {
-                    DP::End if n == 0 => {
-                        buf.skip_alphanumeric(DP::Left);
-                        buf.set_cursor(mto_right(buf, 1, DP::Nobound)?)
-                            .clear_sticky_col();
-                    }
-                    DP::End => {
-                        buf.skip_alphanumeric(DP::Left);
-                        buf.set_cursor(mto_right(buf, 1, DP::Nobound)?)
-                            .clear_sticky_col();
-                    }
-                    DP::Start if n == 0 => {
-                        buf.skip_alphanumeric(DP::Left);
-                        buf.to_mut_change().skip_whitespace(DP::Left)?;
-                    }
-                    DP::Start => (),
-                    _ => unreachable!(),
-                }
-            }
-            Ok(Event::Noop)
+pub fn mto_words_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+    let bc_xy = buf.to_xy_cursor(None);
+    let to_chars = |s: String| -> Vec<char> {
+        let mut chars: Vec<char> = s.chars().collect();
+        chars.reverse();
+        chars
+    };
+
+    let mut iter = {
+        let head = {
+            let chars: Vec<char> = buf.line(bc_xy.row).chars().collect();
+            vec![chars[..bc_xy.col].to_vec()].into_iter()
+        };
+        let tail = buf.lines_at(bc_xy.row, DP::Left)?.map(to_chars);
+        head.chain(tail).enumerate()
+    };
+
+    let (row, col) = match skip_words!(iter, n, pos) {
+        None => (0, 0),
+        Some(offs) if offs[n].0 == 0 => {
+            let off = offs[n];
+            let col = bc_xy.col.saturating_sub(off.1);
+            (bc_xy.row, col)
         }
-        DP::Right => {
-            for _ in 0..n {
-                let n = buf.to_mut_change().skip_whitespace(DP::Right)?;
-                match pos {
-                    DP::End if n == 0 => {
-                        buf.skip_alphanumeric(DP::Right);
-                        buf.set_cursor(mto_left(buf, 1, DP::Nobound)?)
-                            .clear_sticky_col();
-                    }
-                    DP::End => {
-                        buf.skip_alphanumeric(DP::Right);
-                        buf.set_cursor(mto_left(buf, 1, DP::Nobound)?)
-                            .clear_sticky_col();
-                    }
-                    DP::Start if n == 0 => {
-                        buf.skip_alphanumeric(DP::Right);
-                        buf.to_mut_change().skip_whitespace(DP::Right)?;
-                    }
-                    DP::Start => (),
-                    _ => unreachable!(),
-                }
-            }
-            Ok(Event::Noop)
+        Some(offs) => {
+            let off = offs[n];
+            let col = off.2.saturating_sub(off.1);
+            (bc_xy.row.saturating_sub(off.0), col)
         }
-        dir => err_at!(Fatal, msg: format!("invalid direction: {}", dir))?,
-    }
+    };
+
+    let cursor = buf.line_to_char(row) + col;
+    Ok(cursor)
+}
+
+pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+    use crate::text::Format;
+
+    let bc_xy = buf.to_xy_cursor(None);
+    let to_chars = |s: String| -> Vec<char> { s.chars().collect() };
+
+    let mut iter = {
+        let head = {
+            let chars: Vec<char> = {
+                let line = buf.line(bc_xy.row);
+                Format::trim_newline(&line).0.chars().collect()
+            };
+            let col = bc_xy.col;
+            vec![chars[col..].to_vec()].into_iter()
+        };
+        let tail = buf.lines_at(bc_xy.row + 1, DP::Right)?.map(to_chars);
+        head.chain(tail).enumerate()
+    };
+
+    let (row, col) = match skip_words!(iter, n, pos) {
+        None => {
+            let row = buf.to_last_line_idx();
+            let col = Format::trim_newline(&buf.line(row)).0.chars().count();
+            (row, col)
+        }
+        Some(offs) if offs[n].0 == 0 => {
+            let off = offs[n];
+            let col = bc_xy.col + off.1;
+            (bc_xy.row, col)
+        }
+        Some(offs) => {
+            let off = offs[n];
+            let col = off.1;
+            (bc_xy.row + off.0, col)
+        }
+    };
+
+    let cursor = buf.line_to_char(row) + col;
+    Ok(cursor)
 }
 
 pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
@@ -1698,72 +1818,34 @@ pub fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
 }
 
 fn skip_word(chars: &[char], pos: DP) -> usize {
-    let skip1 = |(_, ch): &(usize, &char)| -> bool {
-        let ok = ch.is_alphanumeric();
-        ok || **ch == '_'
-    };
-    let skip2 = |(_, ch): &(usize, &char)| -> bool { ch.is_whitespace() };
-    let skip3 = |(_, ch): &(usize, &char)| -> bool {
-        let ok = !ch.is_whitespace();
-        ok && !ch.is_alphanumeric()
-    };
-
     match pos {
         DP::Start => match chars[0].clone() {
-            ch if ch.is_whitespace() => {
-                let mut iter = chars.iter().enumerate().skip_while(skip2);
-                iter.next().clone().map(|(i, _)| i).unwrap_or(chars.len())
-            }
-            ch if ch.is_alphanumeric() => {
-                let mut iter = chars.iter().enumerate().skip_while(skip1);
-                match iter.next().clone() {
-                    Some((i, ch)) if ch.is_whitespace() => {
-                        let iter = chars[i..].iter().enumerate();
-                        let item = iter.skip_while(skip2).next().clone();
-                        item.map(|(j, _)| i + j).unwrap_or(chars.len())
-                    }
-                    Some((i, _)) => i,
-                    None => chars.len(),
-                }
-            }
-            _ => {
-                let mut iter = chars.iter().enumerate().skip_while(skip3);
-                match iter.next().clone() {
-                    Some((i, ch)) if ch.is_whitespace() => {
-                        let iter = chars[i..].iter().enumerate();
-                        let item = iter.skip_while(skip2).next().clone();
-                        item.map(|(j, _)| i + j).unwrap_or(chars.len())
-                    }
-                    Some((i, _)) => i,
-                    None => chars.len(),
-                }
-            }
+            ch if ch.is_whitespace() => skip_ws!(chars),
+            ch if ch.is_alphanumeric() => match skip_an!(chars) {
+                off if off < chars.len() => match chars[off].is_whitespace() {
+                    true => off + skip_ws!(&chars[off..]),
+                    false => off,
+                },
+                _ => chars.len(),
+            },
+            _ => match skip_ch!(chars) {
+                off if off < chars.len() => match chars[off].is_whitespace() {
+                    true => off + skip_ws!(&chars[off..]),
+                    false => off,
+                },
+                _ => chars.len(),
+            },
         },
         DP::End => match chars[0].clone() {
-            ch if ch.is_whitespace() => {
-                let mut iter = chars.iter().enumerate().skip_while(skip2);
-                match iter.next().clone() {
-                    Some((i, ch)) if ch.is_alphanumeric() => {
-                        let iter = chars[i..].iter().enumerate();
-                        let item = iter.skip_while(skip1).next().clone();
-                        item.map(|(j, _)| i + j).unwrap_or(chars.len())
-                    }
-                    Some((i, _)) => {
-                        let iter = chars[i..].iter().enumerate();
-                        let item = iter.skip_while(skip3).next().clone();
-                        item.map(|(j, _)| i + j).unwrap_or(chars.len())
-                    }
-                    None => chars.len(),
-                }
-            }
-            ch if ch.is_alphanumeric() => {
-                let mut iter = chars.iter().enumerate().skip_while(skip1);
-                iter.next().clone().map(|(i, _)| i).unwrap_or(chars.len())
-            }
-            _ => {
-                let mut iter = chars.iter().enumerate().skip_while(skip3);
-                iter.next().clone().map(|(i, _)| i).unwrap_or(chars.len())
-            }
+            ch if ch.is_whitespace() => match skip_ws!(chars) {
+                off if off < chars.len() => match chars[off].is_alphanumeric() {
+                    true => off + skip_an!(&chars[off..]),
+                    false => off + skip_ch!(&chars[off..]),
+                },
+                _ => chars.len(),
+            },
+            ch if ch.is_alphanumeric() => skip_an!(chars),
+            _ => skip_ch!(chars),
         },
         pos => panic!("invalid position: {}", pos),
     }
