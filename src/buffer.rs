@@ -41,68 +41,6 @@ lazy_static! {
     static ref BUFFER_NUM: Mutex<usize> = Mutex::new(0);
 }
 
-macro_rules! skip_words {
-    ($iter:ident, $n:ident, $pos:ident) => {{
-        let mut offs = vec![]; // (row, row-off, n_chars)
-        let mut skip_ws = false;
-        loop {
-            let item = match $iter.next() {
-                Some((_, chars)) if chars.len() == 0 && skip_ws => continue,
-                Some((row, chars)) if chars.len() == 0 => {
-                    offs.push((row, 0, 0));
-                    Some(())
-                }
-                Some((row, chars)) => {
-                    let mut off = if_else!(skip_ws, skip_ws!(chars), 0_usize);
-                    while off < chars.len() {
-                        offs.push((row, off, chars.len()));
-                        off += skip_word(&chars[off..], $pos);
-                    }
-                    skip_ws = DP::Start == $pos;
-                    debug!("skip_words {:?}", offs);
-                    Some(())
-                }
-                None => None,
-            };
-            match item {
-                Some(_) if $n < offs.len() => break Some(offs),
-                Some(_) => (),
-                None => break None,
-            }
-        }
-    }};
-}
-
-macro_rules! skip_ws {
-    ($chars:expr) => {{
-        let skip = |(_, ch): &(usize, &char)| -> bool { ch.is_whitespace() };
-        let mut iter = $chars.iter().enumerate().skip_while(skip);
-        iter.next().clone().map(|(i, _)| i).unwrap_or($chars.len())
-    }};
-}
-
-macro_rules! skip_an {
-    ($chars:expr) => {{
-        let skip = |(_, ch): &(usize, &char)| -> bool {
-            let ok = ch.is_alphanumeric();
-            ok || **ch == '_'
-        };
-        let mut iter = $chars.iter().enumerate().skip_while(skip);
-        iter.next().clone().map(|(i, _)| i).unwrap_or($chars.len())
-    }};
-}
-
-macro_rules! skip_ch {
-    ($chars:expr) => {{
-        let skip = |(_, ch): &(usize, &char)| -> bool {
-            let ok = !ch.is_whitespace();
-            ok && !ch.is_alphanumeric()
-        };
-        let mut iter = $chars.iter().enumerate().skip_while(skip);
-        iter.next().clone().map(|(i, _)| i).unwrap_or($chars.len())
-    }};
-}
-
 /// Cursor within the buffer, where the first row, first column
 /// start from (0, 0).
 #[derive(Clone, Copy, Default, Debug)]
@@ -1471,77 +1409,97 @@ pub fn mto_cursor(buf: &Buffer, n: usize) -> Result<usize> {
 }
 
 pub fn mto_words_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
-    let bc_xy = buf.to_xy_cursor(None);
-    let to_chars = |s: String| -> Vec<char> {
-        let mut chars: Vec<char> = s.chars().collect();
-        chars.reverse();
-        chars
-    };
+    todo!()
+    //let bc_xy = buf.to_xy_cursor(None);
+    //let to_chars = |s: String| -> Vec<char> {
+    //    let mut chars: Vec<char> = s.chars().collect();
+    //    chars.reverse();
+    //    chars
+    //};
 
-    let mut iter = {
-        let head = {
-            let chars: Vec<char> = buf.line(bc_xy.row).chars().collect();
-            vec![chars[..bc_xy.col].to_vec()].into_iter()
-        };
-        let tail = buf.lines_at(bc_xy.row, DP::Left)?.map(to_chars);
-        head.chain(tail).enumerate()
-    };
+    //let mut iter = {
+    //    let head = {
+    //        let chars: Vec<char> = buf.line(bc_xy.row).chars().collect();
+    //        let mut chars = {
+    //            let col = bc_xy.col + if_else!(pos == DP::Start, 1, 0);
+    //            chars[..col].to_vec()
+    //        };
+    //        chars.reverse();
+    //        vec![chars].into_iter()
+    //    };
+    //    let tail = buf.lines_at(bc_xy.row, DP::Left)?.map(to_chars);
+    //    head.chain(tail).enumerate()
+    //};
 
-    let (row, col) = match skip_words!(iter, n, pos) {
-        None => (0, 0),
-        Some(offs) if offs[n].0 == 0 => {
-            let off = offs[n];
-            let col = bc_xy.col.saturating_sub(off.1);
-            (bc_xy.row, col)
-        }
-        Some(offs) => {
-            let off = offs[n];
-            let col = off.2.saturating_sub(off.1);
-            (bc_xy.row.saturating_sub(off.0), col)
-        }
-    };
+    //let n = n.saturating_sub(1);
+    //let (row, col) = match skip_words!(iter, n, pos) {
+    //    None => (0, 0),
+    //    Some(offs) if offs[n].0 == 0 => {
+    //        let off = offs[n];
+    //        let col = bc_xy.col.saturating_sub(off.1);
+    //        (bc_xy.row, col)
+    //    }
+    //    Some(offs) => {
+    //        let off = offs[n];
+    //        let col = off.2.saturating_sub(off.1);
+    //        (bc_xy.row.saturating_sub(off.0), col)
+    //    }
+    //};
 
-    let cursor = buf.line_to_char(row) + col;
-    Ok(cursor)
+    //let cursor = buf.line_to_char(row) + col;
+    //Ok(cursor)
 }
 
 pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
     use crate::text::Format;
 
     let bc_xy = buf.to_xy_cursor(None);
-    let to_chars = |s: String| -> Vec<char> { s.chars().collect() };
-
-    let mut iter = {
-        let head = {
-            let chars: Vec<char> = {
-                let line = buf.line(bc_xy.row);
-                Format::trim_newline(&line).0.chars().collect()
-            };
-            let col = bc_xy.col;
-            vec![chars[col..].to_vec()].into_iter()
+    let to_chars = |s: String| -> Vec<char> {
+        //
+        Format::trim_newline(&s).0.chars().collect()
+    };
+    let (mut iter, row, col) = {
+        let chars: Vec<char> = {
+            let line = buf.line(bc_xy.row);
+            Format::trim_newline(&line).0.chars().collect()
         };
-        let tail = buf.lines_at(bc_xy.row + 1, DP::Right)?.map(to_chars);
-        head.chain(tail).enumerate()
+        let (rem_chars, col) = (chars[bc_xy.col..].len(), bc_xy.col);
+        let chars: Vec<(usize, char)> = {
+            let iter = chars[bc_xy.col..].to_vec().into_iter().enumerate();
+            iter.collect()
+        };
+        let iter = buf.lines_at(bc_xy.row + 1, DP::Right)?.map(to_chars);
+        (
+            WIterChar::new(iter, rem_chars, chars, 0, false),
+            bc_xy.row,
+            col,
+        )
     };
 
-    let (row, col) = match skip_words!(iter, n, pos) {
-        None => {
-            let row = buf.to_last_line_idx();
-            let col = Format::trim_newline(&buf.line(row)).0.chars().count();
-            (row, col)
-        }
-        Some(offs) if offs[n].0 == 0 => {
-            let off = offs[n];
-            let col = bc_xy.col + off.1;
-            (bc_xy.row, col)
-        }
-        Some(offs) => {
-            let off = offs[n];
-            let col = off.1;
-            (bc_xy.row + off.0, col)
-        }
-    };
+    use WordStart::Fin;
 
+    let mut state = WordStart::Begin(TextCh::None, n);
+    let (row, col) = loop {
+        state = match iter.next() {
+            Some(item) => match state.push(item) {
+                Fin(r, 0, None) => break (row + r, 0),
+                Fin(r, _, Some(c)) => {
+                    let n_chars = {
+                        //
+                        Format::trim_newline(&buf.line(r)).0.chars().count()
+                    };
+                    let c = if_else!(r == 0, cmp::min(n_chars, col + c), c);
+                    break (row + r, c);
+                }
+                state => state,
+            },
+            None => {
+                let row = buf.to_last_line_idx();
+                let col = Format::trim_newline(&buf.line(row)).0.chars().count();
+                break (row, col);
+            }
+        };
+    };
     let cursor = buf.line_to_char(row) + col;
     Ok(cursor)
 }
@@ -1817,39 +1775,218 @@ pub fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
     Ok(n)
 }
 
-fn skip_word(chars: &[char], pos: DP) -> usize {
-    match pos {
-        DP::Start => match chars[0].clone() {
-            ch if ch.is_whitespace() => skip_ws!(chars),
-            ch if ch.is_alphanumeric() => match skip_an!(chars) {
-                off if off < chars.len() => match chars[off].is_whitespace() {
-                    true => off + skip_ws!(&chars[off..]),
-                    false => off,
-                },
-                _ => chars.len(),
-            },
-            _ => match skip_ch!(chars) {
-                off if off < chars.len() => match chars[off].is_whitespace() {
-                    true => off + skip_ws!(&chars[off..]),
-                    false => off,
-                },
-                _ => chars.len(),
-            },
-        },
-        DP::End => match chars[0].clone() {
-            ch if ch.is_whitespace() => match skip_ws!(chars) {
-                off if off < chars.len() => match chars[off].is_alphanumeric() {
-                    true => off + skip_an!(&chars[off..]),
-                    false => off + skip_ch!(&chars[off..]),
-                },
-                _ => chars.len(),
-            },
-            ch if ch.is_alphanumeric() => skip_an!(chars),
-            _ => skip_ch!(chars),
-        },
-        pos => panic!("invalid position: {}", pos),
+#[derive(Copy, Debug, Clone, Eq, PartialEq, PartialOrd)]
+enum TextCh {
+    AlphaNum,
+    OtherChar,
+    Ws,
+    None,
+}
+
+impl fmt::Display for TextCh {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            TextCh::AlphaNum => write!(f, "AlphaNum"),
+            TextCh::OtherChar => write!(f, "OtherChar"),
+            TextCh::Ws => write!(f, "Ws"),
+            TextCh::None => write!(f, "None"),
+        }
     }
 }
+
+#[derive(Copy, Debug, Clone, Eq, PartialEq, PartialOrd)]
+enum WordStart {
+    Begin(TextCh, usize),
+    Ws(usize),
+    Fin(usize, usize, Option<usize>), // (row, rem_chars, col_off)
+}
+
+impl WordStart {
+    fn match_char(self, ch: char) -> Self {
+        use WordStart::{Begin, Ws};
+
+        let is_ws = ch.is_whitespace();
+        let is_an = ch.is_alphanumeric() || ch == '_';
+        match self {
+            Begin(TextCh::None, n) if is_an => Begin(TextCh::AlphaNum, n),
+            Begin(TextCh::None, n) if is_ws => Ws(n),
+            Begin(TextCh::None, n) => Begin(TextCh::OtherChar, n),
+            Begin(TextCh::AlphaNum, n) if is_an => Begin(TextCh::AlphaNum, n),
+            Begin(TextCh::AlphaNum, n) if is_ws => Ws(n),
+            Begin(TextCh::AlphaNum, n) => Begin(TextCh::OtherChar, n - 1),
+            Begin(TextCh::OtherChar, n) if is_an => Begin(TextCh::AlphaNum, n - 1),
+            Begin(TextCh::OtherChar, n) if is_ws => Ws(n),
+            Begin(TextCh::OtherChar, n) => Begin(TextCh::OtherChar, n),
+            Ws(n) if is_ws => Ws(n),
+            Ws(n) if is_an => Begin(TextCh::AlphaNum, n - 1),
+            Ws(n) => Begin(TextCh::OtherChar, n - 1),
+            val => val,
+        }
+    }
+}
+
+impl fmt::Display for WordStart {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        use WordStart::{Begin, Fin, Ws};
+        match self {
+            Begin(ch, n) => write!(f, "Begin<{},{}>", ch, n),
+            Ws(n) => write!(f, "Ws<{}>", n),
+            Fin(r, n, c) => write!(f, "Fin<{},{},{:?}>", r, n, c),
+        }
+    }
+}
+
+impl WordStart {
+    // (row, rem_chars, Option<(col_off, char)>
+    fn push(self, item: (usize, usize, Option<(usize, char)>)) -> Self {
+        use WordStart::{Begin, Fin, Ws};
+
+        let state = match self {
+            val @ Fin(_, _, _) => val,
+            Begin(_, 0) => Fin(0, 0, None),
+            Begin(w, n) => match item {
+                (row, 0, None) if n == 1 => Fin(row, 0, None),
+                (_, 0, None) => Begin(w, n - 1),
+                (row, nc, Some((col, ch))) => match Begin(w, n).match_char(ch) {
+                    Begin(_, 0) => Fin(row, nc, Some(col)),
+                    val => val,
+                },
+                (_, _, None) => unreachable!(),
+            },
+            Ws(n) => match item {
+                (row, 0, None) if n == 1 => Fin(row, 0, None),
+                (row, nc, Some((col, ch))) => match Ws(n).match_char(ch) {
+                    Begin(_, 0) => Fin(row, nc, Some(col)),
+                    val => val,
+                },
+                (_, _, None) => unreachable!(),
+            },
+        };
+        debug!("push {:?} {} -> {}", item, self, state);
+        state
+    }
+}
+
+struct WIterChar<I>
+where
+    I: Iterator<Item = Vec<char>>,
+{
+    iter: I,
+    rem_chars: usize,
+    chars: std::vec::IntoIter<(usize, char)>,
+    row: usize,
+    reverse: bool,
+}
+
+impl<I> WIterChar<I>
+where
+    I: Iterator<Item = Vec<char>>,
+{
+    fn new(
+        iter: I,
+        rem_chars: usize,
+        chars: Vec<(usize, char)>,
+        row: usize,
+        reverse: bool,
+    ) -> Self {
+        let n = chars.len();
+        let mut val = WIterChar {
+            iter,
+            rem_chars,
+            chars: chars.into_iter(),
+            row,
+            reverse,
+        };
+        if n == 0 {
+            val.to_next_line();
+        }
+        val
+    }
+
+    fn to_next_line(&mut self) -> bool {
+        match self.iter.next() {
+            Some(mut chars) => {
+                if self.reverse {
+                    chars.reverse();
+                }
+                self.rem_chars = chars.len();
+                self.chars = {
+                    let chars: Vec<(usize, char)> = {
+                        //
+                        chars.into_iter().enumerate().collect()
+                    };
+                    chars.into_iter()
+                };
+                self.row += 1;
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+impl<I> Iterator for WIterChar<I>
+where
+    I: Iterator<Item = Vec<char>>,
+{
+    // (row, rem_chars, Option<(col_off, char)>
+    type Item = (usize, usize, Option<(usize, char)>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.chars.next() {
+            Some((col, ch)) => Some((self.row, self.rem_chars, Some((col, ch)))),
+            None if self.rem_chars == 0 => Some((self.row, 0, None)),
+            None if self.to_next_line() => match self.chars.next() {
+                Some(val) => Some((self.row, self.rem_chars, Some(val))),
+                None if self.rem_chars == 0 => Some((self.row, 0, None)),
+                None => unreachable!(),
+            },
+            None => None,
+        }
+    }
+}
+
+//fn skip_word_start(chars: &[char], sw: SkipWord) -> SkipWord {
+//    use SkipWord::{Word, Ws};
+//
+//    assert!(chars.len() > 0);
+//
+//    let is_ws = chars.first().map(|ch| ch.is_whitespace()).unwrap_or(false);
+//    let is_an = {
+//        let x = chars.first().map(|ch| ch.is_alphanumeric() || *ch == '_');
+//        x.unwrap_or(false)
+//    };
+//    let is_ch = !is_ws && !is_an;
+//
+//    match sw {
+//        Word(_) if is_ws => Word(skip_ws!(chars)),
+//        Word(_) if is_an => Ws(skip_an!(chars)),
+//        Word(_) => Ws(skip_ch!(chars)),
+//        Ws(_) if is_ws => Ws(skip_ws!(chars)),
+//        Ws(_) => Word(0),
+//    }
+//}
+//
+//fn skip_word_end(chars: &[char], pos: DP, sw: SkipWord) -> SkipWord {
+//    use SkipWord::{Word, Ws};
+//
+//    assert!(chars.len() > 0);
+//
+//    let is_ws = chars.first().map(|ch| ch.is_whitespace()).unwrap_or(false);
+//    let is_an = {
+//        let x = chars.first().map(|ch| ch.is_alphanumeric() || *ch == '_');
+//        x.unwrap_or(false)
+//    };
+//    let is_ch = !is_ws && !is_an;
+//
+//    match sw {
+//        Ws(_) if is_ws => Ws(skip_ws!(chars)),
+//        Ws(_) => Word(0),
+//        Word(_) if is_ws => Ws(skip_sw!(chars)),
+//        Word(_) if is_an => Ws(skip_an!(chars)),
+//        Word(_) => Ws(skip_ch!(chars)),
+//    }
+//}
 
 pub struct IterLine<'a> {
     _change: cell::Ref<'a, Change>, // holding a reference.
