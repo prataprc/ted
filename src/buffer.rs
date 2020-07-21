@@ -1409,45 +1409,50 @@ pub fn mto_cursor(buf: &Buffer, n: usize) -> Result<usize> {
 }
 
 pub fn mto_words_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
-    todo!()
-    //let bc_xy = buf.to_xy_cursor(None);
-    //let to_chars = |s: String| -> Vec<char> {
-    //    let mut chars: Vec<char> = s.chars().collect();
-    //    chars.reverse();
-    //    chars
-    //};
+    use crate::text::Format;
 
-    //let mut iter = {
-    //    let head = {
-    //        let chars: Vec<char> = buf.line(bc_xy.row).chars().collect();
-    //        let mut chars = {
-    //            let col = bc_xy.col + if_else!(pos == DP::Start, 1, 0);
-    //            chars[..col].to_vec()
-    //        };
-    //        chars.reverse();
-    //        vec![chars].into_iter()
-    //    };
-    //    let tail = buf.lines_at(bc_xy.row, DP::Left)?.map(to_chars);
-    //    head.chain(tail).enumerate()
-    //};
+    let bc_xy = buf.to_xy_cursor(None);
+    let to_chars = |s: String| -> Vec<char> {
+        let mut chars: Vec<char> = Format::trim_newline(&s).0.chars().collect();
+        chars.reverse();
+        chars
+    };
 
-    //let n = n.saturating_sub(1);
-    //let (row, col) = match skip_words!(iter, n, pos) {
-    //    None => (0, 0),
-    //    Some(offs) if offs[n].0 == 0 => {
-    //        let off = offs[n];
-    //        let col = bc_xy.col.saturating_sub(off.1);
-    //        (bc_xy.row, col)
-    //    }
-    //    Some(offs) => {
-    //        let off = offs[n];
-    //        let col = off.2.saturating_sub(off.1);
-    //        (bc_xy.row.saturating_sub(off.0), col)
-    //    }
-    //};
+    let (mut iter, row, col) = {
+        let chars: Vec<char> = {
+            let line = buf.line(bc_xy.row);
+            Format::trim_newline(&line).0.chars().collect()
+        };
+        let (rem_chars, col) = (chars[bc_xy.col..].len(), bc_xy.col);
+        let mut chars: Vec<(usize, char)> = {
+            let iter = chars[..col].to_vec().into_iter().enumerate();
+            iter.collect()
+        };
+        chars.reverse();
+        let iter = buf.lines_at(bc_xy.row, DP::Left)?.map(to_chars);
+        (WIterChar::new(iter, rem_chars, chars, true), bc_xy.row, col)
+    };
 
-    //let cursor = buf.line_to_char(row) + col;
-    //Ok(cursor)
+    let mut state = MtoWord::St(pos, n);
+    let cursor = loop {
+        state = match iter.next() {
+            Some(item) => match state.push(item) {
+                MtoWord::Fin(r, 0, None) => {
+                    break xy_to_cursor(buf, (row + r, 0));
+                }
+                MtoWord::Fin(0, _, Some(c)) => {
+                    let c = cmp::min(line_chars(buf, 0), col + c);
+                    break xy_to_cursor(buf, (row, c));
+                }
+                MtoWord::Fin(r, _, Some(c)) => {
+                    break xy_to_cursor(buf, (row + r, c));
+                }
+                state => state,
+            },
+            None => break last_char_idx(buf),
+        };
+    };
+    Ok(saturate_cursor(buf, cursor))
 }
 
 pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
@@ -1455,58 +1460,49 @@ pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
 
     let bc_xy = buf.to_xy_cursor(None);
     let to_chars = |s: String| -> Vec<char> {
-        //
-        Format::trim_newline(&s).0.chars().collect()
+        let iter = Format::trim_newline(&s).0.chars();
+        iter.collect()
     };
+
     let (mut iter, row, col) = {
         let chars: Vec<char> = {
             let line = buf.line(bc_xy.row);
             Format::trim_newline(&line).0.chars().collect()
         };
-        let (rem_chars, col) = (chars[bc_xy.col..].len(), bc_xy.col);
+        let col = if_else!(pos == DP::Start, bc_xy.col, bc_xy.col + 1);
+        let rem_chars = chars[bc_xy.col..].len();
         let chars: Vec<(usize, char)> = {
-            let iter = chars[bc_xy.col..].to_vec().into_iter().enumerate();
+            let iter = chars[col..].to_vec().into_iter().enumerate();
             iter.collect()
         };
         let iter = buf.lines_at(bc_xy.row + 1, DP::Right)?.map(to_chars);
         (
-            WIterChar::new(iter, rem_chars, chars, 0, false),
+            WIterChar::new(iter, rem_chars, chars, false),
             bc_xy.row,
             col,
         )
     };
 
-    let mut state = MtoWord::St(DP::Start, n);
-    let (row, col) = loop {
+    let mut state = MtoWord::St(pos, n);
+    let cursor = loop {
         state = match iter.next() {
             Some(item) => match state.push(item) {
-                MtoWord::Fin(r, 0, None) => break (row + r, 0),
+                MtoWord::Fin(r, 0, None) => {
+                    break xy_to_cursor(buf, (row + r, 0));
+                }
+                MtoWord::Fin(0, _, Some(c)) => {
+                    let c = cmp::min(line_chars(buf, 0), col + c);
+                    break xy_to_cursor(buf, (row, c));
+                }
                 MtoWord::Fin(r, _, Some(c)) => {
-                    let n_chars = {
-                        //
-                        Format::trim_newline(&buf.line(r)).0.chars().count()
-                    };
-                    let c = if_else!(r == 0, cmp::min(n_chars, col + c), c);
-                    break (row + r, c);
+                    break xy_to_cursor(buf, (row + r, c));
                 }
                 state => state,
             },
-            None => {
-                let row = buf.to_last_line_idx();
-                let col = Format::trim_newline(&buf.line(row)).0.chars().count();
-                break (row, col.saturating_sub(1));
-            }
+            None => break last_char_idx(buf),
         };
     };
-    debug!("row: {}, col: {}", row, col);
-    let cursor = buf.line_to_char(row) + col;
-    if cursor >= buf.n_chars() {
-        let row = buf.to_last_line_idx();
-        let col = Format::trim_newline(&buf.line(row)).0.chars().count();
-        Ok(buf.line_to_char(row) + col.saturating_sub(1))
-    } else {
-        Ok(cursor)
-    }
+    Ok(saturate_cursor(buf, cursor))
 }
 
 pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
@@ -1780,6 +1776,38 @@ pub fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
     Ok(n)
 }
 
+pub fn to_span_line(buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+    let span: Span = {
+        let iter = buf.chars_at(a, DP::Right)?.take(z - a);
+        String::from_iter(iter).into()
+    };
+    Ok(span.into())
+}
+
+#[inline]
+fn saturate_cursor(buf: &Buffer, cursor: usize) -> usize {
+    if_else!(cursor >= buf.n_chars(), last_char_idx(buf), cursor)
+}
+
+fn last_char_idx(buf: &Buffer) -> usize {
+    use crate::text::Format;
+
+    let row = buf.to_last_line_idx();
+    let col = Format::trim_newline(&buf.line(row)).0.chars().count();
+    xy_to_cursor(buf, (row, col.saturating_sub(1)))
+}
+
+#[inline]
+fn xy_to_cursor(buf: &Buffer, (row, col): (usize, usize)) -> usize {
+    buf.line_to_char(row) + col
+}
+
+#[inline]
+fn line_chars(buf: &Buffer, row: usize) -> usize {
+    use crate::text::Format;
+    Format::trim_newline(&buf.line(row)).0.chars().count()
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
 // DP can be Start or End,
 enum MtoWord {
@@ -1859,32 +1887,42 @@ impl MtoWord {
         let state = match self {
             val @ Fin(_, _, _) => val,
             St(_, 0) | An(_, 0) | Ch(_, 0) | Ws(_, 0) => Fin(0, 0, None),
-            St(pos, n) | An(pos, n) | Ch(pos, n) => match pos {
-                DP::Start | DP::End => match item {
-                    (0, 0, None) => self,
-                    (row, 0, None) if n == 1 => Fin(row, 0, None),
-                    (_, 0, None) => self.decr(),
-                    (row, rc, Some((col, ch))) => match self.match_char(ch) {
-                        St(_, 0) | An(_, 0) => Fin(row, rc, Some(col)),
-                        Ch(_, 0) | Ws(_, 0) => Fin(row, rc, Some(col)),
-                        val => val,
-                    },
-                    (_, _, None) => unreachable!(),
+            St(_, n) | An(_, n) | Ch(_, n) => match item {
+                (0, 0, None) => self,
+                (row, 0, None) if n == 1 => Fin(row, 0, None),
+                (_, 0, None) => self.decr(),
+                (row, rc, Some((col, ch))) => match self.match_char(ch) {
+                    St(DP::End, 0) | An(DP::End, 0) => {
+                        let col = col.saturating_sub(1);
+                        Fin(row, rc, Some(col))
+                    }
+                    Ch(DP::End, 0) | Ws(DP::End, 0) => {
+                        let col = col.saturating_sub(1);
+                        Fin(row, rc, Some(col))
+                    }
+                    St(_, 0) | An(_, 0) => Fin(row, rc, Some(col)),
+                    Ch(_, 0) | Ws(_, 0) => Fin(row, rc, Some(col)),
+                    val => val,
                 },
-                _ => unreachable!(),
+                (_, _, None) => unreachable!(),
             },
-            Ws(pos, n) => match pos {
-                DP::Start | DP::End => match item {
-                    (row, 0, None) if n == 1 => Fin(row, 0, None),
-                    (_, 0, None) => self.decr(),
-                    (row, rc, Some((col, ch))) => match self.match_char(ch) {
-                        St(_, 0) | An(_, 0) => Fin(row, rc, Some(col)),
-                        Ch(_, 0) | Ws(_, 0) => Fin(row, rc, Some(col)),
-                        val => val,
-                    },
-                    (_, _, None) => unreachable!(),
+            Ws(_, n) => match item {
+                (row, 0, None) if n == 1 => Fin(row, 0, None),
+                (_, 0, None) => self.decr(),
+                (row, rc, Some((col, ch))) => match self.match_char(ch) {
+                    St(DP::End, 0) | An(DP::End, 0) => {
+                        let col = col.saturating_sub(1);
+                        Fin(row, rc, Some(col))
+                    }
+                    Ch(DP::End, 0) | Ws(DP::End, 0) => {
+                        let col = col.saturating_sub(1);
+                        Fin(row, rc, Some(col))
+                    }
+                    St(_, 0) | An(_, 0) => Fin(row, rc, Some(col)),
+                    Ch(_, 0) | Ws(_, 0) => Fin(row, rc, Some(col)),
+                    val => val,
                 },
-                _ => unreachable!(),
+                (_, _, None) => unreachable!(),
             },
         };
         debug!("push {:?} {} -> {}", item, self, state);
@@ -1907,19 +1945,13 @@ impl<I> WIterChar<I>
 where
     I: Iterator<Item = Vec<char>>,
 {
-    fn new(
-        iter: I,
-        rem_chars: usize,
-        chars: Vec<(usize, char)>,
-        row: usize,
-        reverse: bool,
-    ) -> Self {
+    fn new(iter: I, rchs: usize, chars: Vec<(usize, char)>, rev: bool) -> Self {
         WIterChar {
             iter,
-            rem_chars,
+            rem_chars: rchs,
             chars: chars.into_iter(),
-            row,
-            reverse,
+            row: 0,
+            reverse: rev,
         }
     }
 
@@ -1957,19 +1989,16 @@ where
     type Item = (usize, usize, Option<(usize, char)>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.chars.next() {
-            Some((col, ch)) => Some((self.row, self.rem_chars, Some((col, ch)))),
-            None if self.rem_chars == 0 => {
-                let row = self.row;
-                self.to_next_line();
-                Some((row, 0, None))
+        loop {
+            match (self.row, self.chars.next()) {
+                (row, Some(val)) => break Some((row, self.rem_chars, Some(val))),
+                (row, None) if self.rem_chars == 0 => {
+                    self.to_next_line();
+                    break Some((row, 0, None));
+                }
+                (_, None) if self.to_next_line() => (),
+                (_, None) => break None,
             }
-            None if self.to_next_line() => match self.chars.next() {
-                Some(val) => Some((self.row, self.rem_chars, Some(val))),
-                None if self.rem_chars == 0 => Some((self.row, 0, None)),
-                None => unreachable!(),
-            },
-            None => None,
         }
     }
 }
@@ -2062,14 +2091,6 @@ impl Search {
             }
         }
     }
-}
-
-pub fn to_span_line(buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
-    let span: Span = {
-        let iter = buf.chars_at(a, DP::Right)?.take(z - a);
-        String::from_iter(iter).into()
-    };
-    Ok(span.into())
 }
 
 #[cfg(test)]

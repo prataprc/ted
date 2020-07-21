@@ -300,7 +300,7 @@ impl fmt::Display for DP {
 
 impl fmt::Debug for DP {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        <Self as fmt::Debug>::fmt(self, f)
+        <Self as fmt::Display>::fmt(self, f)
     }
 }
 
