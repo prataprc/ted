@@ -1365,7 +1365,7 @@ pub fn mto_down(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
 pub fn mto_row(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let last_line = buf.to_last_line_idx();
     let cursor = match n {
-        0 => buf.line_to_char(last_line),
+        std::usize::MAX => buf.line_to_char(last_line),
         n => buf.line_to_char(cmp::min(last_line, n)),
     };
     let cursor = match dp {
@@ -1476,14 +1476,12 @@ pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
         )
     };
 
-    use WordStart::Fin;
-
-    let mut state = WordStart::Begin(TextCh::None, n);
+    let mut state = MtoWord::St(DP::Start, n);
     let (row, col) = loop {
         state = match iter.next() {
             Some(item) => match state.push(item) {
-                Fin(r, 0, None) => break (row + r, 0),
-                Fin(r, _, Some(c)) => {
+                MtoWord::Fin(r, 0, None) => break (row + r, 0),
+                MtoWord::Fin(r, _, Some(c)) => {
                     let n_chars = {
                         //
                         Format::trim_newline(&buf.line(r)).0.chars().count()
@@ -1496,12 +1494,19 @@ pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
             None => {
                 let row = buf.to_last_line_idx();
                 let col = Format::trim_newline(&buf.line(row)).0.chars().count();
-                break (row, col);
+                break (row, col.saturating_sub(1));
             }
         };
     };
+    debug!("row: {}, col: {}", row, col);
     let cursor = buf.line_to_char(row) + col;
-    Ok(cursor)
+    if cursor >= buf.n_chars() {
+        let row = buf.to_last_line_idx();
+        let col = Format::trim_newline(&buf.line(row)).0.chars().count();
+        Ok(buf.line_to_char(row) + col.saturating_sub(1))
+    } else {
+        Ok(cursor)
+    }
 }
 
 pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
@@ -1775,91 +1780,111 @@ pub fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
     Ok(n)
 }
 
-#[derive(Copy, Debug, Clone, Eq, PartialEq, PartialOrd)]
-enum TextCh {
-    AlphaNum,
-    OtherChar,
-    Ws,
-    None,
-}
-
-impl fmt::Display for TextCh {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        match self {
-            TextCh::AlphaNum => write!(f, "AlphaNum"),
-            TextCh::OtherChar => write!(f, "OtherChar"),
-            TextCh::Ws => write!(f, "Ws"),
-            TextCh::None => write!(f, "None"),
-        }
-    }
-}
-
-#[derive(Copy, Debug, Clone, Eq, PartialEq, PartialOrd)]
-enum WordStart {
-    Begin(TextCh, usize),
-    Ws(usize),
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
+// DP can be Start or End,
+enum MtoWord {
+    St(DP, usize), // start - (n,) number of words to move.
+    An(DP, usize), // Alphanumeric - (n,) number of words to move.
+    Ch(DP, usize), // non-ws - (n,) number of words to move.
+    Ws(DP, usize),
     Fin(usize, usize, Option<usize>), // (row, rem_chars, col_off)
 }
 
-impl WordStart {
+impl MtoWord {
+    fn decr(self) -> Self {
+        match self {
+            MtoWord::St(pos, n) => MtoWord::St(pos, n.saturating_sub(1)),
+            MtoWord::An(pos, n) => MtoWord::An(pos, n.saturating_sub(1)),
+            MtoWord::Ch(pos, n) => MtoWord::Ch(pos, n.saturating_sub(1)),
+            MtoWord::Ws(pos, n) => MtoWord::Ws(pos, n.saturating_sub(1)),
+            MtoWord::Fin(_, _, _) => unreachable!(),
+        }
+    }
+
     fn match_char(self, ch: char) -> Self {
-        use WordStart::{Begin, Ws};
+        use MtoWord::{An, Ch, St, Ws};
 
         let is_ws = ch.is_whitespace();
         let is_an = ch.is_alphanumeric() || ch == '_';
+
         match self {
-            Begin(TextCh::None, n) if is_an => Begin(TextCh::AlphaNum, n),
-            Begin(TextCh::None, n) if is_ws => Ws(n),
-            Begin(TextCh::None, n) => Begin(TextCh::OtherChar, n),
-            Begin(TextCh::AlphaNum, n) if is_an => Begin(TextCh::AlphaNum, n),
-            Begin(TextCh::AlphaNum, n) if is_ws => Ws(n),
-            Begin(TextCh::AlphaNum, n) => Begin(TextCh::OtherChar, n - 1),
-            Begin(TextCh::OtherChar, n) if is_an => Begin(TextCh::AlphaNum, n - 1),
-            Begin(TextCh::OtherChar, n) if is_ws => Ws(n),
-            Begin(TextCh::OtherChar, n) => Begin(TextCh::OtherChar, n),
-            Ws(n) if is_ws => Ws(n),
-            Ws(n) if is_an => Begin(TextCh::AlphaNum, n - 1),
-            Ws(n) => Begin(TextCh::OtherChar, n - 1),
-            val => val,
+            St(DP::Start, n) if is_an => An(DP::Start, n),
+            St(DP::Start, n) if is_ws => Ws(DP::Start, n),
+            St(DP::Start, n) => Ch(DP::Start, n),
+            An(DP::Start, n) if is_an => An(DP::Start, n),
+            An(DP::Start, n) if is_ws => Ws(DP::Start, n),
+            An(DP::Start, n) => Ch(DP::Start, n - 1),
+            Ch(DP::Start, n) if is_an => An(DP::Start, n - 1),
+            Ch(DP::Start, n) if is_ws => Ws(DP::Start, n),
+            Ch(DP::Start, n) => Ch(DP::Start, n),
+            Ws(DP::Start, n) if is_ws => Ws(DP::Start, n),
+            Ws(DP::Start, n) if is_an => An(DP::Start, n - 1),
+            Ws(DP::Start, n) => Ch(DP::Start, n - 1),
+
+            St(DP::End, n) if is_an => An(DP::End, n),
+            St(DP::End, n) if is_ws => Ws(DP::End, n),
+            St(DP::End, n) => Ch(DP::End, n),
+            An(DP::End, n) if is_an => An(DP::End, n),
+            An(DP::End, n) if is_ws => Ws(DP::End, n - 1),
+            An(DP::End, n) => Ch(DP::End, n - 1),
+            Ch(DP::End, n) if is_an => An(DP::End, n - 1),
+            Ch(DP::End, n) if is_ws => Ws(DP::End, n - 1),
+            Ch(DP::End, n) => Ch(DP::End, n),
+            Ws(DP::End, n) if is_ws => Ws(DP::End, n),
+            Ws(DP::End, n) if is_an => An(DP::End, n),
+            Ws(DP::End, n) => Ch(DP::End, n),
+            _ => unreachable!(),
         }
     }
 }
 
-impl fmt::Display for WordStart {
+impl fmt::Display for MtoWord {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use WordStart::{Begin, Fin, Ws};
+        use MtoWord::{An, Ch, Fin, St, Ws};
         match self {
-            Begin(ch, n) => write!(f, "Begin<{},{}>", ch, n),
-            Ws(n) => write!(f, "Ws<{}>", n),
-            Fin(r, n, c) => write!(f, "Fin<{},{},{:?}>", r, n, c),
+            St(pos, n) => write!(f, "St<{},{}>", pos, n),
+            An(pos, n) => write!(f, "An<{},{}>", pos, n),
+            Ch(pos, n) => write!(f, "Ch<{},{}>", pos, n),
+            Ws(pos, n) => write!(f, "Ws<{},{}>", pos, n),
+            Fin(r, rc, c) => write!(f, "Fin<{},{},{:?}>", r, rc, c),
         }
     }
 }
 
-impl WordStart {
+impl MtoWord {
     // (row, rem_chars, Option<(col_off, char)>
     fn push(self, item: (usize, usize, Option<(usize, char)>)) -> Self {
-        use WordStart::{Begin, Fin, Ws};
+        use MtoWord::{An, Ch, Fin, St, Ws};
 
         let state = match self {
             val @ Fin(_, _, _) => val,
-            Begin(_, 0) => Fin(0, 0, None),
-            Begin(w, n) => match item {
-                (row, 0, None) if n == 1 => Fin(row, 0, None),
-                (_, 0, None) => Begin(w, n - 1),
-                (row, nc, Some((col, ch))) => match Begin(w, n).match_char(ch) {
-                    Begin(_, 0) => Fin(row, nc, Some(col)),
-                    val => val,
+            St(_, 0) | An(_, 0) | Ch(_, 0) | Ws(_, 0) => Fin(0, 0, None),
+            St(pos, n) | An(pos, n) | Ch(pos, n) => match pos {
+                DP::Start | DP::End => match item {
+                    (0, 0, None) => self,
+                    (row, 0, None) if n == 1 => Fin(row, 0, None),
+                    (_, 0, None) => self.decr(),
+                    (row, rc, Some((col, ch))) => match self.match_char(ch) {
+                        St(_, 0) | An(_, 0) => Fin(row, rc, Some(col)),
+                        Ch(_, 0) | Ws(_, 0) => Fin(row, rc, Some(col)),
+                        val => val,
+                    },
+                    (_, _, None) => unreachable!(),
                 },
-                (_, _, None) => unreachable!(),
+                _ => unreachable!(),
             },
-            Ws(n) => match item {
-                (row, 0, None) if n == 1 => Fin(row, 0, None),
-                (row, nc, Some((col, ch))) => match Ws(n).match_char(ch) {
-                    Begin(_, 0) => Fin(row, nc, Some(col)),
-                    val => val,
+            Ws(pos, n) => match pos {
+                DP::Start | DP::End => match item {
+                    (row, 0, None) if n == 1 => Fin(row, 0, None),
+                    (_, 0, None) => self.decr(),
+                    (row, rc, Some((col, ch))) => match self.match_char(ch) {
+                        St(_, 0) | An(_, 0) => Fin(row, rc, Some(col)),
+                        Ch(_, 0) | Ws(_, 0) => Fin(row, rc, Some(col)),
+                        val => val,
+                    },
+                    (_, _, None) => unreachable!(),
                 },
-                (_, _, None) => unreachable!(),
+                _ => unreachable!(),
             },
         };
         debug!("push {:?} {} -> {}", item, self, state);
@@ -1889,18 +1914,13 @@ where
         row: usize,
         reverse: bool,
     ) -> Self {
-        let n = chars.len();
-        let mut val = WIterChar {
+        WIterChar {
             iter,
             rem_chars,
             chars: chars.into_iter(),
             row,
             reverse,
-        };
-        if n == 0 {
-            val.to_next_line();
         }
-        val
     }
 
     fn to_next_line(&mut self) -> bool {
@@ -1920,7 +1940,11 @@ where
                 self.row += 1;
                 true
             }
-            None => false,
+            None => {
+                self.rem_chars = 0;
+                self.chars = vec![].into_iter();
+                false
+            }
         }
     }
 }
@@ -1935,7 +1959,11 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         match self.chars.next() {
             Some((col, ch)) => Some((self.row, self.rem_chars, Some((col, ch)))),
-            None if self.rem_chars == 0 => Some((self.row, 0, None)),
+            None if self.rem_chars == 0 => {
+                let row = self.row;
+                self.to_next_line();
+                Some((row, 0, None))
+            }
             None if self.to_next_line() => match self.chars.next() {
                 Some(val) => Some((self.row, self.rem_chars, Some(val))),
                 None if self.rem_chars == 0 => Some((self.row, 0, None)),
@@ -1945,48 +1973,6 @@ where
         }
     }
 }
-
-//fn skip_word_start(chars: &[char], sw: SkipWord) -> SkipWord {
-//    use SkipWord::{Word, Ws};
-//
-//    assert!(chars.len() > 0);
-//
-//    let is_ws = chars.first().map(|ch| ch.is_whitespace()).unwrap_or(false);
-//    let is_an = {
-//        let x = chars.first().map(|ch| ch.is_alphanumeric() || *ch == '_');
-//        x.unwrap_or(false)
-//    };
-//    let is_ch = !is_ws && !is_an;
-//
-//    match sw {
-//        Word(_) if is_ws => Word(skip_ws!(chars)),
-//        Word(_) if is_an => Ws(skip_an!(chars)),
-//        Word(_) => Ws(skip_ch!(chars)),
-//        Ws(_) if is_ws => Ws(skip_ws!(chars)),
-//        Ws(_) => Word(0),
-//    }
-//}
-//
-//fn skip_word_end(chars: &[char], pos: DP, sw: SkipWord) -> SkipWord {
-//    use SkipWord::{Word, Ws};
-//
-//    assert!(chars.len() > 0);
-//
-//    let is_ws = chars.first().map(|ch| ch.is_whitespace()).unwrap_or(false);
-//    let is_an = {
-//        let x = chars.first().map(|ch| ch.is_alphanumeric() || *ch == '_');
-//        x.unwrap_or(false)
-//    };
-//    let is_ch = !is_ws && !is_an;
-//
-//    match sw {
-//        Ws(_) if is_ws => Ws(skip_ws!(chars)),
-//        Ws(_) => Word(0),
-//        Word(_) if is_ws => Ws(skip_sw!(chars)),
-//        Word(_) if is_an => Ws(skip_an!(chars)),
-//        Word(_) => Ws(skip_ch!(chars)),
-//    }
-//}
 
 pub struct IterLine<'a> {
     _change: cell::Ref<'a, Change>, // holding a reference.

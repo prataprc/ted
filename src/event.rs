@@ -262,7 +262,7 @@ impl From<Event> for Vec<Event> {
 }
 
 /// Event argument, specify the direction or position.
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd)]
 pub enum DP {
     /// Left-Direction to move/operate.
     Left,
@@ -295,6 +295,12 @@ impl fmt::Display for DP {
             DP::StickyCol => write!(f, "sticky_col"),
             DP::None => write!(f, "nope"),
         }
+    }
+}
+
+impl fmt::Debug for DP {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        <Self as fmt::Debug>::fmt(self, f)
     }
 }
 
