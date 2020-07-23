@@ -1437,14 +1437,11 @@ pub fn mto_words_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
         state = match iter.next() {
             Some(item) => match state.push(item) {
                 MtoWord::Fin(r, 0, None) => {
-                    break xy_to_cursor(buf, (row + r, 0));
-                }
-                MtoWord::Fin(0, _, Some(c)) => {
-                    let c = cmp::min(line_chars(buf, 0), col + c);
-                    break xy_to_cursor(buf, (row, c));
+                    break xy_to_cursor(buf, (row - r, 0));
                 }
                 MtoWord::Fin(r, _, Some(c)) => {
-                    break xy_to_cursor(buf, (row + r, c));
+                    let col = if_else!(r == 0, col.saturating_sub(c), c);
+                    break xy_to_cursor(buf, (row - r, col));
                 }
                 state => state,
             },
@@ -1468,7 +1465,11 @@ pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
             let line = buf.line(bc_xy.row);
             Format::trim_newline(&line).0.chars().collect()
         };
-        let col = if_else!(pos == DP::Start, bc_xy.col, bc_xy.col + 1);
+        let col = if_else!(
+            pos == DP::Start,
+            bc_xy.col,
+            cmp::min(chars.len(), bc_xy.col + 1)
+        );
         let rem_chars = chars[bc_xy.col..].len();
         let chars: Vec<(usize, char)> = {
             let iter = chars[col..].to_vec().into_iter().enumerate();
@@ -1489,12 +1490,13 @@ pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
                 MtoWord::Fin(r, 0, None) => {
                     break xy_to_cursor(buf, (row + r, 0));
                 }
-                MtoWord::Fin(0, _, Some(c)) => {
-                    let c = cmp::min(line_chars(buf, 0), col + c);
-                    break xy_to_cursor(buf, (row, c));
-                }
                 MtoWord::Fin(r, _, Some(c)) => {
-                    break xy_to_cursor(buf, (row + r, c));
+                    let col = {
+                        let n = line_chars(buf, row + r).saturating_sub(1);
+                        let col = if_else!(r == 0, col.saturating_add(c), c);
+                        cmp::min(n, col)
+                    };
+                    break xy_to_cursor(buf, (row + r, col));
                 }
                 state => state,
             },
@@ -1891,6 +1893,12 @@ impl MtoWord {
                 (row, 0, None) if n == 1 => Fin(row, 0, None),
                 (_, 0, None) => self.decr(),
                 (row, rc, Some((col, ch))) => match self.match_char(ch) {
+                    St(DP::End, 0) | An(DP::End, 0) if col == 0 => {
+                        Fin(row.saturating_sub(1), rc, Some(std::usize::MAX))
+                    }
+                    Ch(DP::End, 0) | Ws(DP::End, 0) if col == 0 => {
+                        Fin(row.saturating_sub(1), rc, Some(std::usize::MAX))
+                    }
                     St(DP::End, 0) | An(DP::End, 0) => {
                         let col = col.saturating_sub(1);
                         Fin(row, rc, Some(col))
@@ -1909,6 +1917,13 @@ impl MtoWord {
                 (row, 0, None) if n == 1 => Fin(row, 0, None),
                 (_, 0, None) => self.decr(),
                 (row, rc, Some((col, ch))) => match self.match_char(ch) {
+                    St(DP::End, 0) | An(DP::End, 0) if col == 0 => {
+                        Fin(row.saturating_sub(1), rc, Some(std::usize::MAX))
+                    }
+                    Ch(DP::End, 0) | Ws(DP::End, 0) if col == 0 => {
+                        let col = col.saturating_sub(1);
+                        Fin(row.saturating_sub(1), rc, Some(std::usize::MAX))
+                    }
                     St(DP::End, 0) | An(DP::End, 0) => {
                         let col = col.saturating_sub(1);
                         Fin(row, rc, Some(col))
