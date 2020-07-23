@@ -1422,7 +1422,11 @@ pub fn mto_words_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
             let line = buf.line(bc_xy.row);
             Format::trim_newline(&line).0.chars().collect()
         };
-        let (rem_chars, col) = (chars[bc_xy.col..].len(), bc_xy.col);
+        let col = {
+            let n = cmp::min(chars.len(), bc_xy.col + 1);
+            if_else!(pos == DP::Start, n, bc_xy.col)
+        };
+        let rem_chars = chars[..col].len();
         let mut chars: Vec<(usize, char)> = {
             let iter = chars[..col].to_vec().into_iter().enumerate();
             iter.collect()
@@ -1432,10 +1436,10 @@ pub fn mto_words_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
         (WIterChar::new(iter, rem_chars, chars, true), bc_xy.row, col)
     };
 
-    let mut state = MtoWord::St(pos, n);
+    let mut state = MtoWord::St(n);
     let cursor = loop {
         state = match iter.next() {
-            Some(item) => match state.push(item) {
+            Some(item) => match state.push(DP::Left, pos, item) {
                 MtoWord::Fin(r, 0, None) => {
                     break xy_to_cursor(buf, (row - r, 0));
                 }
@@ -1470,7 +1474,7 @@ pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
             bc_xy.col,
             cmp::min(chars.len(), bc_xy.col + 1)
         );
-        let rem_chars = chars[bc_xy.col..].len();
+        let rem_chars = chars[col..].len();
         let chars: Vec<(usize, char)> = {
             let iter = chars[col..].to_vec().into_iter().enumerate();
             iter.collect()
@@ -1483,10 +1487,10 @@ pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
         )
     };
 
-    let mut state = MtoWord::St(pos, n);
+    let mut state = MtoWord::St(n);
     let cursor = loop {
         state = match iter.next() {
-            Some(item) => match state.push(item) {
+            Some(item) => match state.push(DP::Right, pos, item) {
                 MtoWord::Fin(r, 0, None) => {
                     break xy_to_cursor(buf, (row + r, 0));
                 }
@@ -1810,59 +1814,111 @@ fn line_chars(buf: &Buffer, row: usize) -> usize {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
-// DP can be Start or End,
 enum MtoWord {
-    St(DP, usize), // start - (n,) number of words to move.
-    An(DP, usize), // Alphanumeric - (n,) number of words to move.
-    Ch(DP, usize), // non-ws - (n,) number of words to move.
-    Ws(DP, usize),
+    St(usize), // start - (n,) number of words to move.
+    An(usize), // Alphanumeric - (n,) number of words to move.
+    Ch(usize), // non-ws - (n) number of words to move.
+    Ws(usize),
     Fin(usize, usize, Option<usize>), // (row, rem_chars, col_off)
 }
 
 impl MtoWord {
     fn decr(self) -> Self {
         match self {
-            MtoWord::St(pos, n) => MtoWord::St(pos, n.saturating_sub(1)),
-            MtoWord::An(pos, n) => MtoWord::An(pos, n.saturating_sub(1)),
-            MtoWord::Ch(pos, n) => MtoWord::Ch(pos, n.saturating_sub(1)),
-            MtoWord::Ws(pos, n) => MtoWord::Ws(pos, n.saturating_sub(1)),
+            MtoWord::St(n) => MtoWord::St(n.saturating_sub(1)),
+            MtoWord::An(n) => MtoWord::An(n.saturating_sub(1)),
+            MtoWord::Ch(n) => MtoWord::Ch(n.saturating_sub(1)),
+            MtoWord::Ws(n) => MtoWord::Ws(n.saturating_sub(1)),
             MtoWord::Fin(_, _, _) => unreachable!(),
         }
     }
 
-    fn match_char(self, ch: char) -> Self {
-        use MtoWord::{An, Ch, St, Ws};
+    // (row, rem_chars, Option<(col_off, char)>
+    fn match_char(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
+        use MtoWord::{An, Ch, Fin, St, Ws};
+
+        let (row, rc /*rem_chars*/, col, ch) = {
+            let (row, rc, ch) = item;
+            let (col, ch) = ch.unwrap();
+            (row, rc, col, ch)
+        };
 
         let is_ws = ch.is_whitespace();
         let is_an = ch.is_alphanumeric() || ch == '_';
 
-        match self {
-            St(DP::Start, n) if is_an => An(DP::Start, n),
-            St(DP::Start, n) if is_ws => Ws(DP::Start, n),
-            St(DP::Start, n) => Ch(DP::Start, n),
-            An(DP::Start, n) if is_an => An(DP::Start, n),
-            An(DP::Start, n) if is_ws => Ws(DP::Start, n),
-            An(DP::Start, n) => Ch(DP::Start, n - 1),
-            Ch(DP::Start, n) if is_an => An(DP::Start, n - 1),
-            Ch(DP::Start, n) if is_ws => Ws(DP::Start, n),
-            Ch(DP::Start, n) => Ch(DP::Start, n),
-            Ws(DP::Start, n) if is_ws => Ws(DP::Start, n),
-            Ws(DP::Start, n) if is_an => An(DP::Start, n - 1),
-            Ws(DP::Start, n) => Ch(DP::Start, n - 1),
-
-            St(DP::End, n) if is_an => An(DP::End, n),
-            St(DP::End, n) if is_ws => Ws(DP::End, n),
-            St(DP::End, n) => Ch(DP::End, n),
-            An(DP::End, n) if is_an => An(DP::End, n),
-            An(DP::End, n) if is_ws => Ws(DP::End, n - 1),
-            An(DP::End, n) => Ch(DP::End, n - 1),
-            Ch(DP::End, n) if is_an => An(DP::End, n - 1),
-            Ch(DP::End, n) if is_ws => Ws(DP::End, n - 1),
-            Ch(DP::End, n) => Ch(DP::End, n),
-            Ws(DP::End, n) if is_ws => Ws(DP::End, n),
-            Ws(DP::End, n) if is_an => An(DP::End, n),
-            Ws(DP::End, n) => Ch(DP::End, n),
+        let state = match pos {
+            DP::Start => match self {
+                St(n) if is_an => An(n),
+                St(n) if is_ws => Ws(n),
+                St(n) => Ch(n),
+                An(n) if is_an => An(n),
+                An(n) if is_ws => Ws(n),
+                An(n) => Ch(n - 1),
+                Ch(n) if is_an => An(n - 1),
+                Ch(n) if is_ws => Ws(n),
+                Ch(n) => Ch(n),
+                Ws(n) if is_ws => Ws(n),
+                Ws(n) if is_an => An(n - 1),
+                Ws(n) => Ch(n - 1),
+                _ => unreachable!(),
+            },
+            DP::End => match self {
+                St(n) if is_an => An(n),
+                St(n) if is_ws => Ws(n),
+                St(n) => Ch(n),
+                An(n) if is_an => An(n),
+                An(n) if is_ws => Ws(n - 1),
+                An(n) => Ch(n - 1),
+                Ch(n) if is_an => An(n - 1),
+                Ch(n) if is_ws => Ws(n - 1),
+                Ch(n) => Ch(n),
+                Ws(n) if is_ws => Ws(n),
+                Ws(n) if is_an => An(n),
+                Ws(n) => Ch(n),
+                _ => unreachable!(),
+            },
             _ => unreachable!(),
+        };
+
+        let max_col = Some(std::usize::MAX);
+        match (dir, pos) {
+            (DP::Right, DP::Start) => match state {
+                St(0) | An(0) => Fin(row, rc, Some(col)),
+                Ch(0) | Ws(0) => Fin(row, rc, Some(col)),
+                state => state,
+            },
+            (DP::Right, DP::End) if col == 0 && row > 0 => match state {
+                St(0) => Fin(row.saturating_sub(1), rc, max_col),
+                An(0) => Fin(row.saturating_sub(1), rc, max_col),
+                Ch(0) => Fin(row.saturating_sub(1), rc, max_col),
+                Ws(0) => Fin(row.saturating_sub(1), rc, max_col),
+                state => state,
+            },
+            (DP::Right, DP::End) => match state {
+                St(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                An(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                Ch(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                Ws(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                state => state,
+            },
+            (DP::Left, DP::End) if col == 0 && row > 0 => match state {
+                St(0) => Fin(row.saturating_sub(1), rc, Some(0)),
+                An(0) => Fin(row.saturating_sub(1), rc, Some(0)),
+                Ch(0) => Fin(row.saturating_sub(1), rc, Some(0)),
+                Ws(0) => Fin(row.saturating_sub(1), rc, Some(0)),
+                state => state,
+            },
+            (DP::Left, DP::Start) => match state {
+                St(0) | An(0) => Fin(row, rc, Some(col)),
+                Ch(0) | Ws(0) => Fin(row, rc, Some(col)),
+                state => state,
+            },
+            (DP::Left, DP::End) => match state {
+                St(0) | An(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                Ch(0) | Ws(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                state => state,
+            },
+            (_, _) => unreachable!(),
         }
     }
 }
@@ -1871,10 +1927,10 @@ impl fmt::Display for MtoWord {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         use MtoWord::{An, Ch, Fin, St, Ws};
         match self {
-            St(pos, n) => write!(f, "St<{},{}>", pos, n),
-            An(pos, n) => write!(f, "An<{},{}>", pos, n),
-            Ch(pos, n) => write!(f, "Ch<{},{}>", pos, n),
-            Ws(pos, n) => write!(f, "Ws<{},{}>", pos, n),
+            St(n) => write!(f, "St<{}>", n),
+            An(n) => write!(f, "An<{}>", n),
+            Ch(n) => write!(f, "Ch<{}>", n),
+            Ws(n) => write!(f, "Ws<{}>", n),
             Fin(r, rc, c) => write!(f, "Fin<{},{},{:?}>", r, rc, c),
         }
     }
@@ -1882,60 +1938,23 @@ impl fmt::Display for MtoWord {
 
 impl MtoWord {
     // (row, rem_chars, Option<(col_off, char)>
-    fn push(self, item: (usize, usize, Option<(usize, char)>)) -> Self {
+    fn push(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
         use MtoWord::{An, Ch, Fin, St, Ws};
 
         let state = match self {
             val @ Fin(_, _, _) => val,
-            St(_, 0) | An(_, 0) | Ch(_, 0) | Ws(_, 0) => Fin(0, 0, None),
-            St(_, n) | An(_, n) | Ch(_, n) => match item {
+            St(0) | An(0) | Ch(0) | Ws(0) => Fin(0, 0, None),
+            St(n) | An(n) | Ch(n) => match item {
                 (0, 0, None) => self,
                 (row, 0, None) if n == 1 => Fin(row, 0, None),
                 (_, 0, None) => self.decr(),
-                (row, rc, Some((col, ch))) => match self.match_char(ch) {
-                    St(DP::End, 0) | An(DP::End, 0) if col == 0 => {
-                        Fin(row.saturating_sub(1), rc, Some(std::usize::MAX))
-                    }
-                    Ch(DP::End, 0) | Ws(DP::End, 0) if col == 0 => {
-                        Fin(row.saturating_sub(1), rc, Some(std::usize::MAX))
-                    }
-                    St(DP::End, 0) | An(DP::End, 0) => {
-                        let col = col.saturating_sub(1);
-                        Fin(row, rc, Some(col))
-                    }
-                    Ch(DP::End, 0) | Ws(DP::End, 0) => {
-                        let col = col.saturating_sub(1);
-                        Fin(row, rc, Some(col))
-                    }
-                    St(_, 0) | An(_, 0) => Fin(row, rc, Some(col)),
-                    Ch(_, 0) | Ws(_, 0) => Fin(row, rc, Some(col)),
-                    val => val,
-                },
+                (_, _, Some(_)) => self.match_char(dir, pos, item),
                 (_, _, None) => unreachable!(),
             },
-            Ws(_, n) => match item {
+            Ws(n) => match item {
                 (row, 0, None) if n == 1 => Fin(row, 0, None),
                 (_, 0, None) => self.decr(),
-                (row, rc, Some((col, ch))) => match self.match_char(ch) {
-                    St(DP::End, 0) | An(DP::End, 0) if col == 0 => {
-                        Fin(row.saturating_sub(1), rc, Some(std::usize::MAX))
-                    }
-                    Ch(DP::End, 0) | Ws(DP::End, 0) if col == 0 => {
-                        let col = col.saturating_sub(1);
-                        Fin(row.saturating_sub(1), rc, Some(std::usize::MAX))
-                    }
-                    St(DP::End, 0) | An(DP::End, 0) => {
-                        let col = col.saturating_sub(1);
-                        Fin(row, rc, Some(col))
-                    }
-                    Ch(DP::End, 0) | Ws(DP::End, 0) => {
-                        let col = col.saturating_sub(1);
-                        Fin(row, rc, Some(col))
-                    }
-                    St(_, 0) | An(_, 0) => Fin(row, rc, Some(col)),
-                    Ch(_, 0) | Ws(_, 0) => Fin(row, rc, Some(col)),
-                    val => val,
-                },
+                (_, _, Some(_)) => self.match_char(dir, pos, item),
                 (_, _, None) => unreachable!(),
             },
         };
