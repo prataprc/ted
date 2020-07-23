@@ -82,3 +82,39 @@ impl fmt::Debug for Error {
         write!(f, "{}", self)
     }
 }
+
+impl Error {
+    fn to_loc(&self) -> String {
+        use Error::{BadPattern, Fatal, IOError, Invalid, NoTopic, IPC};
+        use Error::{FailBuffer, FailConvert, FailParse};
+
+        match self {
+            Fatal(p, _) => p.clone(),
+            BadPattern(p, _) => p.clone(),
+            IOError(p, _) => p.clone(),
+            IPC(p, _) => p.clone(),
+            NoTopic(p) => p.clone(),
+            Invalid(p, _) => p.clone(),
+            FailConvert(p, _) => p.clone(),
+            FailParse(p, _) => p.clone(),
+            FailBuffer(p, _) => p.clone(),
+        }
+    }
+
+    fn to_error(&self) -> String {
+        use Error::{BadPattern, Fatal, IOError, Invalid, NoTopic, IPC};
+        use Error::{FailBuffer, FailConvert, FailParse};
+
+        match self {
+            Fatal(_, msg) => msg.clone(),
+            BadPattern(_, msg) => msg.clone(),
+            IOError(_, msg) => msg.clone(),
+            IPC(_, msg) => msg.clone(),
+            NoTopic(_) => "".to_string().clone(),
+            Invalid(_, msg) => msg.clone(),
+            FailConvert(_, msg) => msg.clone(),
+            FailParse(_, msg) => msg.clone(),
+            FailBuffer(_, msg) => msg.clone(),
+        }
+    }
+}

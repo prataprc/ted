@@ -292,13 +292,23 @@ impl Code {
         coord: Coord,
         files: Vec<(String, String)>,
     ) -> (Vec<Buffer>, Vec<WindowPrompt>) {
+        let (mut buffers, mut prompts) = (vec![], vec![]);
+
         let mut locs: Vec<Location> = vec![];
         for (f, e) in files.into_iter() {
             let f: ffi::OsString = f.into();
-            locs.push(Location::new_disk(&f, &e).unwrap())
+            match Location::new_disk(&f, &e) {
+                Ok(loc) => locs.push(loc),
+                Err(err) => {
+                    let lines = vec![
+                        format!("error opening {:?} : {}", f, err.to_error()),
+                        format!("-press any key to continue-"),
+                    ];
+                    prompts.push(self.new_window_prompt(coord, lines));
+                }
+            }
         }
 
-        let (mut buffers, mut prompts) = (vec![], vec![]);
         for loc in locs.into_iter() {
             match loc.read() {
                 Ok(s) if loc.is_read_only() => {
@@ -314,9 +324,8 @@ impl Code {
                     buffers.push(buf);
                 }
                 Err(err) => {
-                    debug!("error opening {}", err);
                     let lines = vec![
-                        format!("error opening {} : {}", loc, err),
+                        format!("error opening {} : {}", loc, err.to_error()),
                         format!("-press any key to continue-"),
                     ];
                     prompts.push(self.new_window_prompt(coord, lines));

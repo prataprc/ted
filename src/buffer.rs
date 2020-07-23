@@ -375,7 +375,6 @@ impl Buffer {
                 None => format!("{:?}", path_file),
             },
             Location::Ted { name, .. } => name.clone(),
-            Location::Err(err) => panic!("unreachable {}", err),
         }
     }
 

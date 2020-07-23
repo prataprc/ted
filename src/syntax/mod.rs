@@ -136,7 +136,6 @@ pub fn detect(buf: &Buffer, scheme: &ColorScheme) -> Result<Type> {
         }
         Location::Memory { .. } => "".to_string(),
         Location::Ted { .. } => "".to_string(),
-        Location::Err(_) => "".to_string(),
     };
 
     // TODO: find other ways to detect the file's type.

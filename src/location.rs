@@ -27,7 +27,6 @@ pub enum Location {
         name: String,
         buf: String,
     },
-    Err(Error),
 }
 
 impl Location {
@@ -49,23 +48,17 @@ impl Location {
     /// relative path to current-directory or start with `~` relative to
     /// home-directory.
     pub fn new_disk(fp: &ffi::OsStr, enc: &str) -> Result<Location> {
-        match fp.to_os_string().into_string() {
-            Ok(fp) => {
-                let path_file = Self::canonicalize(fp).into_os_string();
-                match fs::metadata(&path_file) {
-                    Ok(m) => Ok(Location::Disk {
-                        path_file,
-                        enc: enc.to_string(),
-                        read_only: m.permissions().readonly(),
-                    }),
-                    err => Ok(Location::Err(err_at!(IOError, err).unwrap_err())),
-                }
-            }
-            err => {
-                let err = Error::Invalid(String::new(), format!("{:?}", err));
-                Ok(Location::Err(err))
-            }
-        }
+        let fp = {
+            let res = fp.to_os_string().into_string();
+            err_at!(IOError, res.map_err(|e| format!("{:?}", e)))?
+        };
+        let path_file = Self::canonicalize(fp).into_os_string();
+        let m = err_at!(IOError, fs::metadata(&path_file))?;
+        Ok(Location::Disk {
+            path_file,
+            enc: enc.to_string(),
+            read_only: m.permissions().readonly(),
+        })
     }
 
     /// Create a new buffer to be used within the system.
@@ -94,7 +87,6 @@ impl Location {
                 Ok(text::Encoded::from_reader(fd, enc)?.into())
             }
             Location::Ted { buf, .. } => Ok(buf.clone()),
-            Location::Err(err) => Err(err.clone()),
         }
     }
 
@@ -103,7 +95,6 @@ impl Location {
             Location::Memory { .. } => false,
             Location::Disk { read_only, .. } => *read_only,
             Location::Ted { .. } => false,
-            Location::Err(_) => true,
         }
     }
 
@@ -116,7 +107,6 @@ impl Location {
                 Ok(s.unwrap_or(format!("<invalid path {:?}>", path_file)))
             }
             Location::Ted { name, .. } => Ok(name.clone()),
-            Location::Err(err) => Ok(format!("<err-{}>", err)),
         }
     }
 
@@ -132,7 +122,6 @@ impl Location {
                     .unwrap_or(format!("<invalid path {:?}>", fp)))
             }
             Location::Ted { name, .. } => Ok(name.clone()),
-            Location::Err(err) => Ok(format!("<err-{}>", err)),
         }
     }
 
@@ -204,7 +193,6 @@ impl fmt::Display for Location {
                 None => write!(f, "{:?}", path_file),
             },
             Location::Ted { name, .. } => write!(f, "{}", name),
-            Location::Err(err) => write!(f, "<err-{}>", err),
         }
     }
 }
