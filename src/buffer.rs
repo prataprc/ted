@@ -619,12 +619,12 @@ impl Buffer {
             // motion command - word-wise
             Event::Mt(Mto::Word(n, DP::Left, pos)) => {
                 let cursor = mto_words_left(self, n, pos)?;
-                self.set_cursor(cursor);
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Event::Mt(Mto::Word(n, DP::Right, pos)) => {
                 let cursor = mto_words_right(self, n, pos)?;
-                self.set_cursor(cursor);
+                self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Event::Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
@@ -1427,29 +1427,37 @@ pub fn mto_words_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
             if_else!(pos == DP::Start, n, bc_xy.col)
         };
         let rem_chars = chars[..col].len();
-        let mut chars: Vec<(usize, char)> = {
-            let iter = chars[..col].to_vec().into_iter().enumerate();
-            iter.collect()
+        let chars: Vec<(usize, char)> = {
+            let mut chars = chars[..col].to_vec();
+            chars.reverse();
+            chars.into_iter().enumerate().collect()
         };
-        chars.reverse();
         let iter = buf.lines_at(bc_xy.row, DP::Left)?.map(to_chars);
-        (WIterChar::new(iter, rem_chars, chars, true), bc_xy.row, col)
+        (
+            WIterChar::new(iter, rem_chars, chars),
+            bc_xy.row,
+            col.saturating_sub(1),
+        )
     };
 
     let mut state = MtoWord::St(n);
     let cursor = loop {
         state = match iter.next() {
             Some(item) => match state.push(DP::Left, pos, item) {
-                MtoWord::Fin(r, 0, None) => {
+                MtoWord::Fin(r, _, None) => {
                     break xy_to_cursor(buf, (row - r, 0));
                 }
-                MtoWord::Fin(r, _, Some(c)) => {
-                    let col = if_else!(r == 0, col.saturating_sub(c), c);
+                MtoWord::Fin(r, rc, Some(c)) => {
+                    let col = {
+                        let this = col.saturating_sub(c);
+                        if_else!(r == 0, this, rc.saturating_sub(c+1))
+                    };
                     break xy_to_cursor(buf, (row - r, col));
                 }
                 state => state,
             },
-            None => break last_char_idx(buf),
+            None if pos == DP::Start => break last_char_idx(buf),
+            None /* DP::End */ => break 0,
         };
     };
     Ok(saturate_cursor(buf, cursor))
@@ -1480,18 +1488,14 @@ pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
             iter.collect()
         };
         let iter = buf.lines_at(bc_xy.row + 1, DP::Right)?.map(to_chars);
-        (
-            WIterChar::new(iter, rem_chars, chars, false),
-            bc_xy.row,
-            col,
-        )
+        (WIterChar::new(iter, rem_chars, chars), bc_xy.row, col)
     };
 
     let mut state = MtoWord::St(n);
     let cursor = loop {
         state = match iter.next() {
             Some(item) => match state.push(DP::Right, pos, item) {
-                MtoWord::Fin(r, 0, None) => {
+                MtoWord::Fin(r, _, None) => {
                     break xy_to_cursor(buf, (row + r, 0));
                 }
                 MtoWord::Fin(r, _, Some(c)) => {
@@ -1837,15 +1841,17 @@ impl MtoWord {
     fn match_char(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
         use MtoWord::{An, Ch, Fin, St, Ws};
 
-        let (row, rc /*rem_chars*/, col, ch) = {
+        let (row, rc, col, ch) = {
             let (row, rc, ch) = item;
             let (col, ch) = ch.unwrap();
             (row, rc, col, ch)
         };
+        let last_char = rc.saturating_sub(1);
 
         let is_ws = ch.is_whitespace();
         let is_an = ch.is_alphanumeric() || ch == '_';
 
+        // rotate the current state.
         let state = match pos {
             DP::Start => match self {
                 St(n) if is_an => An(n),
@@ -1880,13 +1886,9 @@ impl MtoWord {
             _ => unreachable!(),
         };
 
+        // check the rotated state is a candidate for final state.
         let max_col = Some(std::usize::MAX);
         match (dir, pos) {
-            (DP::Right, DP::Start) => match state {
-                St(0) | An(0) => Fin(row, rc, Some(col)),
-                Ch(0) | Ws(0) => Fin(row, rc, Some(col)),
-                state => state,
-            },
             (DP::Right, DP::End) if col == 0 && row > 0 => match state {
                 St(0) => Fin(row.saturating_sub(1), rc, max_col),
                 An(0) => Fin(row.saturating_sub(1), rc, max_col),
@@ -1894,28 +1896,23 @@ impl MtoWord {
                 Ws(0) => Fin(row.saturating_sub(1), rc, max_col),
                 state => state,
             },
-            (DP::Right, DP::End) => match state {
-                St(0) => Fin(row, rc, Some(col.saturating_sub(1))),
-                An(0) => Fin(row, rc, Some(col.saturating_sub(1))),
-                Ch(0) => Fin(row, rc, Some(col.saturating_sub(1))),
-                Ws(0) => Fin(row, rc, Some(col.saturating_sub(1))),
-                state => state,
-            },
-            (DP::Left, DP::End) if col == 0 && row > 0 => match state {
+            (DP::Left, DP::End) if col == last_char && row > 0 => match state {
                 St(0) => Fin(row.saturating_sub(1), rc, Some(0)),
                 An(0) => Fin(row.saturating_sub(1), rc, Some(0)),
                 Ch(0) => Fin(row.saturating_sub(1), rc, Some(0)),
                 Ws(0) => Fin(row.saturating_sub(1), rc, Some(0)),
                 state => state,
             },
-            (DP::Left, DP::Start) => match state {
+            (_, DP::Start) => match state {
                 St(0) | An(0) => Fin(row, rc, Some(col)),
                 Ch(0) | Ws(0) => Fin(row, rc, Some(col)),
                 state => state,
             },
-            (DP::Left, DP::End) => match state {
-                St(0) | An(0) => Fin(row, rc, Some(col.saturating_sub(1))),
-                Ch(0) | Ws(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+            (_, DP::End) => match state {
+                St(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                An(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                Ch(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                Ws(0) => Fin(row, rc, Some(col.saturating_sub(1))),
                 state => state,
             },
             (_, _) => unreachable!(),
@@ -1945,17 +1942,35 @@ impl MtoWord {
             val @ Fin(_, _, _) => val,
             St(0) | An(0) | Ch(0) | Ws(0) => Fin(0, 0, None),
             St(n) | An(n) | Ch(n) => match item {
-                (0, 0, None) => self,
-                (row, 0, None) if n == 1 => Fin(row, 0, None),
-                (_, 0, None) => self.decr(),
+                (row, 0, None) => {
+                    if row == 0 {
+                        Ws(n)
+                    } else if n == 1 {
+                        Fin(row, 0, None)
+                    } else {
+                        self.decr()
+                    }
+                }
+                (row, rc, None) if pos == DP::End => {
+                    let this = Fin(row, rc, Some(rc.saturating_sub(1)));
+                    if_else!(n == 1, this, self.decr())
+                }
+                (_, _, None) => Ws(n),
                 (_, _, Some(_)) => self.match_char(dir, pos, item),
-                (_, _, None) => unreachable!(),
             },
             Ws(n) => match item {
-                (row, 0, None) if n == 1 => Fin(row, 0, None),
-                (_, 0, None) => self.decr(),
+                (row, 0, None) => {
+                    if n == 1 {
+                        Fin(row, 0, None)
+                    } else {
+                        self.decr()
+                    }
+                }
+                //(row, rc, None) if pos == DP::End => {
+                //    if_else!(n == 1, Fin(row, rc, None), self.decr())
+                //}
+                (_, _, None) => Ws(n),
                 (_, _, Some(_)) => self.match_char(dir, pos, item),
-                (_, _, None) => unreachable!(),
             },
         };
         debug!("push {:?} {} -> {}", item, self, state);
@@ -1971,29 +1986,24 @@ where
     rem_chars: usize,
     chars: std::vec::IntoIter<(usize, char)>,
     row: usize,
-    reverse: bool,
 }
 
 impl<I> WIterChar<I>
 where
     I: Iterator<Item = Vec<char>>,
 {
-    fn new(iter: I, rchs: usize, chars: Vec<(usize, char)>, rev: bool) -> Self {
+    fn new(iter: I, rchs: usize, chars: Vec<(usize, char)>) -> Self {
         WIterChar {
             iter,
             rem_chars: rchs,
             chars: chars.into_iter(),
             row: 0,
-            reverse: rev,
         }
     }
 
     fn to_next_line(&mut self) -> bool {
         match self.iter.next() {
-            Some(mut chars) => {
-                if self.reverse {
-                    chars.reverse();
-                }
+            Some(chars) => {
                 self.rem_chars = chars.len();
                 self.chars = {
                     let chars: Vec<(usize, char)> = {
@@ -2023,14 +2033,15 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            match (self.row, self.chars.next()) {
-                (row, Some(val)) => break Some((row, self.rem_chars, Some(val))),
-                (row, None) if self.rem_chars == 0 => {
-                    self.to_next_line();
-                    break Some((row, 0, None));
+            match self.chars.next() {
+                Some(val) => break Some((self.row, self.rem_chars, Some(val))),
+                None => {
+                    let (row, rem_chars) = (self.row, self.rem_chars);
+                    break match self.to_next_line() {
+                        true => Some((row, rem_chars, None)),
+                        false => None,
+                    };
                 }
-                (_, None) if self.to_next_line() => (),
-                (_, None) => break None,
             }
         }
     }
