@@ -627,7 +627,16 @@ impl Buffer {
                 self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
-            Event::Mt(e @ Mto::WWord(_, _, _)) => mto_wwords(self, e)?,
+            Event::Mt(Mto::WWord(n, DP::Left, pos)) => {
+                let cursor = mto_wwords_left(self, n, pos)?;
+                self.set_cursor(cursor).clear_sticky_col();
+                Event::Noop
+            }
+            Event::Mt(Mto::WWord(n, DP::Right, pos)) => {
+                let cursor = mto_wwords_right(self, n, pos)?;
+                self.set_cursor(cursor).clear_sticky_col();
+                Event::Noop
+            }
 
             Event::Mt(e @ Mto::Sentence(_, _)) => mto_sentence(self, e)?,
             Event::Mt(e @ Mto::Para(_, _)) => mto_para(self, e)?,
@@ -1407,165 +1416,132 @@ pub fn mto_cursor(buf: &Buffer, n: usize) -> Result<usize> {
     Ok(limite!(cursor + n, buf.n_chars().saturating_sub(1)))
 }
 
-pub fn mto_words_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
-    use crate::text::Format;
+macro_rules! mto_text_left {
+    ($buf:ident, $n:ident, $pos:ident, $state:ident) => {{
+        use crate::text::Format;
 
-    let bc_xy = buf.to_xy_cursor(None);
-    let to_chars = |s: String| -> Vec<char> {
-        let mut chars: Vec<char> = Format::trim_newline(&s).0.chars().collect();
-        chars.reverse();
-        chars
-    };
-
-    let (mut iter, row, col) = {
-        let chars: Vec<char> = {
-            let line = buf.line(bc_xy.row);
-            Format::trim_newline(&line).0.chars().collect()
-        };
-        let col = {
-            let n = cmp::min(chars.len(), bc_xy.col + 1);
-            if_else!(pos == DP::Start, n, bc_xy.col)
-        };
-        let rem_chars = chars[..col].len();
-        let chars: Vec<(usize, char)> = {
-            let mut chars = chars[..col].to_vec();
+        let bc_xy = $buf.to_xy_cursor(None);
+        let to_chars = |line: String| -> Vec<char> {
+            let line = Format::trim_newline(&line).0;
+            let mut chars: Vec<char> = line.chars().collect();
             chars.reverse();
-            chars.into_iter().enumerate().collect()
+            chars
         };
-        let iter = buf.lines_at(bc_xy.row, DP::Left)?.map(to_chars);
-        (
-            WIterChar::new(iter, rem_chars, chars),
-            bc_xy.row,
-            col.saturating_sub(1),
-        )
-    };
 
-    let mut state = MtoWord::St(n);
-    let cursor = loop {
-        state = match iter.next() {
-            Some(item) => match state.push(DP::Left, pos, item) {
-                MtoWord::Fin(r, _, None) => {
-                    break xy_to_cursor(buf, (row - r, 0));
-                }
-                MtoWord::Fin(r, rc, Some(c)) => {
-                    let col = {
-                        let this = col.saturating_sub(c);
-                        if_else!(r == 0, this, rc.saturating_sub(c+1))
-                    };
-                    break xy_to_cursor(buf, (row - r, col));
-                }
-                state => state,
-            },
-            None if pos == DP::Start => break last_char_idx(buf),
-            None /* DP::End */ => break 0,
+        let (mut iter, row, col) = {
+            let chars: Vec<char> = {
+                let line = $buf.line(bc_xy.row);
+                Format::trim_newline(&line).0.chars().collect()
+            };
+            let col = {
+                let n = cmp::min(chars.len(), bc_xy.col + 1);
+                if_else!($pos == DP::Start, n, bc_xy.col)
+            };
+            let rem_chars = chars[..col].len();
+            let chars: Vec<(usize, char)> = {
+                let mut chars = chars[..col].to_vec();
+                chars.reverse();
+                chars.into_iter().enumerate().collect()
+            };
+            let iter = $buf.lines_at(bc_xy.row, DP::Left)?.map(to_chars);
+            (
+                WIterChar::new(iter, rem_chars, chars),
+                bc_xy.row,
+                col.saturating_sub(1),
+            )
         };
-    };
-    Ok(saturate_cursor(buf, cursor))
+
+        let mut state = $state::St($n);
+        let cursor = loop {
+            state = match iter.next() {
+                Some(item) => match state.push(DP::Left, $pos, item) {
+                    $state::Fin(r, _, None) => {
+                        break xy_to_cursor($buf, (row - r, 0));
+                    }
+                    $state::Fin(r, rc, Some(c)) => {
+                        let col = {
+                            let this = col.saturating_sub(c);
+                            if_else!(r == 0, this, rc.saturating_sub(c + 1))
+                        };
+                        break xy_to_cursor($buf, (row - r, col));
+                    }
+                    state => state,
+                },
+                None if $pos == DP::Start => break last_char_idx($buf),
+                None => break 0, // DP::End
+            };
+        };
+        Ok(saturate_cursor($buf, cursor))
+    }};
+}
+
+macro_rules! mto_text_right {
+    ($buf:ident, $n:ident, $pos:ident, $state:ident) => {{
+        use crate::text::Format;
+
+        let bc_xy = $buf.to_xy_cursor(None);
+        let to_chars = |s: String| -> Vec<char> {
+            let iter = Format::trim_newline(&s).0.chars();
+            iter.collect()
+        };
+
+        let (mut iter, row, col) = {
+            let chars: Vec<char> = {
+                let line = $buf.line(bc_xy.row);
+                Format::trim_newline(&line).0.chars().collect()
+            };
+            let col = if_else!(
+                $pos == DP::Start,
+                bc_xy.col,
+                cmp::min(chars.len(), bc_xy.col + 1)
+            );
+            let rem_chars = chars[col..].len();
+            let chars: Vec<(usize, char)> = {
+                let iter = chars[col..].to_vec().into_iter().enumerate();
+                iter.collect()
+            };
+            let iter = $buf.lines_at(bc_xy.row + 1, DP::Right)?.map(to_chars);
+            (WIterChar::new(iter, rem_chars, chars), bc_xy.row, col)
+        };
+
+        let mut state = $state::St($n);
+        let cursor = loop {
+            state = match iter.next() {
+                Some(item) => match state.push(DP::Right, $pos, item) {
+                    $state::Fin(r, _, None) => {
+                        break xy_to_cursor($buf, (row + r, 0));
+                    }
+                    $state::Fin(r, _, Some(c)) => {
+                        let col = {
+                            let n = line_chars($buf, row + r).saturating_sub(1);
+                            let col = if_else!(r == 0, col.saturating_add(c), c);
+                            cmp::min(n, col)
+                        };
+                        break xy_to_cursor($buf, (row + r, col));
+                    }
+                    state => state,
+                },
+                None => break last_char_idx($buf),
+            };
+        };
+        Ok(saturate_cursor($buf, cursor))
+    }};
+}
+
+pub fn mto_words_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+    mto_text_left!(buf, n, pos, MtoWord)
 }
 
 pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
-    use crate::text::Format;
-
-    let bc_xy = buf.to_xy_cursor(None);
-    let to_chars = |s: String| -> Vec<char> {
-        let iter = Format::trim_newline(&s).0.chars();
-        iter.collect()
-    };
-
-    let (mut iter, row, col) = {
-        let chars: Vec<char> = {
-            let line = buf.line(bc_xy.row);
-            Format::trim_newline(&line).0.chars().collect()
-        };
-        let col = if_else!(
-            pos == DP::Start,
-            bc_xy.col,
-            cmp::min(chars.len(), bc_xy.col + 1)
-        );
-        let rem_chars = chars[col..].len();
-        let chars: Vec<(usize, char)> = {
-            let iter = chars[col..].to_vec().into_iter().enumerate();
-            iter.collect()
-        };
-        let iter = buf.lines_at(bc_xy.row + 1, DP::Right)?.map(to_chars);
-        (WIterChar::new(iter, rem_chars, chars), bc_xy.row, col)
-    };
-
-    let mut state = MtoWord::St(n);
-    let cursor = loop {
-        state = match iter.next() {
-            Some(item) => match state.push(DP::Right, pos, item) {
-                MtoWord::Fin(r, _, None) => {
-                    break xy_to_cursor(buf, (row + r, 0));
-                }
-                MtoWord::Fin(r, _, Some(c)) => {
-                    let col = {
-                        let n = line_chars(buf, row + r).saturating_sub(1);
-                        let col = if_else!(r == 0, col.saturating_add(c), c);
-                        cmp::min(n, col)
-                    };
-                    break xy_to_cursor(buf, (row + r, col));
-                }
-                state => state,
-            },
-            None => break last_char_idx(buf),
-        };
-    };
-    Ok(saturate_cursor(buf, cursor))
+    mto_text_right!(buf, n, pos, MtoWord)
 }
 
-pub fn mto_wwords(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
-    match evnt {
-        Mto::WWord(n, DP::Left, pos) => {
-            for _ in 0..n {
-                let n = buf.to_mut_change().skip_whitespace(DP::Left)?;
-                match pos {
-                    DP::Start if n == 0 => {
-                        buf.skip_non_whitespace(DP::Left);
-                        buf.set_cursor(mto_right(buf, 1, DP::Nobound)?)
-                            .clear_sticky_col();
-                    }
-                    DP::Start => {
-                        buf.skip_non_whitespace(DP::Left);
-                        buf.set_cursor(mto_right(buf, 1, DP::Nobound)?)
-                            .clear_sticky_col();
-                    }
-                    DP::End if n == 0 => {
-                        buf.skip_non_whitespace(DP::Left);
-                        buf.to_mut_change().skip_whitespace(DP::Left)?;
-                    }
-                    DP::End => (),
-                    _ => unreachable!(),
-                }
-            }
-            Ok(Event::Noop)
-        }
-        Mto::WWord(n, DP::Right, pos) => {
-            for _ in 0..n {
-                let n = buf.to_mut_change().skip_whitespace(DP::Right)?;
-                match pos {
-                    DP::End if n == 0 => {
-                        buf.skip_non_whitespace(DP::Right);
-                        buf.set_cursor(mto_left(buf, 1, DP::Nobound)?)
-                            .clear_sticky_col();
-                    }
-                    DP::End => {
-                        buf.skip_non_whitespace(DP::Right);
-                        buf.set_cursor(mto_left(buf, 1, DP::Nobound)?)
-                            .clear_sticky_col();
-                    }
-                    DP::Start if n == 0 => {
-                        buf.skip_non_whitespace(DP::Right);
-                        buf.to_mut_change().skip_whitespace(DP::Right)?;
-                    }
-                    DP::Start => (),
-                    _ => unreachable!(),
-                }
-            }
-            Ok(Event::Noop)
-        }
-        _ => err_at!(Fatal, msg: format!("unreachable")),
-    }
+pub fn mto_wwords_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+    mto_text_left!(buf, n, pos, MtoWWord)
+}
+
+pub fn mto_wwords_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+    mto_text_right!(buf, n, pos, MtoWWord)
 }
 
 pub fn mto_sentence(buf: &mut Buffer, e: Mto) -> Result<Event> {
@@ -1815,6 +1791,147 @@ fn xy_to_cursor(buf: &Buffer, (row, col): (usize, usize)) -> usize {
 fn line_chars(buf: &Buffer, row: usize) -> usize {
     use crate::text::Format;
     Format::trim_newline(&buf.line(row)).0.chars().count()
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
+enum MtoWWord {
+    St(usize), // start - (n,) number of words to move.
+    Ch(usize), // char - (n,) number of words to move.
+    Ws(usize),
+    Fin(usize, usize, Option<usize>), // (row, rem_chars, col_off)
+}
+
+impl MtoWWord {
+    fn decr(self) -> Self {
+        match self {
+            MtoWWord::St(n) => MtoWWord::St(n.saturating_sub(1)),
+            MtoWWord::Ch(n) => MtoWWord::Ch(n.saturating_sub(1)),
+            MtoWWord::Ws(n) => MtoWWord::Ws(n.saturating_sub(1)),
+            MtoWWord::Fin(_, _, _) => unreachable!(),
+        }
+    }
+
+    // (row, rem_chars, Option<(col_off, char)>
+    fn match_char(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
+        use MtoWWord::{Ch, Fin, St, Ws};
+
+        let (row, rc, col, ch) = {
+            let (row, rc, ch) = item;
+            let (col, ch) = ch.unwrap();
+            (row, rc, col, ch)
+        };
+        let last_char = rc.saturating_sub(1);
+
+        let is_ws = ch.is_whitespace();
+
+        // rotate the current state.
+        let state = match pos {
+            DP::Start => match self {
+                St(n) if is_ws => Ws(n),
+                St(n) => Ch(n),
+                Ch(n) if is_ws => Ws(n),
+                Ch(n) => Ch(n),
+                Ws(n) if is_ws => Ws(n),
+                Ws(n) => Ch(n - 1),
+                _ => unreachable!(),
+            },
+            DP::End => match self {
+                St(n) if is_ws => Ws(n),
+                St(n) => Ch(n),
+                Ch(n) if is_ws => Ws(n - 1),
+                Ch(n) => Ch(n),
+                Ws(n) if is_ws => Ws(n),
+                Ws(n) => Ch(n),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        };
+
+        // check the rotated state is a candidate for final state.
+        let max_col = Some(std::usize::MAX);
+        match (dir, pos) {
+            (DP::Right, DP::End) if col == 0 && row > 0 => match state {
+                St(0) => Fin(row.saturating_sub(1), rc, max_col),
+                Ch(0) => Fin(row.saturating_sub(1), rc, max_col),
+                Ws(0) => Fin(row.saturating_sub(1), rc, max_col),
+                state => state,
+            },
+            (DP::Left, DP::End) if col == last_char && row > 0 => match state {
+                St(0) => Fin(row.saturating_sub(1), rc, Some(0)),
+                Ch(0) => Fin(row.saturating_sub(1), rc, Some(0)),
+                Ws(0) => Fin(row.saturating_sub(1), rc, Some(0)),
+                state => state,
+            },
+            (_, DP::Start) => match state {
+                St(0) | Ch(0) | Ws(0) => Fin(row, rc, Some(col)),
+                state => state,
+            },
+            (_, DP::End) => match state {
+                St(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                Ch(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                Ws(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                state => state,
+            },
+            (_, _) => unreachable!(),
+        }
+    }
+}
+
+impl fmt::Display for MtoWWord {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        use MtoWWord::{Ch, Fin, St, Ws};
+        match self {
+            St(n) => write!(f, "St<{}>", n),
+            Ch(n) => write!(f, "Ch<{}>", n),
+            Ws(n) => write!(f, "Ws<{}>", n),
+            Fin(r, rc, c) => write!(f, "Fin<{},{},{:?}>", r, rc, c),
+        }
+    }
+}
+
+impl MtoWWord {
+    // (row, rem_chars, Option<(col_off, char)>
+    fn push(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
+        use MtoWWord::{Ch, Fin, St, Ws};
+
+        let state = match self {
+            val @ Fin(_, _, _) => val,
+            St(0) | Ch(0) | Ws(0) => Fin(0, 0, None),
+            St(n) | Ch(n) => match item {
+                (row, 0, None) => {
+                    if row == 0 {
+                        Ws(n)
+                    } else if n == 1 {
+                        Fin(row, 0, None)
+                    } else {
+                        self.decr()
+                    }
+                }
+                (row, rc, None) if pos == DP::End => {
+                    let this = Fin(row, rc, Some(rc.saturating_sub(1)));
+                    if_else!(n == 1, this, self.decr())
+                }
+                (_, _, None) => Ws(n),
+                (_, _, Some(_)) => self.match_char(dir, pos, item),
+            },
+            Ws(n) => match item {
+                (row, 0, None) => {
+                    if n == 1 {
+                        Fin(row, 0, None)
+                    } else {
+                        self.decr()
+                    }
+                }
+                //(row, rc, None) if pos == DP::End => {
+                //    if_else!(n == 1, Fin(row, rc, None), self.decr())
+                //}
+                (_, _, None) => Ws(n),
+                (_, _, Some(_)) => self.match_char(dir, pos, item),
+            },
+        };
+        debug!("push {:?} {} -> {}", item, self, state);
+        state
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
