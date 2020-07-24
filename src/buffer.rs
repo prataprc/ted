@@ -637,8 +637,23 @@ impl Buffer {
                 self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
+            Event::Mt(Mto::Sentence(n, DP::Left)) => {
+                let cursor = mto_sentence_left(self, n, DP::None)?;
+                let cursor = if self.to_change().rope.char(cursor) == '.' {
+                    self.set_cursor(cursor);
+                    mto_wwords_right(self, 1, DP::Start)?
+                } else {
+                    cursor
+                };
+                self.set_cursor(cursor).clear_sticky_col();
+                Event::Noop
+            }
+            Event::Mt(Mto::Sentence(n, DP::Right)) => {
+                let cursor = mto_sentence_right(self, n, DP::None)?;
+                self.set_cursor(cursor).clear_sticky_col();
+                Event::Noop
+            }
 
-            Event::Mt(e @ Mto::Sentence(_, _)) => mto_sentence(self, e)?,
             Event::Mt(e @ Mto::Para(_, _)) => mto_para(self, e)?,
             Event::Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(self, e)?,
             Event::Mt(e @ Mto::Pattern(_, Some(_), _)) => {
@@ -1417,7 +1432,7 @@ pub fn mto_cursor(buf: &Buffer, n: usize) -> Result<usize> {
 }
 
 macro_rules! mto_text_left {
-    ($buf:ident, $n:ident, $pos:ident, $state:ident) => {{
+    ($buf:ident, $n:ident, $pos:ident, $start:expr, $state:ident) => {{
         use crate::text::Format;
 
         let bc_xy = $buf.to_xy_cursor(None);
@@ -1451,7 +1466,7 @@ macro_rules! mto_text_left {
             )
         };
 
-        let mut state = $state::St($n);
+        let mut state = $start;
         let cursor = loop {
             state = match iter.next() {
                 Some(item) => match state.push(DP::Left, $pos, item) {
@@ -1476,7 +1491,7 @@ macro_rules! mto_text_left {
 }
 
 macro_rules! mto_text_right {
-    ($buf:ident, $n:ident, $pos:ident, $state:ident) => {{
+    ($buf:ident, $n:ident, $pos:ident, $start:expr, $state:ident) => {{
         use crate::text::Format;
 
         let bc_xy = $buf.to_xy_cursor(None);
@@ -1504,7 +1519,7 @@ macro_rules! mto_text_right {
             (WIterChar::new(iter, rem_chars, chars), bc_xy.row, col)
         };
 
-        let mut state = $state::St($n);
+        let mut state = $start;
         let cursor = loop {
             state = match iter.next() {
                 Some(item) => match state.push(DP::Right, $pos, item) {
@@ -1529,86 +1544,29 @@ macro_rules! mto_text_right {
 }
 
 pub fn mto_words_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
-    mto_text_left!(buf, n, pos, MtoWord)
+    mto_text_left!(buf, n, pos, MtoWord::St(n), MtoWord)
 }
 
 pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
-    mto_text_right!(buf, n, pos, MtoWord)
+    mto_text_right!(buf, n, pos, MtoWord::St(n), MtoWord)
 }
 
 pub fn mto_wwords_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
-    mto_text_left!(buf, n, pos, MtoWWord)
+    mto_text_left!(buf, n, pos, MtoWWord::St(n), MtoWWord)
 }
 
 pub fn mto_wwords_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
-    mto_text_right!(buf, n, pos, MtoWWord)
+    mto_text_right!(buf, n, pos, MtoWWord::St(n), MtoWWord)
 }
 
-pub fn mto_sentence(buf: &mut Buffer, e: Mto) -> Result<Event> {
-    let is_ws = |ch: char| ch.is_whitespace();
+pub fn mto_sentence_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+    let start = MtoSentence::St(n);
+    mto_text_left!(buf, n, pos, start, MtoSentence)
+}
 
-    let mut cursor = buf.to_char_cursor();
-    let mut pch: Option<char> = None;
-    cursor = match e {
-        Mto::Sentence(mut n, DP::Left) => {
-            let mut iter = buf.chars_at(cursor, DP::Left)?.enumerate();
-            Ok(loop {
-                pch = match (iter.next(), pch) {
-                    (Some((i, '.')), Some(pch)) if is_ws(pch) => {
-                        if n > 1 {
-                            n -= 1;
-                        } else {
-                            break cursor.saturating_sub(i);
-                        }
-                        Some('.')
-                    }
-                    (Some((i, NL)), Some(NL)) => {
-                        if n > 1 {
-                            n -= 1;
-                        } else {
-                            break cursor.saturating_sub(i);
-                        }
-                        Some(NL)
-                    }
-                    (Some((_, ch)), _) => Some(ch),
-                    (None, _) => break 0,
-                };
-            })
-        }
-        Mto::Sentence(mut n, DP::Right) => {
-            let mut iter = buf.chars_at(cursor, DP::Right)?.enumerate();
-            Ok(loop {
-                pch = match (pch, iter.next()) {
-                    (Some('.'), Some((i, ch))) if is_ws(ch) => {
-                        if n > 1 {
-                            n -= 1;
-                        } else {
-                            break cursor.saturating_add(i);
-                        }
-                        Some('.')
-                    }
-                    (Some(NL), Some((i, NL))) => {
-                        if n > 1 {
-                            n -= 1;
-                        } else {
-                            break cursor.saturating_add(i);
-                        }
-                        Some(NL)
-                    }
-                    (_, Some((_, ch))) => Some(ch),
-                    (_, None) => {
-                        break buf.n_chars().saturating_sub(1);
-                    }
-                };
-            })
-        }
-        _ => err_at!(Fatal, msg: format!("unreachable")),
-    }?;
-
-    buf.set_cursor(cursor);
-    buf.to_mut_change().skip_whitespace(DP::Right)?;
-
-    Ok(Event::Noop)
+pub fn mto_sentence_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+    let start = MtoSentence::St(n);
+    mto_text_right!(buf, n, pos, start, MtoSentence)
 }
 
 pub fn mto_para(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
@@ -1794,147 +1752,6 @@ fn line_chars(buf: &Buffer, row: usize) -> usize {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
-enum MtoWWord {
-    St(usize), // start - (n,) number of words to move.
-    Ch(usize), // char - (n,) number of words to move.
-    Ws(usize),
-    Fin(usize, usize, Option<usize>), // (row, rem_chars, col_off)
-}
-
-impl MtoWWord {
-    fn decr(self) -> Self {
-        match self {
-            MtoWWord::St(n) => MtoWWord::St(n.saturating_sub(1)),
-            MtoWWord::Ch(n) => MtoWWord::Ch(n.saturating_sub(1)),
-            MtoWWord::Ws(n) => MtoWWord::Ws(n.saturating_sub(1)),
-            MtoWWord::Fin(_, _, _) => unreachable!(),
-        }
-    }
-
-    // (row, rem_chars, Option<(col_off, char)>
-    fn match_char(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
-        use MtoWWord::{Ch, Fin, St, Ws};
-
-        let (row, rc, col, ch) = {
-            let (row, rc, ch) = item;
-            let (col, ch) = ch.unwrap();
-            (row, rc, col, ch)
-        };
-        let last_char = rc.saturating_sub(1);
-
-        let is_ws = ch.is_whitespace();
-
-        // rotate the current state.
-        let state = match pos {
-            DP::Start => match self {
-                St(n) if is_ws => Ws(n),
-                St(n) => Ch(n),
-                Ch(n) if is_ws => Ws(n),
-                Ch(n) => Ch(n),
-                Ws(n) if is_ws => Ws(n),
-                Ws(n) => Ch(n - 1),
-                _ => unreachable!(),
-            },
-            DP::End => match self {
-                St(n) if is_ws => Ws(n),
-                St(n) => Ch(n),
-                Ch(n) if is_ws => Ws(n - 1),
-                Ch(n) => Ch(n),
-                Ws(n) if is_ws => Ws(n),
-                Ws(n) => Ch(n),
-                _ => unreachable!(),
-            },
-            _ => unreachable!(),
-        };
-
-        // check the rotated state is a candidate for final state.
-        let max_col = Some(std::usize::MAX);
-        match (dir, pos) {
-            (DP::Right, DP::End) if col == 0 && row > 0 => match state {
-                St(0) => Fin(row.saturating_sub(1), rc, max_col),
-                Ch(0) => Fin(row.saturating_sub(1), rc, max_col),
-                Ws(0) => Fin(row.saturating_sub(1), rc, max_col),
-                state => state,
-            },
-            (DP::Left, DP::End) if col == last_char && row > 0 => match state {
-                St(0) => Fin(row.saturating_sub(1), rc, Some(0)),
-                Ch(0) => Fin(row.saturating_sub(1), rc, Some(0)),
-                Ws(0) => Fin(row.saturating_sub(1), rc, Some(0)),
-                state => state,
-            },
-            (_, DP::Start) => match state {
-                St(0) | Ch(0) | Ws(0) => Fin(row, rc, Some(col)),
-                state => state,
-            },
-            (_, DP::End) => match state {
-                St(0) => Fin(row, rc, Some(col.saturating_sub(1))),
-                Ch(0) => Fin(row, rc, Some(col.saturating_sub(1))),
-                Ws(0) => Fin(row, rc, Some(col.saturating_sub(1))),
-                state => state,
-            },
-            (_, _) => unreachable!(),
-        }
-    }
-}
-
-impl fmt::Display for MtoWWord {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use MtoWWord::{Ch, Fin, St, Ws};
-        match self {
-            St(n) => write!(f, "St<{}>", n),
-            Ch(n) => write!(f, "Ch<{}>", n),
-            Ws(n) => write!(f, "Ws<{}>", n),
-            Fin(r, rc, c) => write!(f, "Fin<{},{},{:?}>", r, rc, c),
-        }
-    }
-}
-
-impl MtoWWord {
-    // (row, rem_chars, Option<(col_off, char)>
-    fn push(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
-        use MtoWWord::{Ch, Fin, St, Ws};
-
-        let state = match self {
-            val @ Fin(_, _, _) => val,
-            St(0) | Ch(0) | Ws(0) => Fin(0, 0, None),
-            St(n) | Ch(n) => match item {
-                (row, 0, None) => {
-                    if row == 0 {
-                        Ws(n)
-                    } else if n == 1 {
-                        Fin(row, 0, None)
-                    } else {
-                        self.decr()
-                    }
-                }
-                (row, rc, None) if pos == DP::End => {
-                    let this = Fin(row, rc, Some(rc.saturating_sub(1)));
-                    if_else!(n == 1, this, self.decr())
-                }
-                (_, _, None) => Ws(n),
-                (_, _, Some(_)) => self.match_char(dir, pos, item),
-            },
-            Ws(n) => match item {
-                (row, 0, None) => {
-                    if n == 1 {
-                        Fin(row, 0, None)
-                    } else {
-                        self.decr()
-                    }
-                }
-                //(row, rc, None) if pos == DP::End => {
-                //    if_else!(n == 1, Fin(row, rc, None), self.decr())
-                //}
-                (_, _, None) => Ws(n),
-                (_, _, Some(_)) => self.match_char(dir, pos, item),
-            },
-        };
-        debug!("push {:?} {} -> {}", item, self, state);
-        state
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
 enum MtoWord {
     St(usize), // start - (n,) number of words to move.
     An(usize), // Alphanumeric - (n,) number of words to move.
@@ -2083,11 +1900,251 @@ impl MtoWord {
                         self.decr()
                     }
                 }
-                //(row, rc, None) if pos == DP::End => {
-                //    if_else!(n == 1, Fin(row, rc, None), self.decr())
-                //}
                 (_, _, None) => Ws(n),
                 (_, _, Some(_)) => self.match_char(dir, pos, item),
+            },
+        };
+        debug!("push {:?} {} -> {}", item, self, state);
+        state
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
+enum MtoWWord {
+    St(usize), // start - (n,) number of words to move.
+    Ch(usize), // char - (n,) number of words to move.
+    Ws(usize),
+    Fin(usize, usize, Option<usize>), // (row, rem_chars, col_off)
+}
+
+impl MtoWWord {
+    fn decr(self) -> Self {
+        match self {
+            MtoWWord::St(n) => MtoWWord::St(n.saturating_sub(1)),
+            MtoWWord::Ch(n) => MtoWWord::Ch(n.saturating_sub(1)),
+            MtoWWord::Ws(n) => MtoWWord::Ws(n.saturating_sub(1)),
+            MtoWWord::Fin(_, _, _) => unreachable!(),
+        }
+    }
+
+    // (row, rem_chars, Option<(col_off, char)>
+    fn match_char(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
+        use MtoWWord::{Ch, Fin, St, Ws};
+
+        let (row, rc, col, ch) = {
+            let (row, rc, ch) = item;
+            let (col, ch) = ch.unwrap();
+            (row, rc, col, ch)
+        };
+        let last_char = rc.saturating_sub(1);
+
+        let is_ws = ch.is_whitespace();
+
+        // rotate the current state.
+        let state = match pos {
+            DP::Start => match self {
+                St(n) if is_ws => Ws(n),
+                St(n) => Ch(n),
+                Ch(n) if is_ws => Ws(n),
+                Ch(n) => Ch(n),
+                Ws(n) if is_ws => Ws(n),
+                Ws(n) => Ch(n - 1),
+                _ => unreachable!(),
+            },
+            DP::End => match self {
+                St(n) if is_ws => Ws(n),
+                St(n) => Ch(n),
+                Ch(n) if is_ws => Ws(n - 1),
+                Ch(n) => Ch(n),
+                Ws(n) if is_ws => Ws(n),
+                Ws(n) => Ch(n),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        };
+
+        // check the rotated state is a candidate for final state.
+        let max_col = Some(std::usize::MAX);
+        match (dir, pos) {
+            (DP::Right, DP::End) if col == 0 && row > 0 => match state {
+                St(0) => Fin(row.saturating_sub(1), rc, max_col),
+                Ch(0) => Fin(row.saturating_sub(1), rc, max_col),
+                Ws(0) => Fin(row.saturating_sub(1), rc, max_col),
+                state => state,
+            },
+            (DP::Left, DP::End) if col == last_char && row > 0 => match state {
+                St(0) => Fin(row.saturating_sub(1), rc, Some(0)),
+                Ch(0) => Fin(row.saturating_sub(1), rc, Some(0)),
+                Ws(0) => Fin(row.saturating_sub(1), rc, Some(0)),
+                state => state,
+            },
+            (_, DP::Start) => match state {
+                St(0) | Ch(0) | Ws(0) => Fin(row, rc, Some(col)),
+                state => state,
+            },
+            (_, DP::End) => match state {
+                St(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                Ch(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                Ws(0) => Fin(row, rc, Some(col.saturating_sub(1))),
+                state => state,
+            },
+            (_, _) => unreachable!(),
+        }
+    }
+}
+
+impl fmt::Display for MtoWWord {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        use MtoWWord::{Ch, Fin, St, Ws};
+        match self {
+            St(n) => write!(f, "St<{}>", n),
+            Ch(n) => write!(f, "Ch<{}>", n),
+            Ws(n) => write!(f, "Ws<{}>", n),
+            Fin(r, rc, c) => write!(f, "Fin<{},{},{:?}>", r, rc, c),
+        }
+    }
+}
+
+impl MtoWWord {
+    // (row, rem_chars, Option<(col_off, char)>
+    fn push(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
+        use MtoWWord::{Ch, Fin, St, Ws};
+
+        let state = match self {
+            val @ Fin(_, _, _) => val,
+            St(0) | Ch(0) | Ws(0) => Fin(0, 0, None),
+            St(n) | Ch(n) => match item {
+                (row, 0, None) => {
+                    if row == 0 {
+                        Ws(n)
+                    } else if n == 1 {
+                        Fin(row, 0, None)
+                    } else {
+                        self.decr()
+                    }
+                }
+                (row, rc, None) if pos == DP::End => {
+                    let this = Fin(row, rc, Some(rc.saturating_sub(1)));
+                    if_else!(n == 1, this, self.decr())
+                }
+                (_, _, None) => Ws(n),
+                (_, _, Some(_)) => self.match_char(dir, pos, item),
+            },
+            Ws(n) => match item {
+                (row, 0, None) => {
+                    if n == 1 {
+                        Fin(row, 0, None)
+                    } else {
+                        self.decr()
+                    }
+                }
+                (_, _, None) => Ws(n),
+                (_, _, Some(_)) => self.match_char(dir, pos, item),
+            },
+        };
+        debug!("push {:?} {} -> {}", item, self, state);
+        state
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
+enum MtoSentence {
+    St(usize),
+    Ch(usize),
+    Ws(usize, usize),                 // (n-ws, n)
+    Fin(usize, usize, Option<usize>), // (row, rem_chars, col_off)
+}
+
+impl MtoSentence {
+    // (row, rem_chars, Option<(col_off, char)>
+    fn match_char(self, dir: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
+        use MtoSentence::{Ch, Fin, St, Ws};
+
+        let (row, rc, col, ch) = {
+            let (row, rc, ch) = item;
+            let (col, ch) = ch.unwrap();
+            (row, rc, col, ch)
+        };
+
+        match dir {
+            // forward, rotate the current state
+            DP::Right => match self {
+                St(n) => match ch {
+                    '.' | '!' | '?' => Ws(0, n),
+                    _ => Ch(n),
+                },
+                Ch(n) => match ch {
+                    '.' | '!' | '?' => Ws(0, n),
+                    _ => Ch(n),
+                },
+                Ws(count, n) if ch.is_whitespace() => Ws(count + 1, n),
+                Ws(count, n) => match ch {
+                    ')' | ']' | '"' | '\'' => Ws(count + 1, n),
+                    _ if count > 0 && n == 1 => Fin(row, rc, Some(col)),
+                    _ if count > 0 => Ch(n - 1),
+                    _ => Ch(n),
+                },
+                _ => unreachable!(),
+            },
+            // reverse, rotate the current state
+            DP::Left => match self {
+                St(n) => match ch {
+                    ch if ch.is_whitespace() => Ws(1, n),
+                    _ => Ch(n),
+                },
+                Ch(n) => match ch {
+                    ch if ch.is_whitespace() => Ws(1, n),
+                    _ => Ch(n),
+                },
+                Ws(count, n) => match ch {
+                    ')' | ']' | '"' | '\'' => Ws(count + 1, n),
+                    '.' if n == 1 => Fin(row, rc, Some(col)),
+                    '.' => Ch(n - 1),
+                    ch if ch.is_whitespace() => Ws(count + 1, n),
+                    _ => Ch(n),
+                },
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl fmt::Display for MtoSentence {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        use MtoSentence::{Ch, Fin, St, Ws};
+        match self {
+            St(n) => write!(f, "St<{}>", n),
+            Ch(n) => write!(f, "Ch<{}>", n),
+            Ws(c, n) => write!(f, "Ws<{},{}>", c, n),
+            Fin(r, rc, c) => write!(f, "Fin<{},{},{:?}>", r, rc, c),
+        }
+    }
+}
+
+impl MtoSentence {
+    // (row, rem_chars, Option<(col_off, char)>
+    fn push(self, dir: DP, _pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
+        use MtoSentence::{Ch, Fin, St, Ws};
+
+        let state = match self {
+            val @ Fin(_, _, _) => val,
+            St(0) | Ch(0) | Ws(_, 0) => Fin(0, 0, None),
+            St(_) | Ch(_) => match item {
+                (row, 0, None) => if_else!(row == 0, self, Fin(row, 0, None)),
+                (_, _, None) => self,
+                (_, _, Some(_)) => self.match_char(dir, item),
+            },
+            Ws(count, n) => match item {
+                (row, 0, None) => {
+                    if row == 0 {
+                        Ws(count + 1, n)
+                    } else {
+                        Fin(row, 0, None)
+                    }
+                }
+                (_, _, None) => Ws(count + 1, n),
+                (_, _, Some(_)) => self.match_char(dir, item),
             },
         };
         debug!("push {:?} {} -> {}", item, self, state);
