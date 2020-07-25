@@ -92,11 +92,11 @@ impl KeyEdit {
                 Char('E', _) => (noop, Mt(Mto::WWord(1, DP::Right, DP::End))),
                 Char('b', _) => (noop, Mt(Mto::Word(1, DP::Left, DP::End))),
                 Char('B', _) => (noop, Mt(Mto::WWord(1, DP::Left, DP::End))),
-
-                Char('{', _) => (noop, Mt(Mto::Para(1, DP::Left))),
-                Char('}', _) => (noop, Mt(Mto::Para(1, DP::Right))),
                 Char('(', _) => (noop, Mt(Mto::Sentence(1, DP::Left))),
                 Char(')', _) => (noop, Mt(Mto::Sentence(1, DP::Right))),
+                Char('{', _) => (noop, Mt(Mto::Para(1, DP::Left))),
+                Char('}', _) => (noop, Mt(Mto::Para(1, DP::Right))),
+
                 Char('n', _) => (noop, Mt(Mto::PatternR(1, DP::Right))),
                 Char('N', _) => (noop, Mt(Mto::PatternR(1, DP::Left))),
                 //
@@ -161,11 +161,11 @@ impl KeyEdit {
                 Char('E', _) => (noop, Mt(Mto::WWord(n, DP::Right, DP::End))),
                 Char('b', _) => (noop, Mt(Mto::Word(n, DP::Left, DP::End))),
                 Char('B', _) => (noop, Mt(Mto::WWord(n, DP::Left, DP::End))),
-
-                Char('{', _) => (noop, Mt(Mto::Para(n, DP::Left))),
-                Char('}', _) => (noop, Mt(Mto::Para(n, DP::Right))),
                 Char('(', _) => (noop, Mt(Mto::Sentence(n, DP::Left))),
                 Char(')', _) => (noop, Mt(Mto::Sentence(n, DP::Right))),
+                Char('{', _) => (noop, Mt(Mto::Para(n, DP::Left))),
+                Char('}', _) => (noop, Mt(Mto::Para(n, DP::Right))),
+
                 Char('n', _) => (noop, Mt(Mto::PatternR(n, DP::Right))),
                 Char('N', _) => (noop, Mt(Mto::PatternR(n, DP::Left))),
                 //

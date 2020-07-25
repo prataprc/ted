@@ -638,17 +638,26 @@ impl Buffer {
                 Event::Noop
             }
             Event::Mt(Mto::Sentence(n, DP::Left)) => {
-                let cursor = mto_sentence_left(self, n, DP::None)?;
+                let cursor = mto_sentence_left(self, n)?;
                 self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
             Event::Mt(Mto::Sentence(n, DP::Right)) => {
-                let cursor = mto_sentence_right(self, n, DP::None)?;
+                let cursor = mto_sentence_right(self, n)?;
+                self.set_cursor(cursor).clear_sticky_col();
+                Event::Noop
+            }
+            Event::Mt(Mto::Para(n, DP::Left)) => {
+                let cursor = mto_paras_left(self, n)?;
+                self.set_cursor(cursor).clear_sticky_col();
+                Event::Noop
+            }
+            Event::Mt(Mto::Para(n, DP::Right)) => {
+                let cursor = mto_paras_right(self, n)?;
                 self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
 
-            Event::Mt(e @ Mto::Para(_, _)) => mto_para(self, e)?,
             Event::Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(self, e)?,
             Event::Mt(e @ Mto::Pattern(_, Some(_), _)) => {
                 self.mto_pattern = e.clone();
@@ -1527,7 +1536,8 @@ pub fn mto_wwords_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
     mto_text_right!(buf, n, pos, MtoWWord::St(n), MtoWWord)
 }
 
-pub fn mto_sentence_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+pub fn mto_sentence_left(buf: &mut Buffer, n: usize) -> Result<usize> {
+    let pos = DP::None;
     let start = MtoSentence::St(n);
     let cursor = mto_text_left!(buf, n, pos, start, MtoSentence)?;
     let is_skip = |(_, ch): &(usize, char)| -> bool {
@@ -1538,9 +1548,6 @@ pub fn mto_sentence_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
         }
     };
 
-    //match text::visual_line_n(&buf.line(buf.to_xy_cursor(Some(cursor)).row)) {
-    //    0 => Ok(cursor), // empty line
-    //    _ => {
     let i = if cursor == 0 {
         0
     } else {
@@ -1554,7 +1561,8 @@ pub fn mto_sentence_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
     Ok(cursor + if_else!(buf.to_char_cursor() <= cursor + i, 0, i))
 }
 
-pub fn mto_sentence_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+pub fn mto_sentence_right(buf: &mut Buffer, n: usize) -> Result<usize> {
+    let pos = DP::None;
     let start = {
         let ln = {
             let bc_xy = buf.to_xy_cursor(None);
@@ -1565,49 +1573,37 @@ pub fn mto_sentence_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> 
     mto_text_right!(buf, n, pos, start, MtoSentence)
 }
 
-pub fn mto_para(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
-    let mut cursor = buf.to_char_cursor();
-    let row = buf.char_to_line(cursor);
-    cursor = match evnt {
-        Mto::Para(mut n, DP::Left) => {
-            let mut iter = buf.lines_at(row, DP::Left)?.enumerate();
-            let cursor = loop {
-                match iter.next() {
-                    Some((i, line)) => match line.chars().next() {
-                        Some(NL) if n == 0 => {
-                            break buf.line_to_char(row - (i + 1));
-                        }
-                        Some(NL) => n -= 1,
-                        Some(_) => (),
-                        None => break buf.line_to_char(row - (i + 1)),
-                    },
-                    None => break 0,
-                }
-            };
-            Ok(cursor)
+pub fn mto_paras_left(buf: &mut Buffer, mut n: usize) -> Result<usize> {
+    let row = buf.to_xy_cursor(None).row;
+    let mut iter = buf.lines_at(row, DP::Left)?.enumerate();
+    let row = loop {
+        match iter.next() {
+            Some((r, line)) => match text::visual_line_n(&line) {
+                0 if n == 1 => break row.saturating_sub(r + 1),
+                0 => n -= 1,
+                _ => (),
+            },
+            None => break 0,
         }
-        Mto::Para(mut n, DP::Right) => {
-            let mut iter = buf.lines_at(row, DP::Right)?.enumerate();
-            let cursor = loop {
-                match iter.next() {
-                    Some((i, line)) => match line.chars().next() {
-                        Some(NL) if n == 0 => {
-                            break buf.line_to_char(row + i);
-                        }
-                        Some(NL) => n -= 1,
-                        Some(_) => (),
-                        None => break buf.line_to_char(row + i),
-                    },
-                    None => break buf.n_chars().saturating_sub(1),
-                }
-            };
-            Ok(cursor)
-        }
-        _ => err_at!(Fatal, msg: format!("unreachable")),
-    }?;
+    };
+    Ok(saturate_cursor(buf, buf.line_to_char(row)))
+}
 
-    buf.set_cursor(cursor);
-    Ok(Event::Noop)
+pub fn mto_paras_right(buf: &mut Buffer, mut n: usize) -> Result<usize> {
+    let row = buf.to_xy_cursor(None).row;
+    let mut iter = buf.lines_at(row, DP::Right)?.enumerate();
+    iter.next();
+    let row = loop {
+        match iter.next() {
+            Some((r, line)) => match text::visual_line_n(&line) {
+                0 if n == 1 => break row.saturating_add(r),
+                0 => n -= 1,
+                _ => (),
+            },
+            None => break 0,
+        }
+    };
+    Ok(saturate_cursor(buf, buf.line_to_char(row)))
 }
 
 pub fn mto_bracket(buf: &mut Buffer, e: Mto) -> Result<Event> {
