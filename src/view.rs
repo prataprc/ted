@@ -513,11 +513,11 @@ fn nowrap_line<B>(buf: &B, line_idx: usize, col: usize, wth: u16) -> ScrLine
 where
     B: WinBuffer,
 {
-    use crate::text::Format;
+    use crate::text;
 
     let bc = buf.line_to_char(line_idx);
     let n = {
-        let n = Format::trim_newline(&buf.line(line_idx)).0.chars().count();
+        let n = text::visual_line_n(&buf.line(line_idx));
         cmp::max(wth as usize, n.saturating_sub(col)) as u16
     };
     ScrLine::new_nu(line_idx, bc + col, n)
@@ -540,16 +540,14 @@ fn wrap_line<B>(buf: &B, line_idx: usize, wth: u16) -> Vec<ScrLine>
 where
     B: WinBuffer,
 {
-    use crate::text::Format;
+    use crate::text;
     use std::iter::repeat;
 
     let bc = buf.line_to_char(line_idx);
     let w = wth as usize;
     let (m, n) = {
         let line = buf.line(line_idx);
-        let m = line.chars().count();
-        let n = Format::trim_newline(&line).0.chars().count();
-        (m, n)
+        (line.chars().count(), text::visual_line_n(&line))
     };
     //debug!(
     //    "... {} {} {}",

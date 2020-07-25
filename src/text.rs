@@ -91,3 +91,13 @@ impl Format {
         )
     }
 }
+
+#[inline]
+pub fn visual_line(text: &str) -> &str {
+    Format::trim_newline(text).0
+}
+
+#[inline]
+pub fn visual_line_n(text: &str) -> usize {
+    Format::trim_newline(text).0.chars().count()
+}

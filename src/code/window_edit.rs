@@ -142,10 +142,7 @@ impl WindowEdit {
 
         let mut to_cursor = || -> Result<usize> {
             for line in buf.lines_at(self.obc_xy.row, DP::Right)? {
-                let m = {
-                    let s = line.to_string();
-                    text::Format::trim_newline(&s).0.chars().count()
-                };
+                let m = text::visual_line_n(&line.to_string());
                 let ends: Vec<usize> = {
                     let iter = (0..).map(|i| i * w).skip_while(|c| c < &col);
                     iter.take_while(|c| c <= &m).collect()

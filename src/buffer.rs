@@ -639,12 +639,6 @@ impl Buffer {
             }
             Event::Mt(Mto::Sentence(n, DP::Left)) => {
                 let cursor = mto_sentence_left(self, n, DP::None)?;
-                let cursor = if self.to_change().rope.char(cursor) == '.' {
-                    self.set_cursor(cursor);
-                    mto_wwords_right(self, 1, DP::Start)?
-                } else {
-                    cursor
-                };
                 self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
@@ -1167,8 +1161,6 @@ impl Change {
 }
 
 pub fn mto_left(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
-    use crate::text::Format;
-
     let cursor = buf.to_char_cursor();
     let home = buf.to_line_home(Some(cursor));
     let new_cursor = cursor.saturating_sub(n);
@@ -1185,7 +1177,7 @@ pub fn mto_left(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
                     Some(line_idx) => {
                         let s = buf.line(line_idx);
                         let home = buf.line_to_char(line_idx);
-                        match Format::trim_newline(&s).0.chars().count() {
+                        match text::visual_line_n(&s) {
                             m if m == n => break home,
                             m if m > n => break home + (m - n),
                             m => n = n - m,
@@ -1202,14 +1194,12 @@ pub fn mto_left(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
 }
 
 pub fn mto_right(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
-    use crate::text::Format;
-
     let cursor = buf.to_char_cursor();
     let line_idx = buf.char_to_line(cursor);
     let home = buf.to_line_home(Some(cursor));
     let end = {
         let s = buf.line(line_idx);
-        home + Format::trim_newline(&s).0.chars().count()
+        home + text::visual_line_n(&s)
     };
     let new_cursor = cursor + n;
 
@@ -1224,7 +1214,7 @@ pub fn mto_right(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
                 match iter.next() {
                     Some((0, _)) => n = n - (end - cursor),
                     Some((i, line)) => {
-                        let m = Format::trim_newline(&line).0.chars().count();
+                        let m = text::visual_line_n(&line);
                         match buf.line_to_char(line_idx + i) {
                             home if n <= m => break home + n.saturating_sub(1),
                             _ => n = n - m,
@@ -1254,13 +1244,11 @@ pub fn mto_line_home(buf: &Buffer, pos: DP) -> Result<usize> {
 }
 
 pub fn mto_line_end(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
-    use crate::text::Format;
-
     // When a `n` is given also go `n-1` lines downward.
     let cursor = {
         let cursor = mto_down(buf, n.saturating_sub(1), DP::None)?;
         let s = buf.line(buf.char_to_line(cursor));
-        let m = Format::trim_newline(&s).0.chars().count().saturating_sub(1);
+        let m = text::visual_line_n(&s).saturating_sub(1);
         buf.to_line_home(Some(cursor)) + m
     };
 
@@ -1278,11 +1266,9 @@ pub fn mto_line_end(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
 }
 
 pub fn mto_line_middle(buf: &Buffer, p: usize) -> Result<usize> {
-    use crate::text::Format;
-
     let n = {
         let s = buf.line(buf.char_to_line(buf.to_char_cursor()));
-        Format::trim_newline(&s).0.chars().count()
+        text::visual_line_n(&s)
     };
     let cursor = {
         let n = (((p as f64) / 100.0) * (n as f64)) as usize;
@@ -1292,12 +1278,10 @@ pub fn mto_line_middle(buf: &Buffer, p: usize) -> Result<usize> {
 }
 
 pub fn mto_column(buf: &Buffer, n: usize) -> Result<usize> {
-    use crate::text::Format;
-
     let home = buf.to_line_home(None);
     let n = {
         let s = buf.line(buf.char_to_line(buf.to_char_cursor()));
-        cmp::min(Format::trim_newline(&s).0.chars().count(), n)
+        cmp::min(text::visual_line_n(&s), n)
     };
     Ok(home + n.saturating_sub(1))
 }
@@ -1337,10 +1321,7 @@ pub fn mto_up(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let bc_xy = buf.to_xy_cursor(None);
     let row = bc_xy.row.saturating_sub(n);
     let line = &buf.line(row);
-    let char_end = {
-        let n = text::Format::trim_newline(&line).0.chars().count();
-        n.saturating_sub(1)
-    };
+    let char_end = text::visual_line_n(&line).saturating_sub(1);
     let col = cmp::min(char_end, bc_xy.col);
 
     let home = buf.line_to_char(row);
@@ -1362,10 +1343,7 @@ pub fn mto_down(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
         let row = buf.char_to_line(buf.to_char_cursor()) + n;
         cmp::min(buf.to_last_line_idx(), row)
     };
-    let char_end = {
-        let n = text::Format::trim_newline(&buf.line(row)).0.chars().count();
-        n.saturating_sub(1)
-    };
+    let char_end = text::visual_line_n(&buf.line(row)).saturating_sub(1);
     let col = cmp::min(char_end, buf.to_xy_cursor(None).col);
 
     let home = buf.line_to_char(row);
@@ -1419,10 +1397,7 @@ pub fn mto_percent(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
 
 pub fn mto_end(buf: &Buffer) -> Result<usize> {
     let line_idx = buf.to_last_line_idx();
-    let n = {
-        let s = buf.line(line_idx);
-        text::Format::trim_newline(&s).0.chars().count()
-    };
+    let n = text::visual_line_n(&buf.line(line_idx));
     Ok(buf.line_to_char(line_idx) + n.saturating_sub(1))
 }
 
@@ -1433,11 +1408,9 @@ pub fn mto_cursor(buf: &Buffer, n: usize) -> Result<usize> {
 
 macro_rules! mto_text_left {
     ($buf:ident, $n:ident, $pos:ident, $start:expr, $state:ident) => {{
-        use crate::text::Format;
-
         let bc_xy = $buf.to_xy_cursor(None);
         let to_chars = |line: String| -> Vec<char> {
-            let line = Format::trim_newline(&line).0;
+            let line = text::visual_line(&line);
             let mut chars: Vec<char> = line.chars().collect();
             chars.reverse();
             chars
@@ -1446,7 +1419,7 @@ macro_rules! mto_text_left {
         let (mut iter, row, col) = {
             let chars: Vec<char> = {
                 let line = $buf.line(bc_xy.row);
-                Format::trim_newline(&line).0.chars().collect()
+                text::visual_line(&line).chars().collect()
             };
             let col = {
                 let n = cmp::min(chars.len(), bc_xy.col + 1);
@@ -1492,18 +1465,13 @@ macro_rules! mto_text_left {
 
 macro_rules! mto_text_right {
     ($buf:ident, $n:ident, $pos:ident, $start:expr, $state:ident) => {{
-        use crate::text::Format;
-
         let bc_xy = $buf.to_xy_cursor(None);
-        let to_chars = |s: String| -> Vec<char> {
-            let iter = Format::trim_newline(&s).0.chars();
-            iter.collect()
-        };
+        let to_chars = |s: String| -> Vec<char> { text::visual_line(&s).chars().collect() };
 
         let (mut iter, row, col) = {
             let chars: Vec<char> = {
                 let line = $buf.line(bc_xy.row);
-                Format::trim_newline(&line).0.chars().collect()
+                text::visual_line(&line).chars().collect()
             };
             let col = if_else!(
                 $pos == DP::Start,
@@ -1561,11 +1529,39 @@ pub fn mto_wwords_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
 
 pub fn mto_sentence_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
     let start = MtoSentence::St(n);
-    mto_text_left!(buf, n, pos, start, MtoSentence)
+    let cursor = mto_text_left!(buf, n, pos, start, MtoSentence)?;
+    let is_skip = |(_, ch): &(usize, char)| -> bool {
+        match ch {
+            ch if ch.is_whitespace() => true,
+            '.' | ')' | ']' | '"' | '\'' => true,
+            _ => false,
+        }
+    };
+
+    //match text::visual_line_n(&buf.line(buf.to_xy_cursor(Some(cursor)).row)) {
+    //    0 => Ok(cursor), // empty line
+    //    _ => {
+    let i = if cursor == 0 {
+        0
+    } else {
+        let iter = buf.chars_at(cursor, DP::Right)?.enumerate();
+        iter.skip_while(is_skip)
+            .next()
+            .clone()
+            .map(|(i, _)| i)
+            .unwrap_or(buf.n_chars().saturating_sub(1))
+    };
+    Ok(cursor + if_else!(buf.to_char_cursor() <= cursor + i, 0, i))
 }
 
 pub fn mto_sentence_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
-    let start = MtoSentence::St(n);
+    let start = {
+        let ln = {
+            let bc_xy = buf.to_xy_cursor(None);
+            text::visual_line_n(&buf.line(bc_xy.row))
+        };
+        if_else!(ln == 0, MtoSentence::Ws(1, 0, n), MtoSentence::St(n))
+    };
     mto_text_right!(buf, n, pos, start, MtoSentence)
 }
 
@@ -1693,7 +1689,7 @@ pub fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
 // skip whitespace from `offset` in specified direction `dp` and returned
 // the number of position skipped.
 pub fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
-    let line = text::Format::trim_newline(&line).0;
+    let line = text::visual_line(&line);
     let chars: Vec<char> = line.chars().collect();
     let ln = chars.len();
 
@@ -1733,10 +1729,8 @@ fn saturate_cursor(buf: &Buffer, cursor: usize) -> usize {
 }
 
 fn last_char_idx(buf: &Buffer) -> usize {
-    use crate::text::Format;
-
     let row = buf.to_last_line_idx();
-    let col = Format::trim_newline(&buf.line(row)).0.chars().count();
+    let col = text::visual_line_n(&buf.line(row));
     xy_to_cursor(buf, (row, col.saturating_sub(1)))
 }
 
@@ -1747,8 +1741,7 @@ fn xy_to_cursor(buf: &Buffer, (row, col): (usize, usize)) -> usize {
 
 #[inline]
 fn line_chars(buf: &Buffer, row: usize) -> usize {
-    use crate::text::Format;
-    Format::trim_newline(&buf.line(row)).0.chars().count()
+    text::visual_line_n(&buf.line(row))
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
@@ -2050,8 +2043,8 @@ impl MtoWWord {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
 enum MtoSentence {
     St(usize),
-    Ch(usize),
-    Ws(usize, usize),                 // (n-ws, n)
+    Ch(usize, usize),                 // (n-ch, n)
+    Ws(usize, usize, usize),          // (n-ws, n-ch, n)
     Fin(usize, usize, Option<usize>), // (row, rem_chars, col_off)
 }
 
@@ -2070,38 +2063,38 @@ impl MtoSentence {
             // forward, rotate the current state
             DP::Right => match self {
                 St(n) => match ch {
-                    '.' | '!' | '?' => Ws(0, n),
-                    _ => Ch(n),
+                    '.' | '!' | '?' => Ws(0, 0, n),
+                    _ => Ch(1, n),
                 },
-                Ch(n) => match ch {
-                    '.' | '!' | '?' => Ws(0, n),
-                    _ => Ch(n),
+                Ch(count, n) => match ch {
+                    '.' | '!' | '?' => Ws(0, count, n),
+                    _ => Ch(count + 1, n),
                 },
-                Ws(count, n) if ch.is_whitespace() => Ws(count + 1, n),
-                Ws(count, n) => match ch {
-                    ')' | ']' | '"' | '\'' => Ws(count + 1, n),
+                Ws(count, nch, n) => match ch {
+                    ch if ch.is_whitespace() => Ws(count + 1, nch, n),
+                    ')' | ']' | '"' | '\'' => Ws(count + 1, nch, n),
                     _ if count > 0 && n == 1 => Fin(row, rc, Some(col)),
-                    _ if count > 0 => Ch(n - 1),
-                    _ => Ch(n),
+                    _ if count > 0 => Ch(1, n - 1),
+                    _ => Ch(1, n),
                 },
                 _ => unreachable!(),
             },
             // reverse, rotate the current state
             DP::Left => match self {
                 St(n) => match ch {
-                    ch if ch.is_whitespace() => Ws(1, n),
-                    _ => Ch(n),
+                    ch if ch.is_whitespace() => Ws(1, 0, n),
+                    _ => Ch(1, n),
                 },
-                Ch(n) => match ch {
-                    ch if ch.is_whitespace() => Ws(1, n),
-                    _ => Ch(n),
+                Ch(count, n) => match ch {
+                    ch if ch.is_whitespace() => Ws(1, count, n),
+                    _ => Ch(count + 1, n),
                 },
-                Ws(count, n) => match ch {
-                    ')' | ']' | '"' | '\'' => Ws(count + 1, n),
-                    '.' if n == 1 => Fin(row, rc, Some(col)),
-                    '.' => Ch(n - 1),
-                    ch if ch.is_whitespace() => Ws(count + 1, n),
-                    _ => Ch(n),
+                Ws(count, nch, n) => match ch {
+                    ch if ch.is_whitespace() => Ws(count + 1, nch, n),
+                    ')' | ']' | '"' | '\'' => Ws(count + 1, nch, n),
+                    '.' if nch > 0 && n == 1 => Fin(row, rc, Some(col)),
+                    '.' if nch > 0 => Ch(1, n - 1),
+                    _ => Ch(1, n),
                 },
                 _ => unreachable!(),
             },
@@ -2115,8 +2108,8 @@ impl fmt::Display for MtoSentence {
         use MtoSentence::{Ch, Fin, St, Ws};
         match self {
             St(n) => write!(f, "St<{}>", n),
-            Ch(n) => write!(f, "Ch<{}>", n),
-            Ws(c, n) => write!(f, "Ws<{},{}>", c, n),
+            Ch(m, n) => write!(f, "Ch<{},{}>", m, n),
+            Ws(c, n, m) => write!(f, "Ws<{},{},{}>", c, n, m),
             Fin(r, rc, c) => write!(f, "Fin<{},{},{:?}>", r, rc, c),
         }
     }
@@ -2129,21 +2122,24 @@ impl MtoSentence {
 
         let state = match self {
             val @ Fin(_, _, _) => val,
-            St(0) | Ch(0) | Ws(_, 0) => Fin(0, 0, None),
-            St(_) | Ch(_) => match item {
-                (row, 0, None) => if_else!(row == 0, self, Fin(row, 0, None)),
+            St(0) | Ch(_, 0) | Ws(_, _, 0) => Fin(0, 0, None),
+            St(_) => match item {
+                (0, 0, None) => self,
+                (row, 0, None) => Fin(row, 0, None),
                 (_, _, None) => self,
                 (_, _, Some(_)) => self.match_char(dir, item),
             },
-            Ws(count, n) => match item {
-                (row, 0, None) => {
-                    if row == 0 {
-                        Ws(count + 1, n)
-                    } else {
-                        Fin(row, 0, None)
-                    }
-                }
-                (_, _, None) => Ws(count + 1, n),
+            Ch(nch, n) => match item {
+                (0, 0, None) => Ws(1, nch, n),
+                (row, 0, None) => Fin(row, 0, None),
+                (_, _, None) if dir == DP::Left => Ws(1, nch, n),
+                (_, _, None) => self,
+                (_, _, Some(_)) => self.match_char(dir, item),
+            },
+            Ws(count, nch, n) => match item {
+                (0, 0, None) => Ws(count + 1, nch, n),
+                (row, 0, None) => Fin(row, 0, None),
+                (_, _, None) => Ws(count + 1, nch, n),
                 (_, _, Some(_)) => self.match_char(dir, item),
             },
         };
