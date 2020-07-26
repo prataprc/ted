@@ -1,9 +1,9 @@
 use crossterm;
 
-use std::{fmt, ops::Add, result};
+use std::{cmp, fmt, ops::Add, result};
 
 use crate::{
-    buffer::{self},
+    buffer::{self, Buffer},
     colors::ColorScheme,
     event::Event,
     event::DP,
@@ -235,5 +235,102 @@ impl Cursor {
     pub fn account_nu(mut self, nu_wth: u16) -> Self {
         self.col += nu_wth;
         self
+    }
+}
+
+pub struct JumpList {
+    zero: Option<Jump>,
+    older: Vec<Jump>,
+    inner: Vec<Jump>,
+}
+
+#[derive(Clone)]
+pub struct Jump {
+    buf_id: String,
+    cursor: usize,
+    col: usize,
+    row: usize,
+    file_text: String,
+}
+
+impl Jump {
+    pub fn new(buf: &Buffer, cursor: usize, file_text: String) -> Self {
+        let bc_xy = buf.to_xy_cursor(Some(cursor));
+        Jump {
+            buf_id: buf.to_id(),
+            cursor,
+            col: bc_xy.col,
+            row: bc_xy.row,
+            file_text,
+        }
+    }
+}
+
+impl Default for JumpList {
+    fn default() -> JumpList {
+        JumpList {
+            zero: None,
+            older: vec![],
+            inner: vec![],
+        }
+    }
+}
+
+impl JumpList {
+    pub fn remember(&mut self, zero: Jump) {
+        match self.zero.take() {
+            Some(jmp) if jmp.row == zero.row => {
+                self.older.extend(self.inner.drain(..).rev());
+                self.zero = Some(zero);
+            }
+            Some(jmp) => {
+                self.older.push(jmp);
+                self.older.extend(self.inner.drain(..).rev());
+                self.zero = Some(zero);
+            }
+            None => self.older.push(zero),
+        };
+    }
+
+    fn older(&mut self, n: usize) -> Option<Jump> {
+        let n = cmp::min(n, self.older.len());
+        match self.older.len() {
+            0 => None,
+            _ if n == 0 => None,
+            m /* n <= m */ => {
+                let at = m.saturating_sub(n);
+                let mut inner = self.older.drain(at..);
+                let zero = inner.next();
+
+                if let Some(zero) =  self.zero.take() {
+                    self.inner.push(zero);
+                }
+                self.inner.extend(inner.rev());
+                self.zero = zero.clone();
+
+                zero
+            }
+        }
+    }
+
+    fn newer(&mut self, n: usize) -> Option<Jump> {
+        let n = cmp::min(n, self.inner.len());
+        match self.inner.len() {
+            0 => None,
+            _ if n == 0 => None,
+            m /* n <= m */ => {
+                let at = m.saturating_sub(n);
+                let mut inner = self.inner.drain(at..);
+                let zero = inner.next();
+
+                if let Some(zero) =  self.zero.take() {
+                    self.older.push(zero);
+                }
+                self.older.extend(inner.rev());
+                self.zero = zero.clone();
+
+                zero
+            }
+        }
     }
 }
