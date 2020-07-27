@@ -426,7 +426,7 @@ impl fmt::Display for Mod {
 /// Event argument specify the cursor motion.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Mto {
-    // characterwise motion
+    // character-wise motion
     Left(usize, DP),       // (n, LineBound/Nobound)
     Right(usize, DP),      // (n, LineBound/Nobound)
     LineHome(DP),          // TextCol/StickyCol/None
@@ -439,7 +439,7 @@ pub enum Mto {
     CharF(usize, Option<char>, DP), // (n, ch, Left/Right)
     CharT(usize, Option<char>, DP), // (n, ch, Left/Right)
     CharR(usize, DP),               // repeat CharF/CharT (n, Left/Right)
-    // linewise motion.
+    // line-wise motion.
     Up(usize, DP),         // (n, TextCol/StickyCol/None)
     Down(usize, DP),       // (n, TextCol/StickyCol/None)
     Row(usize, DP),        // (n, TextCol/None)
@@ -447,11 +447,16 @@ pub enum Mto {
     Cursor(usize),         // (n,)
     ScreenUp(usize, DP),   // (n, None)
     ScreenDown(usize, DP), // (n, None)
+    // word/sentence/para wise motion
+    Word(usize, DP, DP),  // (n, Left/Right, Start/End)
+    WWord(usize, DP, DP), // (n, Left/Right, Start/End)
+    Sentence(usize, DP),  // (n, Left/Right)
+    Para(usize, DP),      // (n, Left/Right)
+    // window motion
+    WinH(usize), // (n,)
+    WinM,        // (n,)
+    WinL(usize), // (n,)
 
-    Word(usize, DP, DP),                // (n, Left/Right, Start/End)
-    WWord(usize, DP, DP),               // (n, Left/Right, Start/End)
-    Sentence(usize, DP),                // (n, Left/Right)
-    Para(usize, DP),                    // (n, Left/Right)
     Bracket(usize, char, char, DP),     // (n, yin, yan, Left/Right)
     Pattern(usize, Option<String>, DP), // (n, pattern, Left/Right)
     PatternR(usize, DP),                // repeat pattern (n, Left/Right)
@@ -490,6 +495,10 @@ impl fmt::Display for Mto {
             Mto::WWord(n, dp1, dp2) => write!(f, "wword({},{},{})", n, dp1, dp2),
             Mto::Sentence(n, dp) => write!(f, "sentence({},{})", n, dp),
             Mto::Para(n, dp) => write!(f, "para({},{})", n, dp),
+            Mto::WinH(n) => write!(f, "winh({})", n),
+            Mto::WinM => write!(f, "winm"),
+            Mto::WinL(n) => write!(f, "winl({})", n),
+
             Mto::Bracket(n, ch1, ch2, dp) => {
                 //
                 write!(f, "bracket({},{},{},{})", n, ch1, ch2, dp)

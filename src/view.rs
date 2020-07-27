@@ -70,6 +70,19 @@ impl Wrap {
         Cursor { row: 0, col }
     }
 
+    pub fn to_screen_lines<B>(&mut self, buf: &B) -> Result<Vec<ScrLine>>
+    where
+        B: WinBuffer,
+    {
+        let nu_wth = self.nu.to_width();
+        self.discount_nu(nu_wth);
+        let scroll = false;
+        let (_, _, screen_lines) = self.shift_cursor(buf, scroll);
+        Ok(screen_lines)
+    }
+
+    // scroll is true, on screen cursor position remains the same, buffer
+    // is aligned with the screen/window.
     pub fn render<R>(mut self, buf: &R::Buf, r: &R, scroll: bool) -> Result<Cursor>
     where
         R: Render,
@@ -95,7 +108,7 @@ impl Wrap {
     {
         let (cursor, screen_lines) = {
             let view: WrapView = self.clone().into();
-            view.to_view_rows(buf, scroll)
+            view.to_screen_lines(buf, scroll)
         };
         let nbc_xy = buf.to_xy_cursor(None);
         let coord = {
@@ -227,6 +240,19 @@ impl NoWrap {
         Cursor { row: 0, col }
     }
 
+    pub fn to_screen_lines<B>(&mut self, buf: &B) -> Result<Vec<ScrLine>>
+    where
+        B: WinBuffer,
+    {
+        let nu_wth = self.nu.to_width();
+        self.discount_nu(nu_wth);
+        let scroll = false;
+        let (_, _, screen_lines) = self.shift_cursor(buf, scroll);
+        Ok(screen_lines)
+    }
+
+    // scroll is true, on screen cursor position remains the same, buffer
+    // is aligned with the screen/window.
     pub fn render<R>(mut self, buf: &R::Buf, r: &R, scroll: bool) -> Result<Cursor>
     where
         R: Render,
@@ -389,7 +415,7 @@ impl From<Wrap> for WrapView {
 }
 
 impl WrapView {
-    fn to_view_rows<B>(&self, buf: &B, scroll: bool) -> (Cursor, Vec<ScrLine>)
+    pub fn to_screen_lines<B>(&self, buf: &B, scroll: bool) -> (Cursor, Vec<ScrLine>)
     where
         B: WinBuffer,
     {

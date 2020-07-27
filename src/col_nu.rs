@@ -32,6 +32,16 @@ impl fmt::Debug for ColKind {
     }
 }
 
+impl ColKind {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            ColKind::Nu(_) => false,
+            ColKind::Wrap => false,
+            ColKind::Empty => true,
+        }
+    }
+}
+
 #[derive(Clone)]
 /// Line number rendering. Starts from 1 till last line the buffer, width is
 /// padded with adequate spaces on the left, and one space to the right.
