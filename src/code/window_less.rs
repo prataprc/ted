@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use log::trace;
-use unicode_width::UnicodeWidthChar;
 
 use std::{convert::TryInto, fmt, io, mem, result};
 
@@ -9,6 +8,7 @@ use crate::{
     code::{self, keymap::Keymap},
     event::Event,
     location::Location,
+    text,
     window::{Coord, Cursor, Window},
     Result,
 };
@@ -56,11 +56,7 @@ impl Window for WindowLess {
 
     #[inline]
     fn to_cursor(&self) -> Cursor {
-        let col: usize = self
-            .status_line
-            .chars()
-            .map(|ch| ch.width().unwrap_or(0))
-            .sum();
+        let col: usize = text::width(self.status_line.chars());
         Cursor::new(col.try_into().unwrap(), curz!(self.coord.hgt))
     }
 

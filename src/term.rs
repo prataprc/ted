@@ -4,7 +4,6 @@ use crossterm::{self, style::StyledContent, Command};
 use lazy_static::lazy_static;
 #[allow(unused_imports)]
 use log::{debug, trace};
-use unicode_width::UnicodeWidthChar;
 
 use std::{
     convert::TryInto,
@@ -546,11 +545,7 @@ impl Span {
     /// Return the display-width for this span.
     #[inline]
     pub fn to_width(&self) -> usize {
-        self.content
-            .content()
-            .chars()
-            .filter_map(|ch| ch.width())
-            .sum()
+        text::width(self.content.content().chars())
     }
 
     /// Return the display-width for this span as u16.

@@ -3,7 +3,6 @@ use lazy_static::lazy_static;
 #[allow(unused_imports)]
 use log::trace;
 use regex::Regex;
-use unicode_width::UnicodeWidthChar;
 
 use std::{cmp, convert::TryInto, fmt, result};
 
@@ -13,6 +12,7 @@ use crate::{
     colors::{ColorScheme, Highlight},
     event::Event,
     term::{Span, Spanline, Style},
+    text,
     window::{Coord, Cursor, Window},
     Error, Result,
 };
@@ -102,11 +102,10 @@ impl Window for WindowPrompt {
     fn to_cursor(&self) -> Cursor {
         let col: u16 = match self.span_lines.last() {
             Some(line) => {
-                let n: usize = {
-                    let s = self.buffer.to_string();
-                    s.chars().filter_map(|ch| ch.width()).sum()
+                let n: u16 = {
+                    let n = text::width(self.buffer.to_string().chars());
+                    n.try_into().unwrap()
                 };
-                let n: u16 = n.try_into().unwrap();
                 let m: u16 = line.to_width().try_into().unwrap();
                 cmp::min(curz!(self.coord.col) + n + m, curz!(self.coord.wth))
             }

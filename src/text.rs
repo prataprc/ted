@@ -1,3 +1,5 @@
+use unicode_width::UnicodeWidthChar;
+
 use std::io;
 
 use crate::{Error, Result};
@@ -100,4 +102,12 @@ pub fn visual_line(text: &str) -> &str {
 #[inline]
 pub fn visual_line_n(text: &str) -> usize {
     Format::trim_newline(text).0.chars().count()
+}
+
+#[inline]
+pub fn width<I>(iter: I) -> usize
+where
+    I: Iterator<Item = char>,
+{
+    iter.filter_map(|ch| ch.width()).sum()
 }

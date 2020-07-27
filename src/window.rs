@@ -5,10 +5,9 @@ use std::{cmp, fmt, ops::Add, result};
 use crate::{
     buffer::{self, Buffer},
     colors::ColorScheme,
-    event::Event,
-    event::DP,
+    event::{self, Event, DP},
     term::Spanline,
-    Result,
+    text, Result,
 };
 
 #[macro_export]
@@ -250,18 +249,49 @@ pub struct Jump {
     cursor: usize,
     col: usize,
     row: usize,
-    file_text: String,
 }
 
 impl Jump {
-    pub fn new(buf: &Buffer, cursor: usize, file_text: String) -> Self {
+    pub fn new(cursor: usize, buf: &Buffer) -> Self {
         let bc_xy = buf.to_xy_cursor(Some(cursor));
         Jump {
             buf_id: buf.to_id(),
             cursor,
             col: bc_xy.col,
             row: bc_xy.row,
-            file_text,
+        }
+    }
+
+    fn adjust(mut self, edit: &event::Edit) -> Option<Self> {
+        use crate::event::Edit;
+
+        match edit {
+            Edit::Ins { cursor, txt } if self.cursor >= *cursor => {
+                self.cursor += text::width(txt.chars());
+                Some(self)
+            }
+            Edit::Del { cursor, txt } if self.cursor >= *cursor => {
+                let n = text::width(txt.chars());
+                match (*cursor..(*cursor + n)).contains(&self.cursor) {
+                    false => {
+                        self.cursor -= n;
+                        Some(self)
+                    }
+                    true => None,
+                }
+            }
+            Edit::Chg { cursor, oldt, newt } => {
+                let n = text::width(oldt.chars());
+                let m = text::width(newt.chars());
+                match (*cursor..(*cursor + n)).contains(&self.cursor) {
+                    false => {
+                        self.cursor = self.cursor - n + m;
+                        Some(self)
+                    }
+                    true => None,
+                }
+            }
+            _ => Some(self),
         }
     }
 }
@@ -331,6 +361,27 @@ impl JumpList {
 
                 zero
             }
+        }
+    }
+
+    fn adjust(&mut self, event: Event) -> Event {
+        match event {
+            Event::Edit(edit) => {
+                self.zero = match self.zero.take() {
+                    Some(zero) => zero.adjust(&edit),
+                    None => None,
+                };
+                self.older = {
+                    let iter = self.older.drain(..);
+                    iter.filter_map(|jmp| jmp.adjust(&edit)).collect()
+                };
+                self.inner = {
+                    let iter = self.inner.drain(..);
+                    iter.filter_map(|jmp| jmp.adjust(&edit)).collect()
+                };
+                Event::Edit(edit)
+            }
+            event => event,
         }
     }
 }

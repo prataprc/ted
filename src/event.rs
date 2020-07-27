@@ -41,7 +41,8 @@ pub enum Event {
     Md(Mod),      // Mode       (n, mode-event)
     Mt(Mto),      // Motion     (n, motion-event)
     // other events
-    Edit(Input),
+    Edit(Edit),
+    Write(Input),
     List(Vec<Event>),
     Notify(Notify),
     Code(Code),
@@ -67,7 +68,8 @@ impl Event {
             N(_) | G(_) | B(_, _) | F(_, _) | T(_, _) => empty,
             Op(_) | Md(_) | Mt(_) => empty,
             // other events
-            Edit(_) | List(_) | Notify(_) | Code(_) | Ted(_) => empty,
+            Edit(_) | Write(_) => empty,
+            List(_) | Notify(_) | Code(_) | Ted(_) => empty,
             Noop => empty,
         }
     }
@@ -153,10 +155,10 @@ impl Extend<Event> for Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Event::Edit;
         use Event::{BackTab, Code, FKey, Insert, List, Noop, Notify};
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab};
         use Event::{Down, End, Home, Left, PageDown, PageUp, Right, Up};
+        use Event::{Edit, Write};
         use Event::{Md, Mt, Op, Ted, B, F, G, N, T};
 
         match self {
@@ -189,6 +191,7 @@ impl fmt::Display for Event {
             Mt(mt) => write!(f, "mt({})", mt),
             // other events
             Edit(val) => write!(f, "edit({})", val),
+            Write(val) => write!(f, "write({})", val),
             List(es) => write!(f, "list({})", es.len()),
             Notify(notf) => write!(f, "notify({})", notf),
             Code(cd) => write!(f, "Code({})", cd),
@@ -258,6 +261,46 @@ impl From<Event> for Vec<Event> {
             Event::List(evnts) => evnts,
             evnt => vec![evnt],
         }
+    }
+}
+
+/// Event argument, specify the edit operation performed in buffer.
+#[derive(Clone, Eq, PartialEq)]
+pub enum Edit {
+    /// Insert new `txt` into buffer at `cursor`.
+    Ins { cursor: usize, txt: String },
+    /// Delete `txt` found at `cursor`.
+    Del { cursor: usize, txt: String },
+    /// Replace `oldt` found at `cursor` with `newt`.
+    Chg {
+        cursor: usize,
+        oldt: String,
+        newt: String,
+    },
+}
+
+impl fmt::Display for Edit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Edit::Ins { cursor, txt } => {
+                let n = txt.len();
+                write!(f, "ins<{}@{}>", cursor, n)
+            }
+            Edit::Del { cursor, txt } => {
+                let n = txt.len();
+                write!(f, "del<{}@{}>", cursor, n)
+            }
+            Edit::Chg { cursor, oldt, newt } => {
+                let (n, m) = (oldt.len(), newt.len());
+                write!(f, "chg<{}->{}@{}", n, m, cursor)
+            }
+        }
+    }
+}
+
+impl fmt::Debug for Edit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        <Self as fmt::Display>::fmt(self, f)
     }
 }
 
@@ -567,7 +610,7 @@ impl Input {
     pub fn finish(mut self, new_eb: usize, new_ep: (usize, usize)) -> Event {
         self.new_end_byte = new_eb;
         self.new_end_position = new_ep;
-        Event::Edit(self)
+        Event::Write(self)
     }
 }
 
