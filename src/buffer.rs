@@ -621,7 +621,7 @@ impl Buffer {
                 self.set_cursor(cursor);
                 Event::Noop
             }
-            // motion command - word-wise
+            // motion command - word/sentence/para wise
             Event::Mt(Mto::Word(n, DP::Left, pos)) => {
                 let cursor = mto_words_left(self, n, pos)?;
                 self.set_cursor(cursor).clear_sticky_col();
@@ -662,6 +662,28 @@ impl Buffer {
                 self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
+            // motion command marks and jumps
+            Event::Mt(Mto::Jump(typ, id)) => {
+                let cursor = {
+                    let mark = mark::get_mark(&self.marks, id as u8);
+                    mark.map(|m| m.to_cursor())
+                };
+                cursor.map(|c| self.set_cursor(c).clear_sticky_col());
+                if typ == '\'' {
+                    let cursor = mto_line_home(self, DP::TextCol);
+                    self.set_cursor(cursor);
+                }
+                Event::Noop
+            }
+            Event::Mark(id) => match id {
+                'a'..='z' | 'A'..='Z' | '\'' | '`' => {
+                    let cursor = self.to_char_cursor();
+                    let mark = mark::Mark::new(id as u8, self, cursor);
+                    self.marks[id as usize] = Some(mark);
+                    Event::Noop
+                }
+                _ => Event::Mark(id),
+            },
 
             Event::Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(self, e)?,
             Event::Mt(e @ Mto::Pattern(_, Some(_), _)) => {
@@ -673,15 +695,6 @@ impl Buffer {
                 mto_pattern(self, e.dir_xor(n, dir)?)?
             }
 
-            Event::Mark(id) => match id {
-                'a'..='z' | '\'' | '`' => {
-                    let cursor = self.to_char_cursor();
-                    let mark = mark::Mark::new(id as u8, self, cursor);
-                    self.marks[id as usize] = Some(mark);
-                    Event::Noop
-                }
-                _ => Event::Mark(id),
-            },
             evnt => evnt,
         };
 

@@ -29,6 +29,16 @@ impl Mark {
             row: bc_xy.row,
         }
     }
+
+    #[inline]
+    pub fn to_cursor(&self) -> usize {
+        self.cursor
+    }
+
+    #[inline]
+    pub fn to_row(&self) -> usize {
+        self.row
+    }
 }
 
 #[inline]

@@ -31,6 +31,7 @@ use crate::{
     colors::ColorScheme,
     event::{self, Event},
     location::Location,
+    mark,
     pubsub::{Notify, PubSub},
     state::State,
     window::{Coord, Cursor, Window},
