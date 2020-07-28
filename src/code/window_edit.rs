@@ -265,11 +265,9 @@ impl WindowEdit {
 
         let screen_lines = if app.as_ref().wrap {
             let mut v: Wrap = (&*self, self.obc_xy).into();
-            let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.to_screen_lines(buf)?
         } else {
             let mut v: NoWrap = (&*self, self.obc_xy).into();
-            let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.to_screen_lines(buf)?
         };
         let screen_lines: Vec<ScrLine> = {
@@ -307,11 +305,9 @@ impl WindowEdit {
 
         let screen_lines = if app.as_ref().wrap {
             let mut v: Wrap = (&*self, self.obc_xy).into();
-            let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.to_screen_lines(buf)?
         } else {
             let mut v: NoWrap = (&*self, self.obc_xy).into();
-            let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.to_screen_lines(buf)?
         };
         let screen_lines: Vec<ScrLine> = {
@@ -344,11 +340,9 @@ impl WindowEdit {
 
         let screen_lines = if app.as_ref().wrap {
             let mut v: Wrap = (&*self, self.obc_xy).into();
-            let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.to_screen_lines(buf)?
         } else {
             let mut v: NoWrap = (&*self, self.obc_xy).into();
-            let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.to_screen_lines(buf)?
         };
         let screen_lines: Vec<ScrLine> = {
@@ -433,7 +427,10 @@ impl Window for WindowEdit {
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::WinH(n)) => {
-                    let cursor = self.mto_win_high(app, &buf, n)?;
+                    let cursor = {
+                        let n = n.saturating_sub(1);
+                        self.mto_win_high(app, &buf, n)?
+                    };
                     buf.set_cursor(cursor).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
@@ -443,7 +440,10 @@ impl Window for WindowEdit {
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::WinL(n)) => {
-                    let cursor = self.mto_win_low(app, &buf, n)?;
+                    let cursor = {
+                        let n = n.saturating_sub(1);
+                        self.mto_win_low(app, &buf, n)?
+                    };
                     buf.set_cursor(cursor).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
