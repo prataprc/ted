@@ -22,6 +22,7 @@ mod col_nu;
 pub mod colors;
 pub mod event;
 pub mod location;
+mod mark;
 pub mod pubsub;
 pub mod tabc;
 pub mod tss;

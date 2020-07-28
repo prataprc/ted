@@ -31,16 +31,21 @@ pub enum Event {
     PageDown(KeyModifiers),
     BackTab,
     Esc,
-    // folded events for buffer management.
+    // prefix events
     N(usize),     // Num-prefix (n,)
     G(usize),     // Global     (n,)
     B(usize, DP), // Bracket    (n, Left/Right)
     F(usize, DP), // Find-char  (n, Left/Right)
     T(usize, DP), // Till-char  (n, Left/Right)
+    J(char),      // jump prefix (['`],)
+    M,            // mark prefix
     Op(Opr),      // Operation  (op-event)
-    Md(Mod),      // Mode       (n, mode-event)
-    Mt(Mto),      // Motion     (n, motion-event)
+    // folded events for buffer management.
+    Mark(char), // ([a-zA-Z'`\]\[],)
+    Md(Mod),    // Mode       (n, mode-event)
+    Mt(Mto),    // Motion     (n, motion-event)
     // other events
+    JumpFrom(usize), // (cursor,)
     Edit(Edit),
     Write(Input),
     List(Vec<Event>),
@@ -64,11 +69,13 @@ impl Event {
             Left(m) | Right(m) | Up(m) | Down(m) => m,
             Home(m) | End(m) | PageUp(m) | PageDown(m) => m,
             BackTab | Esc => empty,
-            // folded events for buffer management.
+            // prefix events
             N(_) | G(_) | B(_, _) | F(_, _) | T(_, _) => empty,
-            Op(_) | Md(_) | Mt(_) => empty,
+            M | J(_) | Op(_) => empty,
+            // folded events for buffer management.
+            Mark(_) | Md(_) | Mt(_) => empty,
             // other events
-            Edit(_) | Write(_) => empty,
+            JumpFrom(_) | Edit(_) | Write(_) => empty,
             List(_) | Notify(_) | Code(_) | Ted(_) => empty,
             Noop => empty,
         }
@@ -155,11 +162,12 @@ impl Extend<Event> for Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Event::{BackTab, Code, FKey, Insert, List, Noop, Notify};
+        use Event::{BackTab, FKey, Insert};
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab};
+        use Event::{Code, Edit, JumpFrom, List, Noop, Notify, Ted, Write};
         use Event::{Down, End, Home, Left, PageDown, PageUp, Right, Up};
-        use Event::{Edit, Write};
-        use Event::{Md, Mt, Op, Ted, B, F, G, N, T};
+        use Event::{Mark, Md, Mt};
+        use Event::{Op, B, F, G, J, M, N, T};
 
         match self {
             // insert events
@@ -180,16 +188,21 @@ impl fmt::Display for Event {
             PageDown(_) => write!(f, "page-down"),
             BackTab => write!(f, "backtab"),
             Esc => write!(f, "esc"),
-            // folded events for buffer management
-            B(n, dp) => write!(f, "b({},{})", n, dp),
+            // prefix events
+            N(n) => write!(f, "n({})", n),
             G(n) => write!(f, "g({})", n),
+            B(n, dp) => write!(f, "b({},{})", n, dp),
             F(n, dp) => write!(f, "f({},{})", n, dp),
             T(n, dp) => write!(f, "t({},{})", n, dp),
-            N(n) => write!(f, "n({})", n),
+            M => write!(f, "m"),
+            J(ch) => write!(f, "j({})", ch),
             Op(opr) => write!(f, "op({})", opr),
+            // folded events for buffer management.
+            Mark(id) => write!(f, "mark({})", id),
             Md(md) => write!(f, "md({})", md),
             Mt(mt) => write!(f, "mt({})", mt),
             // other events
+            JumpFrom(cursor) => write!(f, "jump-from({})", cursor),
             Edit(val) => write!(f, "edit({})", val),
             Write(val) => write!(f, "write({})", val),
             List(es) => write!(f, "list({})", es.len()),
@@ -456,6 +469,8 @@ pub enum Mto {
     WinH(usize), // (n,)
     WinM,        // (n,)
     WinL(usize), // (n,)
+    // jumps and marks
+    Jump(char, char), // (['`], [a-zA-Z0-9])
 
     Bracket(usize, char, char, DP),     // (n, yin, yan, Left/Right)
     Pattern(usize, Option<String>, DP), // (n, pattern, Left/Right)
@@ -498,6 +513,7 @@ impl fmt::Display for Mto {
             Mto::WinH(n) => write!(f, "winh({})", n),
             Mto::WinM => write!(f, "winm"),
             Mto::WinL(n) => write!(f, "winl({})", n),
+            Mto::Jump(typ, ch) => write!(f, "mark-jump({},{})", typ, ch),
 
             Mto::Bracket(n, ch1, ch2, dp) => {
                 //

@@ -100,6 +100,10 @@ impl KeyEdit {
                 Char('H', _) => (noop, Mt(Mto::WinH(1))),
                 Char('M', _) => (noop, Mt(Mto::WinM)),
                 Char('L', _) => (noop, Mt(Mto::WinL(1))),
+                // motion command - mark and jumps
+                Char('m', _) => (M, noop),
+                Char('\'', _) => (J('\''), noop),
+                Char('`', _) => (J('`'), noop),
 
                 Char('n', _) => (noop, Mt(Mto::PatternR(1, DP::Right))),
                 Char('N', _) => (noop, Mt(Mto::PatternR(1, DP::Left))),
@@ -173,6 +177,10 @@ impl KeyEdit {
                 Char('H', _) => (noop, Mt(Mto::WinH(n))),
                 Char('M', _) => (noop, Mt(Mto::WinM)),
                 Char('L', _) => (noop, Mt(Mto::WinL(n))),
+                // motion command - mark and jumps
+                Char('m', _) => (M, noop),
+                Char('\'', _) => (J('\''), noop),
+                Char('`', _) => (J('`'), noop),
 
                 Char('n', _) => (noop, Mt(Mto::PatternR(n, DP::Right))),
                 Char('N', _) => (noop, Mt(Mto::PatternR(n, DP::Left))),
@@ -247,6 +255,27 @@ impl KeyEdit {
             },
             T(n, d) if m_empty => match evnt {
                 Char(ch, _) => (noop, Mt(Mto::CharT(n, Some(ch), d))),
+                evnt => (noop, evnt),
+            },
+            M if m_empty => match evnt {
+                Char(ch, _) => match ch {
+                    'a'..='z' => (noop, Mark(ch)),
+                    'A'..='Z' => (noop, Mark(ch)),
+                    '\'' | '`' => (noop, Mark(ch)),
+                    '[' | ']' => (noop, Mark(ch)),
+                    '<' | '>' => (noop, Mark(ch)),
+                    _ => (noop, evnt),
+                },
+                evnt => (noop, evnt),
+            },
+            J(typ) if m_empty => match evnt {
+                Char(ch, _) => match ch {
+                    '\'' | '`' => (noop, Mt(Mto::Jump(typ, ch))),
+                    'a'..='z' => (noop, Mt(Mto::Jump(typ, ch))),
+                    'A'..='Z' => (noop, Mt(Mto::Jump(typ, ch))),
+                    '0'..='9' => (noop, Mt(Mto::Jump(typ, ch))),
+                    _ => (noop, evnt),
+                },
                 evnt => (noop, evnt),
             },
             prefix => (prefix, evnt),

@@ -25,6 +25,7 @@ use std::{
 use crate::{
     event::{Event, Mto, DP},
     location::Location,
+    mark,
     term::{Span, Spanline},
     text,
     window::WinBuffer,
@@ -132,6 +133,8 @@ pub struct Buffer {
     // Buffer states
     inner: Inner,
 
+    // mark-list [a-z]
+    marks: mark::Marks,
     // sticky state for cursor column.
     sticky_col: StickyCol,
     // Last search command applied on this buffer.
@@ -165,6 +168,7 @@ impl Default for Buffer {
             num: Default::default(),
             inner: Default::default(),
 
+            marks: mark::new_marks(),
             sticky_col: Default::default(),
             mto_pattern: Default::default(),
             mto_find_char: Default::default(),
@@ -191,6 +195,7 @@ impl Buffer {
             inner: Inner::Normal(NormalBuffer::new(buf)),
             format: Default::default(),
 
+            marks: mark::new_marks(),
             sticky_col: Default::default(),
             mto_pattern: Default::default(),
             mto_find_char: Default::default(),
@@ -667,6 +672,16 @@ impl Buffer {
                 let e = self.mto_pattern.clone();
                 mto_pattern(self, e.dir_xor(n, dir)?)?
             }
+
+            Event::Mark(id) => match id {
+                'a'..='z' | '\'' | '`' => {
+                    let cursor = self.to_char_cursor();
+                    let mark = mark::Mark::new(id as u8, self, cursor);
+                    self.marks[id as usize] = Some(mark);
+                    Event::Noop
+                }
+                _ => Event::Mark(id),
+            },
             evnt => evnt,
         };
 

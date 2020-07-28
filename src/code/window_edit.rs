@@ -258,11 +258,6 @@ impl WindowEdit {
             view::{NoWrap, ScrLine, Wrap},
         };
 
-        let err = {
-            let s = format!("buffer {}", self.curr_buf_id);
-            Error::Invalid(String::new(), s)
-        };
-
         let screen_lines = if app.as_ref().wrap {
             let mut v: Wrap = (&*self, self.obc_xy).into();
             v.to_screen_lines(buf)?
@@ -298,11 +293,6 @@ impl WindowEdit {
             view::{NoWrap, ScrLine, Wrap},
         };
 
-        let err = {
-            let s = format!("buffer {}", self.curr_buf_id);
-            Error::Invalid(String::new(), s)
-        };
-
         let screen_lines = if app.as_ref().wrap {
             let mut v: Wrap = (&*self, self.obc_xy).into();
             v.to_screen_lines(buf)?
@@ -331,11 +321,6 @@ impl WindowEdit {
         use crate::{
             text,
             view::{NoWrap, ScrLine, Wrap},
-        };
-
-        let err = {
-            let s = format!("buffer {}", self.curr_buf_id);
-            Error::Invalid(String::new(), s)
         };
 
         let screen_lines = if app.as_ref().wrap {
