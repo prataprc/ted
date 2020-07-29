@@ -44,9 +44,15 @@ impl WindowFile {
     pub fn to_event_prefix(&self) -> Event {
         self.we.to_event_prefix()
     }
+
+    #[inline]
+    pub fn to_buffer_id(&self) -> String {
+        self.we.to_buffer_id()
+    }
 }
 
 impl WindowFile {
+    #[inline]
     fn is_top_margin(&self) -> bool {
         match self.to_origin() {
             (_, 1) => false,
@@ -54,6 +60,7 @@ impl WindowFile {
         }
     }
 
+    #[inline]
     fn is_left_margin(&self) -> bool {
         match self.to_origin() {
             (1, _) => false,

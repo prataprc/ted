@@ -23,7 +23,7 @@ use crate::{
     pubsub::{Notify, PubSub},
     term::Terminal,
     util,
-    window::Coord,
+    window::Cursor,
     Error, Result,
 };
 
@@ -59,12 +59,74 @@ pub struct Opt {
 
 /// Application state
 pub struct State {
+    /// Command line options, refer to [Opt][Opt] type.
     pub opts: Opt,
+    /// Toml instance of configuration parameters. Following is a list
+    /// of possible configuration sources:
+    ///
+    /// * Default configuration defined by Ted
+    /// * $HOME/.ted.toml
+    /// * `--config` command line option
     pub config_value: toml::Value,
+    /// Terminal instance.
     pub tm: Terminal,
+    /// List of available color schemes.
     pub schemes: Vec<ColorScheme>,
+    /// Global subscribe-publish instance.
     pub subscribers: PubSub,
-    pub app: App,
+
+    // state machine for tabed-windows.
+    inner: Inner,
+}
+
+enum Inner {
+    Mono { tab: Tab },
+    Multi { tabs: Vec<Tab>, active: usize },
+}
+
+impl Inner {
+    fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
+        match self {
+            Inner::Mono { tab } => tab.subscribe(topic, tx),
+            Inner::Multi { tabs, .. } => {
+                tabs.iter_mut()
+                    .for_each(|tab| tab.subscribe(topic, tx.clone()));
+            }
+        }
+    }
+
+    fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
+        match self {
+            Inner::Mono { tab } => tab.notify(topic, msg)?,
+            Inner::Multi { tabs, .. } => {
+                for tab in tabs.iter() {
+                    tab.notify(topic, msg.clone())?
+                }
+            }
+        };
+        Ok(())
+    }
+
+    fn on_event(&mut self, evnt: Event) -> Result<Event> {
+        match self {
+            Inner::Mono { tab } => tab.on_event(evnt),
+            Inner::Multi { tabs, active } => tabs[*active].on_event(evnt),
+        }
+    }
+
+    fn on_refresh(&mut self) -> Result<()> {
+        match self {
+            Inner::Mono { tab } => tab.on_refresh(),
+            Inner::Multi { tabs, active } => tabs[*active].on_refresh(),
+        }
+    }
+
+    fn to_cursor(&self) -> Cursor {
+        match self {
+            Inner::Mono { tab } => tab.to_cursor(),
+            Inner::Multi { tabs, active } => tabs[*active].to_cursor(),
+        }
+    }
 }
 
 impl TryFrom<Opt> for State {
@@ -85,7 +147,9 @@ impl TryFrom<Opt> for State {
             tm,
             schemes,
             subscribers: Default::default(),
-            app: Default::default(),
+            inner: Inner::Mono {
+                tab: Default::default(),
+            },
         })
     }
 }
@@ -104,16 +168,18 @@ impl State {
         // TODO: if there is any ted-level pub-sub to be done, do it here.
 
         // now we are ready to create the app.
-        state.app = match opts.app.as_str() {
+        let app = match opts.app.as_str() {
             "code" => {
                 let app: code::Code = {
-                    let coord = Coord::new(1, 1, state.tm.rows, state.tm.cols);
+                    let coord = state.tm.to_screen_coord();
                     (&state, coord).into()
                 };
                 Ok(App::Code(app))
             }
             _ => err_at!(Invalid, msg: format!("invalid app {:?}", &opts.app)),
         }?;
+
+        state.inner = Inner::Mono { tab: app.into() };
 
         // a new ted-state is created. make sure to call event_loop() to
         // launch the application.
@@ -131,18 +197,14 @@ impl State {
     /// Subscribe a channel for a topic. Refer [pubsub::PubSub] for more detail.
     pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
         self.subscribers.subscribe(topic, tx.clone());
-        self.app.subscribe(topic, tx);
+        self.inner.subscribe(topic, tx)
     }
 
     /// Notify all subscribers for `topic` with `msg`. Refer [pubsub::PubSub]
     /// for more detail.
     pub fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
-        match self.app.notify(topic, msg.clone()) {
-            Ok(_) => (),
-            Err(err) => error!("state notification {}", err),
-        }
-
-        Ok(())
+        self.subscribers.notify(topic, msg.clone())?;
+        self.inner.notify(topic, msg)
     }
 
     pub fn as_config_value(&self) -> &toml::Value {
@@ -168,8 +230,8 @@ impl State {
         let mut r_stats = util::Latency::new();
 
         // initial screen refresh
-        self.app.on_refresh()?;
-        err_at!(Fatal, termex!(self.app.to_cursor()))?;
+        self.inner.on_refresh()?;
+        err_at!(Fatal, termex!(self.inner.to_cursor()))?;
 
         loop {
             // new event
@@ -188,8 +250,8 @@ impl State {
                         _ => (),
                     };
                     // dispatch
-                    evnt = self.app.on_event(evnt)?;
-                    self.app.on_refresh()?;
+                    evnt = self.inner.on_event(evnt)?;
+                    self.inner.on_refresh()?;
                     // post processing
                     for evnt in evnt {
                         match evnt {
@@ -201,7 +263,7 @@ impl State {
                 return Ok(false);
             })?;
 
-            err_at!(Fatal, termex!(self.app.to_cursor()))?;
+            err_at!(Fatal, termex!(self.inner.to_cursor()))?;
 
             if is_break {
                 break;
@@ -211,6 +273,43 @@ impl State {
         let mut s = format!("read: {}\n", r_stats.pretty_print());
         s.push_str(&format!("  {}", stats.pretty_print()));
         Ok(s)
+    }
+}
+
+#[derive(Default)]
+struct Tab {
+    app: App,
+}
+
+impl From<App> for Tab {
+    fn from(app: App) -> Tab {
+        Tab { app }
+    }
+}
+
+impl Tab {
+    fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
+        self.app.subscribe(topic, tx)
+    }
+
+    fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
+        self.app.notify(topic, msg)
+    }
+
+    fn on_event(&mut self, evnt: Event) -> Result<Event> {
+        self.app.on_event(evnt)
+    }
+
+    fn on_refresh(&mut self) -> Result<()> {
+        self.app.on_refresh()
+    }
+
+    fn to_cursor(&self) -> Cursor {
+        self.app.to_cursor()
+    }
+
+    fn to_title(&self, wth: u16) -> String {
+        self.app.to_tab_title(wth)
     }
 }
 

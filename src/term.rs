@@ -14,7 +14,11 @@ use std::{
     sync::Mutex,
 };
 
-use crate::{text, window::Cursor, Error, Result};
+use crate::{
+    text,
+    window::{Coord, Cursor},
+    Error, Result,
+};
 
 lazy_static! {
     pub(crate) static ref TERM: Mutex<Terminal> = {
@@ -100,7 +104,7 @@ impl From<(u16, u16)> for Terminal {
 }
 
 impl Terminal {
-    /// initialize the terminal.
+    /// Initialize the terminal.
     pub fn init() -> Result<Terminal> {
         use crossterm::terminal::{enable_raw_mode, size, EnterAlternateScreen};
         use crossterm::{cursor::Hide, event::EnableMouseCapture, execute};
@@ -119,6 +123,11 @@ impl Terminal {
         );
 
         Ok(tm)
+    }
+
+    #[inline]
+    pub fn to_screen_coord(&self) -> Coord {
+        Coord::new(1, 1, self.rows, self.cols)
     }
 }
 

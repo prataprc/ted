@@ -30,22 +30,8 @@ pub enum Location {
 }
 
 impl Location {
-    /// Create a memory-only buffer.
-    pub fn new_memory<R>(r: R, enc: &str) -> Result<Location>
-    where
-        R: io::Read,
-    {
-        let name = {
-            let mut count = MEM_BUFFER_N.lock().unwrap();
-            *count = *count + 1;
-            format!("[no-name-{}]", count)
-        };
-        let buf: String = text::Encoded::from_reader(r, enc)?.into();
-        Ok(Location::Memory { name, buf })
-    }
-
     /// Create a new Disk location for buffer. `loc` can be absolute path,
-    /// relative path to current-directory or start with `~` relative to
+    /// relative path to current-directory, or start with `~` relative to
     /// home-directory.
     pub fn new_disk(fp: &ffi::OsStr, enc: &str) -> Result<Location> {
         let fp = {
@@ -59,6 +45,20 @@ impl Location {
             enc: enc.to_string(),
             read_only: m.permissions().readonly(),
         })
+    }
+
+    /// Create a memory-only buffer.
+    pub fn new_memory<R>(r: R, enc: &str) -> Result<Location>
+    where
+        R: io::Read,
+    {
+        let name = {
+            let mut count = MEM_BUFFER_N.lock().unwrap();
+            *count = *count + 1;
+            format!("[no-name-{}]", count)
+        };
+        let buf: String = text::Encoded::from_reader(r, enc)?.into();
+        Ok(Location::Memory { name, buf })
     }
 
     /// Create a new buffer to be used within the system.
@@ -95,6 +95,44 @@ impl Location {
             Location::Memory { .. } => false,
             Location::Disk { read_only, .. } => *read_only,
             Location::Ted { .. } => false,
+        }
+    }
+
+    pub fn to_tab_title(&self, wth: u16) -> String {
+        let to_string = |s: &ffi::OsStr| -> String {
+            match s.to_str() {
+                Some(s) => s.to_string(),
+                None => format!("{:?}", s),
+            }
+        };
+        let comp_to_string = |c: path::Component| -> Option<String> {
+            match c {
+                path::Component::Normal(s) => match to_string(s).chars().next() {
+                    Some(ch) => Some(format!("{}", ch)),
+                    None => None,
+                },
+                _ => None,
+            }
+        };
+        let empty = "".to_string();
+
+        match self {
+            Location::Disk { path_file, .. } => {
+                let p = path::Path::new(&path_file);
+
+                let mut parts: Vec<path::Component> = p.components().collect();
+                let file_part = parts
+                    .pop()
+                    .map(|c| comp_to_string(c).unwrap_or(empty.clone()))
+                    .unwrap_or(empty.clone());
+                let parts: Vec<String> = {
+                    let iter = parts.into_iter().filter_map(comp_to_string);
+                    iter.collect()
+                };
+                to_tab_title(parts, file_part, wth)
+            }
+            Location::Memory { name, .. } => format!(" M({:13}) ", name),
+            Location::Ted { name, .. } => format!(" T({:13}) ", name),
         }
     }
 
@@ -195,4 +233,20 @@ impl fmt::Display for Location {
             Location::Ted { name, .. } => write!(f, "{}", name),
         }
     }
+}
+
+fn to_tab_title(parts: Vec<String>, file_part: String, mut wth: u16) -> String {
+    let filee = loop {
+        let chars: Vec<char> = file_part.chars().collect();
+        let start = chars.len().saturating_sub(wth as usize);
+        let s = String::from_iter(&chars[start..]);
+        wth = match text::width(s.chars()) {
+            m if m <= (wth as usize) => break s,
+            _ => wth.saturating_sub(1),
+        }
+    };
+    let dirs = parts
+        .into_iter()
+        .fold(path::PathBuf::new(), |p, c| p.join(&c));
+    dirs.join(&filee).to_str().unwrap_or("∞").to_string()
 }

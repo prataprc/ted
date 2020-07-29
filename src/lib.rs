@@ -36,10 +36,7 @@ mod text;
 
 lazy_static! {
     /// Global collection of all pre-packaged color-schemes.
-    static ref COLORS: Vec<colors::ColorScheme> = {
-        let colors = colors::ColorScheme::load_color_schemes().unwrap();
-        colors
-    };
+    static ref COLORS: Vec<colors::ColorScheme> = colors::ColorScheme::load_color_schemes();
 }
 
 /// Result returned by all `Ted` API.

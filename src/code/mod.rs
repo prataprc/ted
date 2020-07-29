@@ -31,7 +31,6 @@ use crate::{
     colors::ColorScheme,
     event::{self, Event},
     location::Location,
-    mark,
     pubsub::{Notify, PubSub},
     state::State,
     window::{Coord, Cursor, Window},
@@ -39,13 +38,21 @@ use crate::{
 };
 
 pub struct Code {
+    // full set of configuration paramter from [State][State].
     config_value: toml::Value,
+    // application only configuration.
     config: Config,
+    // screen coordinate for this application.
     coord: Coord,
+    // application local subscribe-publish instance, also includes
+    // global subscribers.
     subscribers: PubSub,
+    // a copy of all available color schemes.
     schemes: Vec<ColorScheme>,
+    // buffer-list
     buffers: Vec<Buffer>,
 
+    // application state machine
     inner: Inner,
 }
 
@@ -431,5 +438,20 @@ impl Application for Code {
         self.inner = inner;
 
         Ok(())
+    }
+
+    fn to_tab_title(&self, wth: u16) -> String {
+        let edit = match &self.inner {
+            Inner::Edit(edit) => edit,
+            Inner::Prompt(val) => &val.edit,
+            Inner::Command(val) => &val.edit,
+            Inner::Less(val) => &val.edit,
+            Inner::None => unreachable!(),
+        };
+        let id = edit.wfile.to_buffer_id();
+        match self.as_buffer(&id) {
+            Some(buf) => buf.to_location().to_tab_title(wth),
+            None => "∞".to_string(),
+        }
     }
 }

@@ -670,7 +670,7 @@ impl Buffer {
                 };
                 cursor.map(|c| self.set_cursor(c).clear_sticky_col());
                 if typ == '\'' {
-                    let cursor = mto_line_home(self, DP::TextCol);
+                    let cursor = mto_line_home(self, DP::TextCol)?;
                     self.set_cursor(cursor);
                 }
                 Event::Noop

@@ -24,6 +24,9 @@ pub trait Application {
 
     /// Return the cursor within application's view-port.
     fn to_cursor(&self) -> Cursor;
+
+    /// Return a string less than the specified width.
+    fn to_tab_title(&self, wth: u16) -> String;
 }
 
 pub enum App {
@@ -39,47 +42,44 @@ impl Default for App {
 
 impl App {
     pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
-        use App::Code;
-
         match self {
-            Code(app) => app.subscribe(topic, tx),
+            App::Code(app) => app.subscribe(topic, tx),
             App::None => (),
         }
     }
 
     pub fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
-        use App::Code;
-
         match self {
-            Code(app) => app.notify(topic, msg),
+            App::Code(app) => app.notify(topic, msg),
             App::None => Ok(()),
         }
     }
 
     pub fn to_cursor(&self) -> Cursor {
-        use App::Code;
-
         match self {
-            Code(app) => app.to_cursor(),
+            App::Code(app) => app.to_cursor(),
             App::None => Default::default(),
         }
     }
 
     pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
-        use App::Code;
-
         match self {
-            Code(app) => app.on_event(evnt),
+            App::Code(app) => app.on_event(evnt),
             App::None => Ok(evnt),
         }
     }
 
     pub fn on_refresh(&mut self) -> Result<()> {
-        use App::Code;
-
         match self {
-            Code(app) => app.on_refresh(),
+            App::Code(app) => app.on_refresh(),
             App::None => Ok(()),
+        }
+    }
+
+    pub fn to_tab_title(&self, wth: u16) -> String {
+        match self {
+            App::Code(app) => app.to_tab_title(wth),
+            App::None => unreachable!(),
         }
     }
 }

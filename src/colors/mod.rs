@@ -77,14 +77,14 @@ impl TryFrom<toml::Value> for ColorScheme {
 }
 
 impl ColorScheme {
-    pub fn load_color_schemes() -> Result<Vec<ColorScheme>> {
+    pub fn load_color_schemes() -> Vec<ColorScheme> {
+        let to_scheme = |s: &str| -> Option<ColorScheme> {
+            let toml_style: toml::Value = s.parse().ok()?;
+            TryFrom::try_from(toml_style).ok()
+        };
+
         let colors = vec![DEFAULT];
-        let mut schemes = vec![];
-        for color in colors.iter() {
-            let toml_style: toml::Value = color.parse().unwrap();
-            schemes.push(TryFrom::try_from(toml_style).unwrap())
-        }
-        Ok(schemes)
+        colors.into_iter().filter_map(to_scheme).collect()
     }
 }
 
