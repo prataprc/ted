@@ -3,7 +3,7 @@
 
 use std::sync::mpsc;
 
-use crate::{code, event::Event, pubsub::Notify, window::Cursor, Result};
+use crate::{code, event::Event, pubsub::Notify, state, window::Cursor, Result};
 
 pub trait Application {
     /// Subscribe a channel for a topic. Any number of components can
@@ -26,7 +26,7 @@ pub trait Application {
     fn to_cursor(&self) -> Cursor;
 
     /// Return a string less than the specified width.
-    fn to_tab_title(&self, wth: u16) -> String;
+    fn to_tab_title(&self, wth: usize) -> state::TabTitle;
 }
 
 pub enum App {
@@ -76,7 +76,7 @@ impl App {
         }
     }
 
-    pub fn to_tab_title(&self, wth: u16) -> String {
+    pub fn to_tab_title(&self, wth: usize) -> state::TabTitle {
         match self {
             App::Code(app) => app.to_tab_title(wth),
             App::None => unreachable!(),

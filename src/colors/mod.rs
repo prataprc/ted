@@ -137,7 +137,14 @@ macro_rules! highlight {
 }
 
 highlight![
-    // code syntax.
+    // tab syntax
+    (Tab, "tab"),
+    (TabModified, "tab-modified"),
+    // tab completion syntax
+    (TabcLine, "tabc-line"),
+    (TabcOption, "tabc-option"),
+    (TabcSelect, "tabc-select"),
+    // code syntax
     (Comment, "comment"),
     (Constant, "constant"),
     (Str, "string"),
@@ -178,9 +185,6 @@ highlight![
     (LineNr, "line-nr"),
     (Prompt, "prompt"),
     (StatusLine, "status-line"),
-    (TabLine, "tab-line"),
-    (TabOption, "tab-option"),
-    (TabSelect, "tab-select"),
     //ColorColumn
     //Conceal
     //Cursor

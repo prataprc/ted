@@ -32,7 +32,7 @@ use crate::{
     event::{self, Event},
     location::Location,
     pubsub::{Notify, PubSub},
-    state::State,
+    state::{self, State},
     window::{Coord, Cursor, Window},
     Result,
 };
@@ -440,7 +440,7 @@ impl Application for Code {
         Ok(())
     }
 
-    fn to_tab_title(&self, wth: u16) -> String {
+    fn to_tab_title(&self, wth: usize) -> state::TabTitle {
         let edit = match &self.inner {
             Inner::Edit(edit) => edit,
             Inner::Prompt(val) => &val.edit,
@@ -448,10 +448,26 @@ impl Application for Code {
             Inner::Less(val) => &val.edit,
             Inner::None => unreachable!(),
         };
-        let id = edit.wfile.to_buffer_id();
-        match self.as_buffer(&id) {
-            Some(buf) => buf.to_location().to_tab_title(wth),
-            None => "∞".to_string(),
+        let active = false;
+        match self.as_buffer(&edit.wfile.to_buffer_id()) {
+            Some(buf) => {
+                let text = buf.to_location().to_tab_title(wth);
+                let modified = buf.is_modified();
+                state::TabTitle {
+                    text,
+                    modified,
+                    active,
+                }
+            }
+            None => {
+                let text = "∞".to_string();
+                let modified = false;
+                state::TabTitle {
+                    text,
+                    modified,
+                    active,
+                }
+            }
         }
     }
 }

@@ -1,5 +1,7 @@
 name            = "default"
 canvas          = { on = "#202020", with = "#d0d0d0"}
+tab             = { on = "#202020", with = "#d0d0d0"}
+tab-modified    = { on = "#202020", with = "#d0d0d0"}
 comment         = { on = "#202020", with = "#707070"}
 constant        = { on = "#202020", with = "#67c16d"}
 string          = { on = "#202020", with = "#afaf87"}
@@ -39,6 +41,6 @@ todo            = { on = "#202020", with = "#d0d0d0"}
 line-nr         = { on = "#202020", with = "#86875f"}
 prompt          = { on = "#202020", with = "#cf7d00"}
 status-line     = { on = "#202020", with = "#cf7d00"}
-tab-line        = { on = "#202020", with = "#cf7d00"}
-tab-option      = { on = "#202020", with = "#cf7d00"}
-tab-select      = { on = "#202020", with = "#cf7d00"}
+tabc-line       = { on = "#202020", with = "#cf7d00"}
+tabc-option     = { on = "#202020", with = "#cf7d00"}
+tabc-select     = { on = "#202020", with = "#cf7d00"}

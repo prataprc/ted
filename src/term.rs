@@ -361,6 +361,21 @@ impl Style {
         Ok(style)
     }
 
+    pub fn set_fg(&mut self, color: Color) -> &mut Self {
+        self.fg = color;
+        self
+    }
+
+    pub fn set_bg(&mut self, color: Color) -> &mut Self {
+        self.bg = color;
+        self
+    }
+
+    pub fn add_attr(&mut self, attr: Attribute) -> &mut Self {
+        self.attrs.push(attr);
+        self
+    }
+
     /// Can be one of the the following literal.
     ///
     /// * reset, black, grey, darkgrey, dark-grey, dark_grey,
@@ -447,7 +462,7 @@ impl Style {
                 "underlined" | "underline" => attrs.push(Attribute::Underlined),
                 "dim" => attrs.push(Attribute::Dim),
                 "italic" => attrs.push(Attribute::Italic),
-                "slowblink" | "slow-blink" | "slow_blink" => {
+                "slowblink" | "slow-blink" | "slow_blink" | "blink" => {
                     //
                     attrs.push(Attribute::SlowBlink)
                 }

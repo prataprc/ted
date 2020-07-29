@@ -9,8 +9,11 @@ use simplelog;
 use structopt::StructOpt;
 
 use std::{
+    cmp,
     convert::{TryFrom, TryInto},
-    fs, path,
+    fs,
+    iter::FromIterator,
+    mem, path,
     sync::mpsc,
 };
 
@@ -21,9 +24,9 @@ use crate::{
     config,
     event::Event,
     pubsub::{Notify, PubSub},
-    term::Terminal,
+    term::{self, Terminal},
     util,
-    window::Cursor,
+    window::{Coord, Cursor},
     Error, Result,
 };
 
@@ -81,7 +84,14 @@ pub struct State {
 
 enum Inner {
     Mono { tab: Tab },
-    Multi { tabs: Vec<Tab>, active: usize },
+    Multi { coord: Coord, tabs: Vec<Tab> },
+    None,
+}
+
+impl Default for Inner {
+    fn default() -> Self {
+        Inner::None
+    }
 }
 
 impl Inner {
@@ -92,6 +102,7 @@ impl Inner {
                 tabs.iter_mut()
                     .for_each(|tab| tab.subscribe(topic, tx.clone()));
             }
+            Inner::None => unreachable!(),
         }
     }
 
@@ -103,6 +114,7 @@ impl Inner {
                     tab.notify(topic, msg.clone())?
                 }
             }
+            Inner::None => unreachable!(),
         };
         Ok(())
     }
@@ -110,21 +122,56 @@ impl Inner {
     fn on_event(&mut self, evnt: Event) -> Result<Event> {
         match self {
             Inner::Mono { tab } => tab.on_event(evnt),
-            Inner::Multi { tabs, active } => tabs[*active].on_event(evnt),
+            Inner::Multi { tabs, .. } => {
+                for tab in tabs.iter_mut() {
+                    if tab.active {
+                        return tab.on_event(evnt);
+                    }
+                }
+                let prefix = "".to_string();
+                let msg = "no active tab".to_string();
+                err_at!(Err(Error::Fatal(prefix, msg)))
+            }
+            Inner::None => unreachable!(),
         }
     }
 
-    fn on_refresh(&mut self) -> Result<()> {
+    fn on_refresh(&mut self, state: &State) -> Result<()> {
+        let scheme = state.to_color_scheme(None);
         match self {
             Inner::Mono { tab } => tab.on_refresh(),
-            Inner::Multi { tabs, active } => tabs[*active].on_refresh(),
+            Inner::Multi { coord, tabs } => {
+                let wth = cmp::min((coord.wth as usize) / tabs.len(), 16);
+                let spans: Vec<term::Span> = {
+                    let iter = tabs.iter();
+                    iter.map(|tab| tab.to_tab_title(wth, &scheme)).collect()
+                };
+                let mut line = term::Spanline::from_iter(spans.into_iter());
+                line.set_cursor(coord.to_origin_cursor().into());
+                err_at!(Fatal, termqu!(line))?;
+                for tab in tabs.iter_mut() {
+                    if tab.active {
+                        return tab.on_refresh();
+                    }
+                }
+                Ok(())
+            }
+            Inner::None => unreachable!(),
         }
     }
 
     fn to_cursor(&self) -> Cursor {
         match self {
             Inner::Mono { tab } => tab.to_cursor(),
-            Inner::Multi { tabs, active } => tabs[*active].to_cursor(),
+            Inner::Multi { tabs, .. } => {
+                for tab in tabs.iter() {
+                    if tab.active {
+                        return tab.to_cursor();
+                    }
+                }
+                Default::default()
+            }
+            Inner::None => unreachable!(),
         }
     }
 }
@@ -147,9 +194,7 @@ impl TryFrom<Opt> for State {
             tm,
             schemes,
             subscribers: Default::default(),
-            inner: Inner::Mono {
-                tab: Default::default(),
-            },
+            inner: Default::default(),
         })
     }
 }
@@ -179,7 +224,11 @@ impl State {
             _ => err_at!(Invalid, msg: format!("invalid app {:?}", &opts.app)),
         }?;
 
-        state.inner = Inner::Mono { tab: app.into() };
+        state.inner = {
+            let mut tab: Tab = app.into();
+            tab.active = true;
+            Inner::Mono { tab }
+        };
 
         // a new ted-state is created. make sure to call event_loop() to
         // launch the application.
@@ -211,13 +260,25 @@ impl State {
         &self.config_value
     }
 
-    pub fn to_color_scheme(&self, name: &str) -> ColorScheme {
-        for scheme in self.schemes.iter() {
-            if scheme.name == name {
-                return scheme.clone();
+    pub fn to_color_scheme(&self, name: Option<&str>) -> ColorScheme {
+        // return the requested scheme.
+        match name {
+            Some(name) => {
+                for scheme in self.schemes.iter() {
+                    if scheme.name == name {
+                        return scheme.clone();
+                    }
+                }
             }
-        }
-        self.to_color_scheme("default")
+            None => (),
+        };
+
+        // else fall back to configured default.
+        let scheme = match self.config_value.get("scheme") {
+            Some(value) => value.as_str().unwrap_or("default"),
+            None => "default",
+        };
+        self.to_color_scheme(Some(scheme))
     }
 }
 
@@ -230,8 +291,9 @@ impl State {
         let mut r_stats = util::Latency::new();
 
         // initial screen refresh
-        self.inner.on_refresh()?;
-        err_at!(Fatal, termex!(self.inner.to_cursor()))?;
+        let mut inner = mem::replace(&mut self.inner, Default::default());
+        inner.on_refresh(&self)?;
+        err_at!(Fatal, termex!(inner.to_cursor()))?;
 
         loop {
             // new event
@@ -250,8 +312,8 @@ impl State {
                         _ => (),
                     };
                     // dispatch
-                    evnt = self.inner.on_event(evnt)?;
-                    self.inner.on_refresh()?;
+                    evnt = inner.on_event(evnt)?;
+                    inner.on_refresh(&self)?;
                     // post processing
                     for evnt in evnt {
                         match evnt {
@@ -263,7 +325,7 @@ impl State {
                 return Ok(false);
             })?;
 
-            err_at!(Fatal, termex!(self.inner.to_cursor()))?;
+            err_at!(Fatal, termex!(inner.to_cursor()))?;
 
             if is_break {
                 break;
@@ -278,12 +340,13 @@ impl State {
 
 #[derive(Default)]
 struct Tab {
+    active: bool,
     app: App,
 }
 
 impl From<App> for Tab {
     fn from(app: App) -> Tab {
-        Tab { app }
+        Tab { app, active: false }
     }
 }
 
@@ -308,8 +371,43 @@ impl Tab {
         self.app.to_cursor()
     }
 
-    fn to_title(&self, wth: u16) -> String {
-        self.app.to_tab_title(wth)
+    fn to_tab_title(&self, wth: usize, scheme: &ColorScheme) -> term::Span {
+        let mut tt = self.app.to_tab_title(wth);
+        tt.active = self.active;
+        tt.into_span(scheme)
+    }
+}
+
+pub struct TabTitle {
+    pub text: String,
+    pub modified: bool,
+    pub active: bool,
+}
+
+impl TabTitle {
+    fn into_span(self, scheme: &ColorScheme) -> term::Span {
+        use crate::colors::Highlight;
+
+        let span: term::Span = self.text.clone().into();
+        let style = {
+            let canvas = scheme.to_style(Highlight::Canvas);
+            let s_modif = scheme.to_style(Highlight::TabModified);
+            let mut style = if self.active {
+                canvas
+            } else {
+                let mut style = scheme.to_style(Highlight::Tab);
+                let attrs = term::Style::to_attrs("underline").ok();
+                for attr in attrs.unwrap_or(vec![]).into_iter() {
+                    style.add_attr(attr);
+                }
+                style
+            };
+            if self.modified {
+                style.set_fg(s_modif.fg);
+            }
+            style
+        };
+        span.using(style)
     }
 }
 

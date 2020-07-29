@@ -140,7 +140,7 @@ impl Window for WindowLine {
                     let n: usize = spans.iter().map(|span| span.to_width()).sum();
                     let iter = repeat(' ').take((self.coord.wth as usize) - n);
                     let padding: Span = String::from_iter(iter).into();
-                    padding.using(scheme.to_style(Highlight::TabLine))
+                    padding.using(scheme.to_style(Highlight::TabcLine))
                 };
                 err_at!(Fatal, termqu!(padding))?;
             }

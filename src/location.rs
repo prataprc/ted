@@ -19,6 +19,7 @@ pub enum Location {
         buf: String,
     },
     Disk {
+        loc: ffi::OsString,
         path_file: ffi::OsString,
         enc: String,
         read_only: bool,
@@ -33,14 +34,15 @@ impl Location {
     /// Create a new Disk location for buffer. `loc` can be absolute path,
     /// relative path to current-directory, or start with `~` relative to
     /// home-directory.
-    pub fn new_disk(fp: &ffi::OsStr, enc: &str) -> Result<Location> {
+    pub fn new_disk(loc: &ffi::OsStr, enc: &str) -> Result<Location> {
         let fp = {
-            let res = fp.to_os_string().into_string();
+            let res = loc.to_os_string().into_string();
             err_at!(IOError, res.map_err(|e| format!("{:?}", e)))?
         };
         let path_file = Self::canonicalize(fp).into_os_string();
         let m = err_at!(IOError, fs::metadata(&path_file))?;
         Ok(Location::Disk {
+            loc: loc.to_os_string(),
             path_file,
             enc: enc.to_string(),
             read_only: m.permissions().readonly(),
@@ -98,39 +100,9 @@ impl Location {
         }
     }
 
-    pub fn to_tab_title(&self, wth: u16) -> String {
-        let to_string = |s: &ffi::OsStr| -> String {
-            match s.to_str() {
-                Some(s) => s.to_string(),
-                None => format!("{:?}", s),
-            }
-        };
-        let comp_to_string = |c: path::Component| -> Option<String> {
-            match c {
-                path::Component::Normal(s) => match to_string(s).chars().next() {
-                    Some(ch) => Some(format!("{}", ch)),
-                    None => None,
-                },
-                _ => None,
-            }
-        };
-        let empty = "".to_string();
-
+    pub fn to_tab_title(&self, wth: usize) -> String {
         match self {
-            Location::Disk { path_file, .. } => {
-                let p = path::Path::new(&path_file);
-
-                let mut parts: Vec<path::Component> = p.components().collect();
-                let file_part = parts
-                    .pop()
-                    .map(|c| comp_to_string(c).unwrap_or(empty.clone()))
-                    .unwrap_or(empty.clone());
-                let parts: Vec<String> = {
-                    let iter = parts.into_iter().filter_map(comp_to_string);
-                    iter.collect()
-                };
-                to_tab_title(parts, file_part, wth)
-            }
+            Location::Disk { loc, .. } => disk_to_tab_title(loc, wth),
             Location::Memory { name, .. } => format!(" M({:13}) ", name),
             Location::Ted { name, .. } => format!(" T({:13}) ", name),
         }
@@ -181,8 +153,9 @@ impl Location {
     }
 
     fn shrink_cwd(s: &ffi::OsStr) -> Result<ffi::OsString> {
-        let cwd = err_at!(Fatal, env::current_dir())?;
         let pb: path::PathBuf = s.to_os_string().into();
+
+        let cwd = err_at!(Fatal, env::current_dir())?;
         if pb.starts_with(&cwd) {
             let mut shrnk = path::PathBuf::new();
             shrnk.push(err_at!(FailConvert, pb.strip_prefix(&cwd))?);
@@ -235,18 +208,47 @@ impl fmt::Display for Location {
     }
 }
 
-fn to_tab_title(parts: Vec<String>, file_part: String, mut wth: u16) -> String {
-    let filee = loop {
-        let chars: Vec<char> = file_part.chars().collect();
-        let start = chars.len().saturating_sub(wth as usize);
-        let s = String::from_iter(&chars[start..]);
-        wth = match text::width(s.chars()) {
-            m if m <= (wth as usize) => break s,
-            _ => wth.saturating_sub(1),
+fn disk_to_tab_title(loc: &ffi::OsStr, wth: usize) -> String {
+    let p = path::Path::new(loc);
+    let parts: Vec<path::Component> = p.components().collect();
+    let last = parts.len().saturating_sub(1);
+
+    let mut title = "".to_string();
+    let mut iter = parts.into_iter().enumerate();
+    loop {
+        match iter.next() {
+            Some((0, path::Component::RootDir)) => {
+                title.push(path::MAIN_SEPARATOR);
+            }
+            Some((n, path::Component::Normal(s))) if s.len() > 0 && n < last => {
+                let s = {
+                    let debug_s = format!("{:?}", s);
+                    s.to_str().map(|s| s.to_string()).unwrap_or(debug_s)
+                };
+                match s.as_str() {
+                    ".." | "." | "~" => title.push_str(&s),
+                    s => title.push(s.chars().next().unwrap()),
+                }
+                title.push(path::MAIN_SEPARATOR);
+            }
+            Some((_, path::Component::Normal(s))) => {
+                let s = {
+                    let debug_s = format!("{:?}", s);
+                    s.to_str().map(|s| s.to_string()).unwrap_or(debug_s)
+                };
+                let chars: Vec<char> = s.chars().collect();
+                break if wth > text::width(chars.clone().into_iter()) {
+                    String::from_iter(&chars[(chars.len() - wth)..])
+                } else {
+                    title.push_str(&s);
+                    title
+                };
+            }
+            Some(_) => {
+                title.push_str("∞");
+                title.push(path::MAIN_SEPARATOR);
+            }
+            None => unreachable!(),
         }
-    };
-    let dirs = parts
-        .into_iter()
-        .fold(path::PathBuf::new(), |p, c| p.join(&c));
-    dirs.join(&filee).to_str().unwrap_or("∞").to_string()
+    }
 }
