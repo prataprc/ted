@@ -15,6 +15,7 @@ use std::{
     iter::FromIterator,
     mem, path,
     sync::mpsc,
+    time::SystemTime,
 };
 
 use crate::{
@@ -302,46 +303,46 @@ impl State {
         inner.on_refresh(&self)?;
         err_at!(Fatal, termex!(inner.to_cursor()))?;
 
+        let mut evnts = Event::Noop;
         loop {
+            evnts.drain();
             // new event
-            let evnt: Event = util::time_it(&mut r_stats, || {
+            {
+                let start = SystemTime::now();
                 let evnt: Event = err_at!(Fatal, read())?.into();
-                Ok(evnt)
-            })?;
+                r_stats.sample(start.elapsed().unwrap());
+                evnts.push(evnt);
+            }
 
-            let is_break = util::time_it(&mut stats, || {
-                hidecr!()?;
-                for mut evnt in evnt {
-                    let ctrl = evnt.is_control();
-                    // preprocessing
-                    match &evnt {
-                        Event::Char('q', _) if ctrl => return Ok(true),
-                        _ => (),
-                    };
-                    // dispatch
-                    evnt = inner.on_event(evnt)?;
-                    inner.on_refresh(&self)?;
-                    // post processing
-                    for evnt in evnt {
-                        match evnt {
-                            Event::Char('q', _) => return Ok(true),
-                            _ => (),
-                        }
-                    }
-                }
-                return Ok(false);
-            })?;
-
-            err_at!(Fatal, termex!(inner.to_cursor()))?;
-
-            if is_break {
+            if evnts.any(|evnt| Self::is_quit(&evnt)) {
                 break;
             }
+
+            let start = SystemTime::now();
+            loop {
+                hidecr!()?;
+                let evnt = evnts.pop();
+                if let Event::Noop = evnt.clone() {
+                    break;
+                }
+                // dispatch
+                evnts.push(inner.on_event(evnt)?);
+                inner.on_refresh(&self)?;
+            }
+            err_at!(Fatal, termex!(inner.to_cursor()))?;
+            stats.sample(start.elapsed().unwrap());
         }
 
         let mut s = format!("read: {}\n", r_stats.pretty_print());
         s.push_str(&format!("  {}", stats.pretty_print()));
         Ok(s)
+    }
+
+    fn is_quit(evnt: &Event) -> bool {
+        match evnt {
+            Event::Char('q', _) => true,
+            _ => false,
+        }
     }
 }
 

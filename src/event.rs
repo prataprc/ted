@@ -108,14 +108,40 @@ impl Event {
     /// FIFO. This is useful when more events are accumulated as it gets
     /// processed across the pipeline.
     pub fn push(&mut self, evnt: Event) {
+        *self = match (self.clone(), &evnt) {
+            (old_evnt, Event::Noop) => old_evnt,
+            (Event::Noop, evnt) => evnt.clone(),
+            (Event::List(mut evnts), evnt) => {
+                evnts.push(evnt.clone());
+                Event::List(evnts)
+            }
+            (old_evnt, evnt) => Event::List(vec![old_evnt, evnt.clone()]),
+        }
+    }
+
+    /// Pop from list of events. Events can also act as a FIFO. This is
+    /// useful when more events are accumulated as it gets processed
+    /// across the pipeline.
+    pub fn pop(&mut self) -> Event {
         match self {
-            Event::List(events) => events.push(evnt),
-            Event::Noop => *self = evnt,
+            Event::Noop => Event::Noop,
+            Event::List(events) => match events.pop() {
+                Some(evnt) => evnt,
+                None => {
+                    *self = Event::Noop;
+                    Event::Noop
+                }
+            },
             _ => {
-                let event = mem::replace(self, Event::default());
-                *self = Event::List(vec![event, evnt]);
+                let evnt = self.clone();
+                *self = Event::Noop;
+                evnt
             }
         }
+    }
+
+    pub fn drain(&mut self) {
+        *self = Event::Noop
     }
 }
 
