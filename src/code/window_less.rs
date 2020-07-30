@@ -32,7 +32,7 @@ impl WindowLess {
         let loc = Location::new_ted("win-less", io::empty()).unwrap();
         let mut w = WindowLess {
             coord,
-            status_line: Default::default(),
+            status_line: String::default(),
             keymap: Keymap::new_less(),
             buffer: Buffer::from_reader(content.as_bytes(), loc).unwrap(),
         };
@@ -74,7 +74,7 @@ impl Window for WindowLess {
         match evnt {
             Event::Esc => Ok(Event::Noop),
             evnt => {
-                let mut km = mem::replace(&mut self.keymap, Default::default());
+                let mut km = mem::replace(&mut self.keymap, Keymap::default());
                 let evnt = km.fold(app, &self.buffer, evnt)?;
                 let evnt = self.buffer.on_event(evnt)?;
                 self.keymap = km;

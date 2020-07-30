@@ -155,25 +155,25 @@ enum Inner {
 
 impl Default for Inner {
     fn default() -> Inner {
-        Inner::Normal(Default::default())
+        Inner::Normal(NormalBuffer::default())
     }
 }
 
 impl Default for Buffer {
     fn default() -> Self {
         Buffer {
-            location: Default::default(),
-            read_only: Default::default(),
-            format: Default::default(),
-            num: Default::default(),
-            inner: Default::default(),
+            location: Location::default(),
+            read_only: bool::default(),
+            format: text::Format::default(),
+            num: usize::default(),
+            inner: Inner::default(),
 
             marks: mark::new_marks(),
-            sticky_col: Default::default(),
-            mto_pattern: Default::default(),
-            mto_find_char: Default::default(),
-            insert_repeat: Default::default(),
-            last_inserts: Default::default(),
+            sticky_col: StickyCol::default(),
+            mto_pattern: Mto::default(),
+            mto_find_char: Mto::default(),
+            insert_repeat: usize::default(),
+            last_inserts: Vec::default(),
         }
     }
 }
@@ -193,21 +193,21 @@ impl Buffer {
 
             num: *num,
             inner: Inner::Normal(NormalBuffer::new(buf)),
-            format: Default::default(),
+            format: text::Format::default(),
 
             marks: mark::new_marks(),
-            sticky_col: Default::default(),
-            mto_pattern: Default::default(),
-            mto_find_char: Default::default(),
-            insert_repeat: Default::default(),
-            last_inserts: Default::default(),
+            sticky_col: StickyCol::default(),
+            mto_pattern: Mto::default(),
+            mto_find_char: Mto::default(),
+            insert_repeat: usize::default(),
+            last_inserts: Vec::default(),
         };
 
         Ok(b)
     }
 
     pub fn empty() -> Buffer {
-        Self::from_reader(io::empty(), Default::default()).unwrap()
+        Self::from_reader(io::empty(), Location::default()).unwrap()
     }
 
     pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
@@ -450,14 +450,14 @@ impl Buffer {
     }
 
     pub fn mode_normal(&mut self) {
-        self.inner = match mem::replace(&mut self.inner, Default::default()) {
+        self.inner = match mem::replace(&mut self.inner, Inner::default()) {
             Inner::Insert(ib) => Inner::Normal(ib.into()),
             inner @ Inner::Normal(_) => inner,
         };
     }
 
     pub fn mode_insert(&mut self) {
-        self.inner = match mem::replace(&mut self.inner, Default::default()) {
+        self.inner = match mem::replace(&mut self.inner, Inner::default()) {
             Inner::Normal(nb) => Inner::Insert(nb.into()),
             inner @ Inner::Insert(_) => inner,
         };
@@ -715,7 +715,7 @@ impl Buffer {
     fn ex_n_insert(&mut self, evnt: Event) -> Result<Event> {
         use crate::event::{Event::Md, Mod};
 
-        let nr = mem::replace(&mut self.inner, Default::default());
+        let nr = mem::replace(&mut self.inner, Inner::default());
         let (inner, evnt) = match nr {
             Inner::Normal(nb) => match evnt {
                 Md(Mod::Insert(n, pos)) if n > 0 => {
@@ -899,7 +899,7 @@ impl From<InsertBuffer> for NormalBuffer {
 
 impl NormalBuffer {
     fn new(buf: Rope) -> NormalBuffer {
-        let mut nb: NormalBuffer = Default::default();
+        let mut nb = NormalBuffer::default();
         nb.change = Change::start(buf);
         nb
     }
@@ -967,7 +967,7 @@ impl Default for Change {
         Change {
             rope: Rope::from_reader(io::empty()).unwrap(),
             parent: None,
-            children: Default::default(),
+            children: Vec::default(),
             cursor: 0,
         }
     }
@@ -978,7 +978,7 @@ impl From<Rope> for Change {
         Change {
             rope,
             parent: None,
-            children: Default::default(),
+            children: Vec::default(),
             cursor: 0,
         }
     }
@@ -1001,7 +1001,7 @@ impl Change {
         Rc::new(RefCell::new(Change {
             rope,
             parent: None,
-            children: Default::default(),
+            children: Vec::default(),
             cursor: 0,
         }))
     }
@@ -1012,7 +1012,7 @@ impl Change {
             Rc::new(RefCell::new(Change {
                 rope: prev_change.as_ref().clone(),
                 parent: None,
-                children: Default::default(),
+                children: Vec::default(),
                 cursor: prev_change.cursor,
             }))
         };

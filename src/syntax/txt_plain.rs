@@ -54,7 +54,7 @@ impl Syntax for PlainText {
     }
 
     fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
-        let mut new_evnt: Event = Default::default();
+        let mut new_evnt: Event = Event::default();
         for evnt in evnt.into_iter() {
             match evnt {
                 Event::Write(val) => match self.tree.take() {

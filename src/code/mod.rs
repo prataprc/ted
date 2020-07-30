@@ -125,7 +125,7 @@ impl<'a> From<(&'a State, Coord)> for Code {
                 let toml_value = state.config_value.clone();
                 mod_config::to_section(toml_value, "code")
             };
-            let cnf: Config = Default::default();
+            let cnf: Config = Config::default();
             cnf.mixin(value.try_into().unwrap())
         };
 
@@ -141,8 +141,8 @@ impl<'a> From<(&'a State, Coord)> for Code {
             coord,
             schemes: state.schemes.clone(),
             subscribers: state.subscribers.clone(),
-            buffers: Default::default(),
-            inner: Default::default(),
+            buffers: Vec::default(),
+            inner: Inner::default(),
         };
 
         let (mut buffers, prompts) = {
@@ -360,12 +360,12 @@ impl Application for Code {
             Inner::Prompt(val) => val.prompts[0].to_cursor(),
             Inner::Command(val) => val.wcmd.to_cursor(),
             Inner::Less(val) => val.wless.to_cursor(),
-            Inner::None => Default::default(),
+            Inner::None => Cursor::default(),
         }
     }
 
     fn on_event(&mut self, evnt: Event) -> Result<Event> {
-        let inner = mem::replace(&mut self.inner, Default::default());
+        let inner = mem::replace(&mut self.inner, Inner::default());
         let (mut inner, evnt) = match (inner, evnt) {
             (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
                 let prefix = edit.wfile.to_event_prefix();
@@ -398,7 +398,7 @@ impl Application for Code {
             (Inner::None, _) => unreachable!(),
         };
 
-        let mut new_evnt: Event = Default::default();
+        let mut new_evnt: Event = Event::default();
         for evnt in evnt.into_iter() {
             match evnt {
                 Event::Code(event::Code::Less(ref content)) => {
@@ -418,7 +418,7 @@ impl Application for Code {
     }
 
     fn on_refresh(&mut self) -> Result<()> {
-        let mut inner = mem::replace(&mut self.inner, Default::default());
+        let mut inner = mem::replace(&mut self.inner, Inner::default());
         match &mut inner {
             Inner::Edit(edit) => {
                 edit.wfile.on_refresh(self)?;

@@ -72,8 +72,8 @@ impl ColNu {
         ColNu {
             width,
             line_number,
-            style_line_nr: Default::default(),
-            style_empty: Default::default(),
+            style_line_nr: Style::default(),
+            style_empty: Style::default(),
         }
     }
 

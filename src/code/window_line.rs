@@ -118,7 +118,7 @@ impl Window for WindowLine {
         let (col, row) = self.coord.to_origin_cursor();
         err_at!(Fatal, termqu!(term_cursor::MoveTo(col, row)))?;
 
-        let mut inner = mem::replace(&mut self.inner, Default::default());
+        let mut inner = mem::replace(&mut self.inner, Inner::default());
         match &mut inner {
             Inner::Status { spans } => {
                 for span in spans.iter() {

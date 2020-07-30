@@ -26,15 +26,15 @@ impl Default for Keymap {
 
 impl Keymap {
     pub fn new_edit() -> Keymap {
-        Keymap::Edit(Default::default())
+        Keymap::Edit(KeyEdit::default())
     }
 
     pub fn new_cmd() -> Keymap {
-        Keymap::Cmd(Default::default())
+        Keymap::Cmd(KeyCmd::default())
     }
 
     pub fn new_less() -> Keymap {
-        Keymap::Less(Default::default())
+        Keymap::Less(KeyLess::default())
     }
 }
 

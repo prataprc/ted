@@ -50,7 +50,7 @@ impl WindowPrompt {
             coord,
             span_lines,
             buffer: Buffer::empty(),
-            options: Default::default(),
+            options: Vec::default(),
         };
         w.buffer.mode_insert();
         w

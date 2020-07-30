@@ -105,7 +105,7 @@ pub struct Latency {
 
 impl Latency {
     pub fn new() -> Latency {
-        let mut stats: Latency = Default::default();
+        let mut stats: Latency = Latency::default();
         stats.durations = Vec::with_capacity(256);
         stats.durations.resize(256, 0);
         stats

@@ -48,7 +48,7 @@ impl KeyEdit {
 
         let noop = Event::Noop;
 
-        let prefix = mem::replace(&mut self.prefix, Default::default());
+        let prefix = mem::replace(&mut self.prefix, Event::default());
         let (m_empty, ctrl) = {
             let m = evnt.to_modifiers();
             (m.is_empty(), m == KeyModifiers::CONTROL)

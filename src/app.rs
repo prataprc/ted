@@ -58,7 +58,7 @@ impl App {
     pub fn to_cursor(&self) -> Cursor {
         match self {
             App::Code(app) => app.to_cursor(),
-            App::None => Default::default(),
+            App::None => Cursor::default(),
         }
     }
 

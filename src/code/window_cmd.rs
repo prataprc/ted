@@ -95,7 +95,7 @@ impl Window for WindowCmd {
     fn on_event(&mut self, app: &mut code::Code, mut evnt: Event) -> Result<Event> {
         use crate::code::cmd::Command;
 
-        let mut buf = mem::replace(&mut self.buf, Default::default());
+        let mut buf = mem::replace(&mut self.buf, Buffer::default());
         evnt = match self.keymap.fold(app, &mut buf, evnt)? {
             Event::N(n) => {
                 buf.cmd_insert(0, &format!(".,.+{}", n.saturating_sub(1)))?;
@@ -103,7 +103,7 @@ impl Window for WindowCmd {
             }
             Event::Enter(_) => {
                 let line = buf.to_string();
-                let syn = mem::replace(&mut self.syn, Default::default());
+                let syn = mem::replace(&mut self.syn, syntax::Type::default());
                 match line.split(' ').next() {
                     Some(name) => {
                         let name = name.to_string();

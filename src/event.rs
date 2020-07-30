@@ -112,7 +112,7 @@ impl Event {
             Event::List(events) => events.push(evnt),
             Event::Noop => *self = evnt,
             _ => {
-                let event = mem::replace(self, Default::default());
+                let event = mem::replace(self, Event::default());
                 *self = Event::List(vec![event, evnt]);
             }
         }
@@ -141,7 +141,7 @@ impl Extend<Event> for Event {
         I: IntoIterator<Item = Event>,
     {
         let mut evnts: Vec<Event> = iter.into_iter().collect();
-        let evnts = match mem::replace(self, Default::default()) {
+        let evnts = match mem::replace(self, Event::default()) {
             Event::List(mut events) => {
                 events.extend(evnts);
                 events
@@ -625,10 +625,10 @@ impl Input {
         Input {
             start_byte,
             old_end_byte,
-            new_end_byte: Default::default(),
+            new_end_byte: usize::default(),
             start_position,
             old_end_position,
-            new_end_position: Default::default(),
+            new_end_position: <(usize, usize)>::default(),
         }
     }
 

@@ -45,14 +45,14 @@ impl TryFrom<toml::Value> for ColorScheme {
             value.as_table().ok_or(err)?
         };
 
-        let mut name = Default::default();
+        let mut name = String::default();
         let mut hs: Vec<Style> = {
             let mut hs = Vec::with_capacity(Highlight::__Fin as usize);
-            hs.resize(hs.capacity(), Default::default());
+            hs.resize(hs.capacity(), Style::default());
             hs
         };
 
-        let canvas: Style = Default::default();
+        let canvas: Style = Style::default();
         for (key, value) in table.iter() {
             match key.as_str() {
                 "name" => {

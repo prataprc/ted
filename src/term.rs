@@ -98,7 +98,7 @@ impl From<(u16, u16)> for Terminal {
         Terminal {
             cols,
             rows,
-            buf: Default::default(),
+            buf: Vec::default(),
         }
     }
 }
@@ -321,7 +321,7 @@ impl Default for Style {
         Style {
             fg: Color::White,
             bg: Color::Black,
-            attrs: Default::default(),
+            attrs: Vec::default(),
         }
     }
 }
@@ -344,7 +344,7 @@ impl Style {
             value.as_table().ok_or(err)?
         };
 
-        let mut style: Style = Default::default();
+        let mut style: Style = Style::default();
         for (key, value) in table.iter() {
             let value = {
                 let msg = format!("bad style key:{:?} value:{:?}", key, value);
@@ -455,7 +455,7 @@ impl Style {
             vec![attr]
         };
 
-        let mut attrs: Vec<Attribute> = Default::default();
+        let mut attrs: Vec<Attribute> = Vec::default();
         for item in ss.into_iter() {
             match item.trim() {
                 "bold" => attrs.push(Attribute::Bold),
@@ -594,7 +594,7 @@ impl Command for Span {
 
         let mut s = match &self.cursor {
             Some(Cursor { col, row }) => MoveTo(*col, *row).to_string(),
-            None => Default::default(),
+            None => String::default(),
         };
         s.push_str(&self.content.to_string());
         s
@@ -643,7 +643,7 @@ impl FromIterator<Span> for Spanline {
 impl Default for Spanline {
     fn default() -> Spanline {
         Spanline {
-            spans: Default::default(),
+            spans: Vec::default(),
             cursor: None,
         }
     }
@@ -739,7 +739,7 @@ impl Command for Spanline {
 
         let mut s = match &self.cursor {
             Some(Cursor { col, row }) => MoveTo(*col, *row).to_string(),
-            None => Default::default(),
+            None => String::default(),
         };
         for span in self.spans.clone().into_iter() {
             s.push_str(&span.ansi_code());

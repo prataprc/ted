@@ -189,7 +189,7 @@ impl Automata {
         Ok(Automata {
             name: name.to_string(),
             patterns,
-            open_nodes: Default::default(),
+            open_nodes: Vec::default(),
         })
     }
 }
@@ -277,7 +277,7 @@ enum Edge {
 
 impl Default for Edge {
     fn default() -> Edge {
-        Edge::Kind(Default::default())
+        Edge::Kind(Span::default())
     }
 }
 

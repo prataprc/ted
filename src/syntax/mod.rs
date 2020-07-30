@@ -262,7 +262,7 @@ impl HlSpans {
             from,
             till,
             canvas,
-            syns: Default::default(),
+            syns: Vec::default(),
         }
     }
 

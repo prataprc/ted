@@ -653,9 +653,9 @@ impl ScrLine {
     fn new_empty() -> Self {
         ScrLine {
             colk: ColKind::Empty,
-            line_idx: Default::default(),
-            bc: Default::default(),
-            n: Default::default(),
+            line_idx: usize::default(),
+            bc: usize::default(),
+            n: u16::default(),
         }
     }
 }

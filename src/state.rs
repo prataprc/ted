@@ -174,7 +174,7 @@ impl Inner {
                         return tab.to_cursor();
                     }
                 }
-                Default::default()
+                Cursor::default()
             }
             Inner::None => unreachable!(),
         }
@@ -204,8 +204,8 @@ impl TryFrom<Opt> for State {
             config_value,
             tm,
             schemes,
-            subscribers: Default::default(),
-            inner: Default::default(),
+            subscribers: PubSub::default(),
+            inner: Inner::default(),
         })
     }
 }
@@ -298,7 +298,7 @@ impl State {
         let mut r_stats = util::Latency::new();
 
         // initial screen refresh
-        let mut inner = mem::replace(&mut self.inner, Default::default());
+        let mut inner = mem::replace(&mut self.inner, Inner::default());
         inner.on_refresh(&self)?;
         err_at!(Fatal, termex!(inner.to_cursor()))?;
 
