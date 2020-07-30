@@ -4,6 +4,8 @@
 //! components.
 
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
+#[allow(unused_imports)]
+use log::debug;
 use tree_sitter as ts;
 
 use std::{fmt, iter::FromIterator, mem, result};
@@ -108,15 +110,15 @@ impl Event {
     /// FIFO. This is useful when more events are accumulated as it gets
     /// processed across the pipeline.
     pub fn push(&mut self, evnt: Event) {
-        *self = match (self.clone(), &evnt) {
+        *self = match (self.clone(), evnt) {
             (old_evnt, Event::Noop) => old_evnt,
-            (Event::Noop, evnt) => evnt.clone(),
+            (Event::Noop, evnt) => evnt,
             (Event::List(mut evnts), evnt) => {
-                evnts.push(evnt.clone());
+                evnts.push(evnt);
                 Event::List(evnts)
             }
-            (old_evnt, evnt) => Event::List(vec![old_evnt, evnt.clone()]),
-        }
+            (old_evnt, evnt) => Event::List(vec![old_evnt, evnt]),
+        };
     }
 
     /// Pop from list of events. Events can also act as a FIFO. This is

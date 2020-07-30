@@ -314,7 +314,7 @@ impl State {
                 evnts.push(evnt);
             }
 
-            if evnts.any(|evnt| Self::is_quit(&evnt)) {
+            if evnts.clone().any(|evnt| Self::is_quit(&evnt)) {
                 break;
             }
 
