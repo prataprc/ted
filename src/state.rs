@@ -54,6 +54,9 @@ pub struct Opt {
     #[structopt(short = "R", long = "read-only")]
     pub read_only: bool,
 
+    #[structopt(short = "p")]
+    pub tab_page: bool,
+
     #[structopt(long = "version")]
     pub version: bool,
 
@@ -64,6 +67,8 @@ pub struct Opt {
 pub struct State {
     /// Command line options, refer to [Opt][Opt] type.
     pub opts: Opt,
+    /// State level configuration paramters.
+    pub config: config::Config,
     /// Toml instance of configuration parameters. Following is a list
     /// of possible configuration sources:
     ///
@@ -185,12 +190,18 @@ impl TryFrom<Opt> for State {
         // then the logger
         init_logger(&opts)?;
         // then the configuration
-        let cnf = config::read_config(opts.toml_file.clone(), None)?;
+        let config_value = config::read_config(opts.toml_file.clone(), None)?;
+        let config = {
+            let config = err_at!(Invalid, config_value.clone().try_into())?;
+            config::Config::default().mixin(config)
+        };
+        // then the schemes.
         let schemes = Self::load_color_schemes()?;
 
         Ok(State {
             opts,
-            config_value: cnf,
+            config,
+            config_value,
             tm,
             schemes,
             subscribers: Default::default(),
@@ -260,7 +271,7 @@ impl State {
         &self.config_value
     }
 
-    pub fn to_color_scheme(&self, name: Option<&str>) -> ColorScheme {
+    pub fn to_color_scheme(&self, name: Option<String>) -> ColorScheme {
         // return the requested scheme.
         match name {
             Some(name) => {
@@ -274,11 +285,7 @@ impl State {
         };
 
         // else fall back to configured default.
-        let scheme = match self.config_value.get("scheme") {
-            Some(value) => value.as_str().unwrap_or("default"),
-            None => "default",
-        };
-        self.to_color_scheme(Some(scheme))
+        self.to_color_scheme(Some(self.config.scheme.clone()))
     }
 }
 
