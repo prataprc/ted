@@ -327,6 +327,10 @@ impl State {
                 }
                 // dispatch
                 evnts.push(inner.on_event(evnt)?);
+                evnts = {
+                    let iter = evnts.filter_map(|e| self.handle_command(e));
+                    Event::from_iter(iter)
+                };
                 inner.on_refresh(&self)?;
             }
             err_at!(Fatal, termex!(inner.to_cursor()))?;
@@ -342,6 +346,12 @@ impl State {
         match evnt {
             Event::Char('q', _) => true,
             _ => false,
+        }
+    }
+
+    fn handle_command(&mut self, evnt: Event) -> Option<Event> {
+        match evnt {
+            evnt => Some(evnt),
         }
     }
 }

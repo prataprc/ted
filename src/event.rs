@@ -6,7 +6,7 @@
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 use tree_sitter as ts;
 
-use std::{fmt, mem, result};
+use std::{fmt, iter::FromIterator, mem, result};
 
 use crate::{pubsub::Notify, Error, Result};
 
@@ -161,6 +161,26 @@ impl Iterator for Event {
     }
 }
 
+impl FromIterator<Event> for Event {
+    fn from_iter<T>(iter: T) -> Event
+    where
+        T: IntoIterator<Item = Event>,
+    {
+        let mut evnts: Vec<Event> = vec![];
+        for evnt in iter {
+            match Event::from_iter(evnt) {
+                Event::List(es) => evnts.extend(es),
+                Event::Noop => (),
+                evnt => evnts.push(evnt),
+            }
+        }
+        match evnts.len() {
+            0 => Event::Noop,
+            1 => evnts.remove(0),
+            _ => Event::List(evnts),
+        }
+    }
+}
 impl Extend<Event> for Event {
     fn extend<I>(&mut self, iter: I)
     where
