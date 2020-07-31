@@ -40,9 +40,8 @@ impl fmt::Display for WindowEdit {
     }
 }
 
-impl WindowEdit {
-    #[inline]
-    pub fn new(coord: Coord, buf: &Buffer, app: &code::Code) -> WindowEdit {
+impl<'a, 'b> From<(&'a code::Code, &'b Buffer, Coord)> for WindowEdit {
+    fn from((app, buf, coord): (&'a code::Code, &'b Buffer, Coord)) -> Self {
         use crate::view::{NoWrap, Wrap};
 
         let cursor = if app.config.wrap {
@@ -68,7 +67,9 @@ impl WindowEdit {
         debug!("{} {} {}", we, we.scroll_off, we.line_number);
         we
     }
+}
 
+impl WindowEdit {
     pub fn set_buffer(&mut self, buf: &Buffer) -> &mut Self {
         self.altn_buf_id = Some(self.curr_buf_id.clone());
         self.curr_buf_id = buf.to_id();

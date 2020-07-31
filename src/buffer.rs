@@ -663,9 +663,9 @@ impl Buffer {
                 Event::Noop
             }
             // motion command marks and jumps
-            Event::Mt(Mto::Jump(typ, id)) => {
+            Event::Mt(Mto::Jump(typ, mindex)) => {
                 let cursor = {
-                    let mark = mark::get_mark(&self.marks, id as u8);
+                    let mark = mark::get_mark(&self.marks, mindex as u8);
                     mark.map(|m| m.to_cursor())
                 };
                 cursor.map(|c| self.set_cursor(c).clear_sticky_col());
@@ -675,14 +675,14 @@ impl Buffer {
                 }
                 Event::Noop
             }
-            Event::Mark(id) => match id {
-                'a'..='z' | 'A'..='Z' | '\'' | '`' => {
+            Event::Mark(mindex) => match mindex {
+                'a'..='z' | '\'' | '`' => {
                     let cursor = self.to_char_cursor();
-                    let mark = mark::Mark::new(id as u8, self, cursor);
-                    self.marks[id as usize] = Some(mark);
+                    let mark = mark::Mark::new(mindex as u8, self, cursor);
+                    self.marks[mindex as usize] = Some(mark);
                     Event::Noop
                 }
-                _ => Event::Mark(id),
+                _ => Event::Mark(mindex),
             },
 
             Event::Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(self, e)?,

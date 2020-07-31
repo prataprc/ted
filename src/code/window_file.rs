@@ -33,14 +33,16 @@ impl fmt::Display for WindowFile {
     }
 }
 
-impl WindowFile {
-    pub fn new(coord: Coord, buf: &Buffer, app: &code::Code) -> WindowFile {
+impl<'a, 'b> From<(&'a code::Code, &'b Buffer, Coord)> for WindowFile {
+    fn from((app, buf, coord): (&'a code::Code, &'b Buffer, Coord)) -> Self {
         WindowFile {
             coord,
-            we: WindowEdit::new(coord, buf, app),
+            we: (app, buf, coord).into(),
         }
     }
+}
 
+impl WindowFile {
     pub fn to_event_prefix(&self) -> Event {
         self.we.to_event_prefix()
     }

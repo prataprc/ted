@@ -48,24 +48,23 @@ impl fmt::Display for WindowLine {
     }
 }
 
-impl WindowLine {
-    #[inline]
-    pub fn new_status(coord: Coord, _: &code::Code) -> WindowLine {
-        let spans = vec![];
-        WindowLine {
-            name: "stsline".to_string(),
-            coord,
-            inner: Inner::Status { spans },
-        }
-    }
-
-    #[inline]
-    pub fn new_tab(coord: Coord, _: &code::Code) -> WindowLine {
-        let spans = vec![];
-        WindowLine {
-            name: "tbcline".to_string(),
-            coord,
-            inner: Inner::Tab { spans },
+impl From<(&'static str, Coord)> for WindowLine {
+    fn from((what, coord): (&'static str, Coord)) -> Self {
+        let inner = Inner::Status {
+            spans: Vec::default(),
+        };
+        match what {
+            "stsline" => WindowLine {
+                name: "stsline".to_string(),
+                coord,
+                inner,
+            },
+            "tbcline" => WindowLine {
+                name: "tbcline".to_string(),
+                coord,
+                inner,
+            },
+            _ => unreachable!(),
         }
     }
 }

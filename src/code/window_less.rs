@@ -26,9 +26,8 @@ impl fmt::Display for WindowLess {
     }
 }
 
-impl WindowLess {
-    #[inline]
-    pub fn new(coord: Coord, content: &str, _: &code::Code) -> WindowLess {
+impl<'a, 'b> From<(&'a code::Code, &'b str, Coord)> for WindowLess {
+    fn from((_, content, coord): (&'a code::Code, &'b str, Coord)) -> Self {
         let loc = Location::new_ted("win-less", io::empty()).unwrap();
         let mut w = WindowLess {
             coord,

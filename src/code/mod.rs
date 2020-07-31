@@ -25,13 +25,17 @@ use std::{ffi, mem, sync::mpsc};
 use crate::{
     app::Application,
     buffer::Buffer,
+    code::config::Config,
+    code::window_cmd::WindowCmd,
+    code::window_file::WindowFile,
+    code::window_less::WindowLess,
+    code::window_line::WindowLine,
     code::window_prompt::WindowPrompt,
-    code::{config::Config, window_cmd::WindowCmd, window_file::WindowFile},
-    code::{window_less::WindowLess, window_line::WindowLine},
     colors::ColorScheme,
     event::{self, Event},
     location::Location,
-    pubsub::{Notify, PubSub},
+    mark,
+    pubsub::{self, PubSub},
     state::{self, State},
     window::{Coord, Cursor, Window},
     Result,
@@ -51,6 +55,8 @@ pub struct Code {
     schemes: Vec<ColorScheme>,
     // buffer-list
     buffers: Vec<Buffer>,
+    // list of global marks,
+    marks: mark::new_marks(),
 
     // application state machine
     inner: Inner,
@@ -118,15 +124,12 @@ impl AsMut<Config> for Code {
 
 impl<'a> From<(&'a State, Coord)> for Code {
     fn from((state, coord): (&'a State, Coord)) -> Code {
-        use crate::config as mod_config;
-
-        let config: Config = {
+        let config = {
             let value = {
                 let toml_value = state.config_value.clone();
-                mod_config::to_section(toml_value, "code")
+                crate::config::to_section(toml_value, "code")
             };
-            let cnf: Config = Config::default();
-            cnf.mixin(value.try_into().unwrap())
+            Config::default().mixin(value.try_into().unwrap())
         };
 
         debug!(
@@ -145,31 +148,23 @@ impl<'a> From<(&'a State, Coord)> for Code {
             inner: Inner::default(),
         };
 
-        let (mut buffers, prompts) = {
+        let (buffers, prompts) = {
             let files = {
-                let iter = state.opts.files.iter().map(
-                    // TODO: encoding from cmd-line
-                    |f| (f.clone(), format!("utf-8")),
-                );
-                iter.collect()
+                let iter = state.opts.files.iter();
+                iter.map(|f| (f.clone(), format!("utf-8"))).collect()
             };
-            let coord = Self::to_coord_prompt(coord);
-            app.open_cmd_files(coord, files)
+            match app.open_cmd_files(files) {
+                (bufs, ps) if bufs.len() == 0 => (vec![Buffer::empty()], ps),
+                (bufs, ps) => (bufs, ps),
+            }
         };
-        if buffers.len() == 0 {
-            buffers.push(Buffer::empty());
-        }
+
         let edit = {
-            let stsline = app.new_window_line("status-line", coord);
-            let tbcline = app.new_window_line("tab-compl-line", coord);
-            let wfile = {
-                let buf = buffers.first().unwrap();
-                app.new_window_file(coord, buf)
-            };
+            let buffer = buffers.first().unwrap();
             Edit {
-                wfile,
-                stsline,
-                tbcline,
+                wfile: (&app, buffer, app.to_coord_wfile()).into(),
+                stsline: ("stsline", app.to_coord_stsline()).into(),
+                tbcline: ("tbcline", app.to_coord_tbcline()).into(),
             }
         };
 
@@ -184,52 +179,41 @@ impl<'a> From<(&'a State, Coord)> for Code {
 }
 
 impl Code {
-    fn new_window_file(&self, mut coord: Coord, buf: &Buffer) -> WindowFile {
+    #[inline]
+    fn to_coord_wfile(&self) -> Coord {
+        let mut coord = self.coord;
         coord.hgt = coord.hgt.saturating_sub(1);
-        WindowFile::new(coord, buf, self)
-    }
-
-    fn new_window_prompt(&self, coord: Coord, ls: Vec<String>) -> WindowPrompt {
-        WindowPrompt::new(coord, ls, self)
-    }
-
-    fn new_window_line(&self, what: &str, mut coord: Coord) -> WindowLine {
-        match what {
-            "status-line" => {
-                coord.row = coord.hgt;
-                coord.hgt = 1;
-                WindowLine::new_status(coord, self)
-            }
-            "tab-compl-line" => {
-                coord.row = coord.hgt.saturating_sub(1);
-                coord.hgt = 1;
-                WindowLine::new_tab(coord, self)
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    fn new_window_cmd(&self, mut coord: Coord, edit: Edit) -> Command {
-        let tbcline = self.new_window_line("tab-compl-line", coord);
-        let wcmd = {
-            coord.row = coord.hgt;
-            coord.hgt = 1;
-            (coord, self).into()
-        };
-        Command {
-            edit,
-            tbcline,
-            wcmd,
-        }
-    }
-
-    fn new_window_less(&self, coord: Coord, content: &str) -> WindowLess {
-        WindowLess::new(coord, content, self)
+        coord
     }
 
     #[inline]
-    fn to_coord_prompt(mut coord: Coord) -> Coord {
+    fn to_coord_wcmd(&self) -> Coord {
+        let mut coord = self.coord;
+        coord.row = coord.hgt;
+        coord.hgt = 1;
+        coord
+    }
+
+    #[inline]
+    fn to_coord_prompt(&self) -> Coord {
+        let mut coord = self.coord;
         coord.hgt = coord.hgt.saturating_sub(1);
+        coord
+    }
+
+    #[inline]
+    fn to_coord_stsline(&self) -> Coord {
+        let mut coord = self.coord;
+        coord.row = coord.hgt;
+        coord.hgt = 1;
+        coord
+    }
+
+    #[inline]
+    fn to_coord_tbcline(&self) -> Coord {
+        let mut coord = self.coord;
+        coord.row = coord.hgt.saturating_sub(1);
+        coord.hgt = 1;
         coord
     }
 }
@@ -250,15 +234,6 @@ impl Code {
             Some(i) => Some(self.buffers.remove(i)),
             None => None,
         }
-    }
-
-    #[inline]
-    pub fn post(&mut self, _msg: Notify) -> Result<()> {
-        //match msg {
-        //    Notify::Status(sl)) -> self.stsline.set(sl),
-        //    Notify::TabComplete(sl) -> self.tbcline.set(sl),
-        //}
-        Ok(())
     }
 }
 
@@ -295,11 +270,8 @@ impl Code {
 }
 
 impl Code {
-    fn open_cmd_files(
-        &self,
-        coord: Coord,
-        files: Vec<(String, String)>,
-    ) -> (Vec<Buffer>, Vec<WindowPrompt>) {
+    fn open_cmd_files(&self, files: Vec<(String, String)>) -> (Vec<Buffer>, Vec<WindowPrompt>) {
+        let coord = self.to_coord_prompt();
         let (mut buffers, mut prompts) = (vec![], vec![]);
 
         let mut locs: Vec<Location> = vec![];
@@ -312,7 +284,7 @@ impl Code {
                         format!("error opening {:?} : {}", f, err.to_error()),
                         format!("-press any key to continue-"),
                     ];
-                    prompts.push(self.new_window_prompt(coord, lines));
+                    prompts.push((self, coord, lines).into());
                 }
             }
         }
@@ -336,7 +308,7 @@ impl Code {
                         format!("error opening {} : {}", loc, err.to_error()),
                         format!("-press any key to continue-"),
                     ];
-                    prompts.push(self.new_window_prompt(coord, lines));
+                    prompts.push((self, coord, lines).into());
                 }
             }
         }
@@ -346,11 +318,11 @@ impl Code {
 }
 
 impl Application for Code {
-    fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
+    fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<pubsub::Notify>) {
         self.subscribers.subscribe(topic, tx);
     }
 
-    fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
+    fn notify(&self, topic: &str, msg: pubsub::Notify) -> Result<()> {
         self.subscribers.notify(topic, msg)
     }
 
@@ -369,7 +341,11 @@ impl Application for Code {
         let (mut inner, evnt) = match (inner, evnt) {
             (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
                 let prefix = edit.wfile.to_event_prefix();
-                let mut val = self.new_window_cmd(self.coord, edit);
+                let mut val = Command {
+                    edit,
+                    tbcline: ("tbcline", self.to_coord_tbcline()).into(),
+                    wcmd: (&*self, self.to_coord_wcmd()).into(),
+                };
                 let evnt = val.wcmd.on_event(self, prefix)?;
                 (Inner::Command(val), evnt)
             }
@@ -400,16 +376,19 @@ impl Application for Code {
 
         let mut new_evnt: Event = Event::default();
         for evnt in evnt.into_iter() {
-            match evnt {
+            inner = match evnt {
                 Event::Code(event::Code::Less(ref content)) => {
                     let edit = inner.into_edit();
-                    let wless = self.new_window_less(self.coord, content);
-                    inner = Inner::Less(Less { edit, wless });
+                    Inner::Less(Less {
+                        edit,
+                        wless: (&*self, content.as_str(), self.coord).into(),
+                    })
                 }
-                Event::Esc => {
-                    inner = Inner::Edit(inner.into_edit());
+                Event::Esc => Inner::Edit(inner.into_edit()),
+                evnt => {
+                    new_evnt.push(evnt);
+                    inner
                 }
-                evnt => new_evnt.push(evnt),
             }
         }
 

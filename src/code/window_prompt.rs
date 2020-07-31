@@ -34,8 +34,8 @@ impl fmt::Display for WindowPrompt {
     }
 }
 
-impl WindowPrompt {
-    pub fn new(coord: Coord, lines: Vec<String>, app: &code::Code) -> Self {
+impl<'a> From<(&'a code::Code, Coord, Vec<String>)> for WindowPrompt {
+    fn from((app, coord, lines): (&'a code::Code, Coord, Vec<String>)) -> Self {
         let scheme = app.to_color_scheme(None);
         let style = Self::to_style(&lines, &scheme);
         let span_lines: Vec<Spanline> = {

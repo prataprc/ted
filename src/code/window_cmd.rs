@@ -36,8 +36,8 @@ impl fmt::Display for WindowCmd {
     }
 }
 
-impl<'a> From<(Coord, &'a code::Code)> for WindowCmd {
-    fn from((coord, app): (Coord, &'a code::Code)) -> WindowCmd {
+impl<'a> From<(&'a code::Code, Coord)> for WindowCmd {
+    fn from((app, coord): (&'a code::Code, Coord)) -> WindowCmd {
         use crate::view::NoWrap;
 
         let buf = {

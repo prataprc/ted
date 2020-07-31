@@ -11,7 +11,7 @@ pub fn new_marks() -> Marks {
 
 #[derive(Clone)]
 pub struct Mark {
-    id: u8,
+    index: u8,
     buf_id: String,
     cursor: usize,
     col: usize,
@@ -19,10 +19,10 @@ pub struct Mark {
 }
 
 impl Mark {
-    pub fn new(id: u8, buf: &Buffer, cursor: usize) -> Self {
+    pub fn new(index: u8, buf: &Buffer, cursor: usize) -> Self {
         let bc_xy = buf.to_xy_cursor(Some(cursor));
         Mark {
-            id,
+            index,
             buf_id: buf.to_id(),
             cursor,
             col: bc_xy.col,
@@ -42,19 +42,19 @@ impl Mark {
 }
 
 #[inline]
-pub fn get_mark(marks: &Marks, id: u8) -> Option<Mark> {
-    marks[id as usize].clone()
+pub fn get_mark(marks: &Marks, index: u8) -> Option<Mark> {
+    marks[index as usize].clone()
 }
 
 #[inline]
 pub fn set_mark(marks: &mut Marks, mark: Mark) -> Option<Mark> {
-    let id = mark.id as usize;
-    let old = marks[id].take();
-    marks[id] = Some(mark);
+    let index = mark.index as usize;
+    let old = marks[index].take();
+    marks[index] = Some(mark);
     old
 }
 
 #[inline]
-pub fn del_mark(marks: &mut Marks, id: u8) -> Option<Mark> {
-    marks[id as usize].take()
+pub fn del_mark(marks: &mut Marks, index: u8) -> Option<Mark> {
+    marks[index as usize].take()
 }
