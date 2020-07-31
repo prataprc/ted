@@ -40,6 +40,10 @@
         {
           "type": "SYMBOL",
           "name": "set"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "edit"
         }
       ]
     },
@@ -104,6 +108,19 @@
         {
           "type": "STRING",
           "value": "nowrap"
+        }
+      ]
+    },
+    "edit": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "edit"
+        },
+        {
+          "type": "PATTERN",
+          "value": ".*"
         }
       ]
     }

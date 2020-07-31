@@ -8,11 +8,20 @@
       "required": true,
       "types": [
         {
+          "type": "edit",
+          "named": true
+        },
+        {
           "type": "set",
           "named": true
         }
       ]
     }
+  },
+  {
+    "type": "edit",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "range",
@@ -74,6 +83,10 @@
   },
   {
     "type": ",",
+    "named": false
+  },
+  {
+    "type": "edit",
     "named": false
   },
   {
