@@ -214,7 +214,7 @@ impl Code {
         let wcmd = {
             coord.row = coord.hgt;
             coord.hgt = 1;
-            WindowCmd::new(coord, self)
+            (coord, self).into()
         };
         Command {
             edit,
