@@ -1,4 +1,5 @@
 use crate::{buffer::Buffer, window::WinBuffer};
+use std::{fmt, result};
 
 pub type Marks = [Option<Mark>; 256];
 
@@ -9,30 +10,53 @@ pub fn new_marks() -> Marks {
     marks
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Mark {
-    index: u8,
+    index: char,
     buf_id: String,
     cursor: usize,
     col: usize,
     row: usize,
 }
 
-impl Mark {
-    pub fn new(index: u8, buf: &Buffer, cursor: usize) -> Self {
-        let bc_xy = buf.to_xy_cursor(Some(cursor));
+impl fmt::Display for Mark {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(f, "Mark<{:?},{},{}>", self.index, self.buf_id, self.cursor)
+    }
+}
+
+impl From<char> for Mark {
+    fn from(index: char) -> Mark {
         Mark {
-            index,
-            buf_id: buf.to_id(),
-            cursor,
-            col: bc_xy.col,
-            row: bc_xy.row,
+            index: index,
+            buf_id: String::default(),
+            cursor: usize::default(),
+            col: usize::default(),
+            row: usize::default(),
         }
+    }
+}
+
+impl Mark {
+    pub fn into_mark(mut self, buf: &Buffer) -> Self {
+        self.buf_id = buf.to_id();
+        self.cursor = buf.to_char_cursor();
+
+        let bc_xy = buf.to_xy_cursor(Some(self.cursor));
+
+        self.col = bc_xy.col;
+        self.row = bc_xy.row;
+        self
     }
 
     #[inline]
     pub fn to_cursor(&self) -> usize {
         self.cursor
+    }
+
+    #[inline]
+    pub fn to_index(&self) -> char {
+        self.index
     }
 
     #[inline]
@@ -42,7 +66,7 @@ impl Mark {
 }
 
 #[inline]
-pub fn get_mark(marks: &Marks, index: u8) -> Option<Mark> {
+pub fn get_mark(marks: &Marks, index: char) -> Option<Mark> {
     marks[index as usize].clone()
 }
 

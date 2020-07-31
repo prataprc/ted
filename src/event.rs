@@ -10,7 +10,7 @@ use tree_sitter as ts;
 
 use std::{fmt, iter::FromIterator, mem, result};
 
-use crate::{pubsub::Notify, Error, Result};
+use crate::{mark, pubsub::Notify, Error, Result};
 
 /// Events
 #[derive(Clone, Eq, PartialEq)]
@@ -43,9 +43,9 @@ pub enum Event {
     M,            // mark prefix
     Op(Opr),      // Operation  (op-event)
     // folded events for buffer management.
-    Mark(char), // ([a-zA-Z'`\]\[],)
-    Md(Mod),    // Mode       (n, mode-event)
-    Mt(Mto),    // Motion     (n, motion-event)
+    Mark(mark::Mark), // (mark-value,)
+    Md(Mod),          // Mode       (n, mode-event)
+    Mt(Mto),          // Motion     (n, motion-event)
     // other events
     JumpFrom(usize), // (cursor,)
     Edit(Edit),
@@ -246,7 +246,7 @@ impl fmt::Display for Event {
             J(ch) => write!(f, "j({})", ch),
             Op(opr) => write!(f, "op({})", opr),
             // folded events for buffer management.
-            Mark(id) => write!(f, "mark({})", id),
+            Mark(mark) => write!(f, "mark({})", mark),
             Md(md) => write!(f, "md({})", md),
             Mt(mt) => write!(f, "mt({})", mt),
             // other events

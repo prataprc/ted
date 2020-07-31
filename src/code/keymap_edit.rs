@@ -259,9 +259,7 @@ impl KeyEdit {
             },
             M if m_empty => match evnt {
                 Char(ch, _) => match ch {
-                    'a'..='z' => (noop, Mark(ch)),
-                    'A'..='Z' => (noop, Mark(ch)),
-                    '\'' | '`' => (noop, Mark(ch)),
+                    'a'..='z' | 'A'..='Z' | '\'' | '`' => (noop, Mark(ch.into())),
                     _ => (noop, evnt),
                 },
                 evnt => (noop, evnt),

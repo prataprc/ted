@@ -56,7 +56,7 @@ pub struct Code {
     // buffer-list
     buffers: Vec<Buffer>,
     // list of global marks,
-    marks: mark::new_marks(),
+    marks: mark::Marks,
 
     // application state machine
     inner: Inner,
@@ -145,6 +145,7 @@ impl<'a> From<(&'a State, Coord)> for Code {
             schemes: state.schemes.clone(),
             subscribers: state.subscribers.clone(),
             buffers: Vec::default(),
+            marks: mark::new_marks(),
             inner: Inner::default(),
         };
 
@@ -339,6 +340,11 @@ impl Application for Code {
     fn on_event(&mut self, evnt: Event) -> Result<Event> {
         let inner = mem::replace(&mut self.inner, Inner::default());
         let (mut inner, evnt) = match (inner, evnt) {
+            (Inner::Edit(edit), Event::Mark(mrk)) => {
+                let index = mrk.to_index() as usize;
+                self.marks[index] = Some(mrk);
+                (Inner::Edit(edit), Event::Noop)
+            }
             (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
                 let prefix = edit.wfile.to_event_prefix();
                 let mut val = Command {
