@@ -562,7 +562,7 @@ impl Buffer {
                 self.set_cursor(cursor).set_sticky_col(dp, "end");
                 Event::Noop
             }
-            Event::Mt(Mto::LineMiddle(1, _)) => {
+            Event::Mt(Mto::LineMiddle(p, _)) if p <= 1 => {
                 let cursor = mto_line_middle(self, 50)?;
                 self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
@@ -607,6 +607,7 @@ impl Buffer {
                 Event::Noop
             }
             Event::Mt(Mto::Row(n, dp)) => {
+                let n = n.saturating_sub(1);
                 let cursor = mto_row(self, n, dp)?;
                 self.set_cursor(cursor);
                 Event::Noop

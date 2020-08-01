@@ -239,11 +239,11 @@ impl WindowEdit {
                 let bc_xy = buf.to_xy_cursor(None);
                 let last_line = buf.to_last_line_idx();
                 let from = bc_xy.row;
-                let to = cmp::min(last_line, bc_xy.row + n.saturating_sub(1));
+                let to = cmp::min(last_line, bc_xy.row + n);
                 view::wrap_lines(buf, (from..=to).collect(), scr_wth)
             };
             let item = {
-                let iter = slines.into_iter().skip_while(|sl| sl.bc < cursor);
+                let iter = slines.into_iter().skip_while(|sl| sl.bc <= cursor);
                 iter.skip(n.saturating_sub(1)).next().clone()
             };
             item.map(|sl| sl.bc + scr_col).unwrap_or(scr_col)
