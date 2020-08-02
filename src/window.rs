@@ -241,6 +241,168 @@ pub struct JumpList {
     zero: Option<Jump>,
     older: Vec<Jump>,
     inner: Vec<Jump>,
+    rowbits: Vec<u64>,
+}
+
+impl Default for JumpList {
+    fn default() -> JumpList {
+        JumpList {
+            zero: None,
+            older: Vec::default(),
+            inner: Vec::default(),
+            rowbits: Vec::default(),
+        }
+    }
+}
+
+impl JumpList {
+    pub fn remember(&mut self, jmp: Jump) {
+        let fix_row: bool = match self.zero.take() {
+            Some(zero) if zero.row == jmp.row => {
+                self.older.extend(self.inner.drain(..).rev());
+                false
+            }
+            Some(zero) => {
+                self.older.push(zero);
+                self.older.extend(self.inner.drain(..).rev());
+                true
+            }
+            None => true,
+        };
+
+        assert_eq!(self.inner.len(), 0);
+
+        if fix_row && self.get_rowbit(jmp.row) {
+            self.jumps_for_row(jmp.row).into_iter().rev().for_each(|i| {
+                self.older.remove(i);
+            })
+        }
+        self.set_rowbit(jmp.row);
+        self.older.push(jmp);
+        self.zero = None;
+    }
+
+    pub fn older(&mut self, n: usize, jmp: Option<Jump>) {
+        match (self.zero.clone(), jmp) {
+            (None, Some(jmp)) => {
+                if self.get_rowbit(jmp.row) {
+                    self.jumps_for_row(jmp.row).into_iter().rev().for_each(|i| {
+                        self.older.remove(i);
+                    })
+                }
+                self.set_rowbit(jmp.row);
+                self.older.push(jmp);
+            }
+            _ => (),
+        }
+        // if user already moving around the jump-list, ignore `jmp`.
+
+        match self.older.len() {
+            0 => (),
+            _ if n == 0 => (),
+            _ => {
+                self.zero.take().map(|zero| self.inner.push(zero));
+                let off = {
+                    let n = cmp::min(n, self.older.len()).saturating_sub(1);
+                    let mut iter = self.older.iter().enumerate().rev().skip(n);
+                    iter.next().map(|(i, _)| i).unwrap_or(0)
+                };
+                let mut iter = self.older.drain(off..);
+                self.zero = iter.next();
+                self.inner.extend(iter.rev());
+            }
+        }
+    }
+
+    pub fn newer(&mut self, n: usize) {
+        match self.inner.len() {
+            0 => (),
+            _ if n == 0 => (),
+            _ => {
+                self.zero.take().map(|zero| self.older.push(zero));
+                let off = {
+                    let n = cmp::min(n, self.inner.len()).saturating_sub(1);
+                    let mut iter = self.inner.iter().enumerate().rev().skip(n);
+                    iter.next().map(|(i, _)| i).unwrap_or(0)
+                };
+                let mut iter = self.inner.drain(off..);
+                self.zero = iter.next();
+                self.older.extend(iter.rev());
+            }
+        }
+    }
+
+    pub fn update(&mut self, edit: &event::Edit) {
+        let row = self.zero.clone().map(|zero| zero.row);
+        self.zero = match (self.zero.take(), row) {
+            (Some(jmp), Some(row)) => match jmp.update(&edit) {
+                zero @ Some(_) => zero,
+                None => {
+                    self.del_rowbit(row);
+                    None
+                }
+            },
+            _ => None,
+        };
+
+        let (mut older, mut rows) = (vec![], vec![]);
+        for jmp in self.older.drain(..) {
+            let row = jmp.row;
+            match jmp.update(&edit) {
+                Some(jmp) => older.push(jmp),
+                None => rows.push(row),
+            }
+        }
+        rows.into_iter().for_each(|row| self.del_rowbit(row));
+        self.older = older;
+
+        let (mut inner, mut rows) = (vec![], vec![]);
+        for jmp in self.inner.drain(..) {
+            let row = jmp.row;
+            match jmp.update(&edit) {
+                Some(jmp) => inner.push(jmp),
+                None => rows.push(row),
+            }
+        }
+        rows.into_iter().for_each(|row| self.del_rowbit(row));
+        self.inner = inner;
+    }
+
+    fn jumps_for_row(&self, row: usize) -> Vec<usize> {
+        let mut offs = vec![];
+        for (i, jmp) in self.older.iter().enumerate() {
+            if jmp.row == row {
+                offs.push(i)
+            }
+        }
+        offs
+    }
+
+    fn get_rowbit(&mut self, row: usize) -> bool {
+        let (wo, bo) = (row / 64, row % 64);
+        match self.rowbits.len() {
+            n if wo < n => (self.rowbits[wo] & (1 << bo)) > 0,
+            _ => false,
+        }
+    }
+
+    fn set_rowbit(&mut self, row: usize) {
+        if self.rowbits.len() < (row / 64) + 1 {
+            self.rowbits.resize((row / 64) + 1, u64::default());
+        }
+        let (wo, bo) = (row / 64, row % 64);
+        self.rowbits[wo] = self.rowbits[wo] | (1 << bo);
+    }
+
+    fn del_rowbit(&mut self, row: usize) {
+        let (wo, bo) = (row / 64, row % 64);
+        match self.rowbits.len() {
+            n if wo < n => {
+                self.rowbits[wo] = self.rowbits[wo] & (!(1 << bo));
+            }
+            _ => (),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -262,7 +424,7 @@ impl Jump {
         }
     }
 
-    fn adjust(mut self, edit: &event::Edit) -> Option<Self> {
+    fn update(mut self, edit: &event::Edit) -> Option<Self> {
         use crate::event::Edit;
 
         match edit {
@@ -292,96 +454,6 @@ impl Jump {
                 }
             }
             _ => Some(self),
-        }
-    }
-}
-
-impl Default for JumpList {
-    fn default() -> JumpList {
-        JumpList {
-            zero: None,
-            older: vec![],
-            inner: vec![],
-        }
-    }
-}
-
-impl JumpList {
-    pub fn remember(&mut self, zero: Jump) {
-        match self.zero.take() {
-            Some(jmp) if jmp.row == zero.row => {
-                self.older.extend(self.inner.drain(..).rev());
-                self.zero = Some(zero);
-            }
-            Some(jmp) => {
-                self.older.push(jmp);
-                self.older.extend(self.inner.drain(..).rev());
-                self.zero = Some(zero);
-            }
-            None => self.older.push(zero),
-        };
-    }
-
-    fn older(&mut self, n: usize) -> Option<Jump> {
-        let n = cmp::min(n, self.older.len());
-        match self.older.len() {
-            0 => None,
-            _ if n == 0 => None,
-            m /* n <= m */ => {
-                let at = m.saturating_sub(n);
-                let mut inner = self.older.drain(at..);
-                let zero = inner.next();
-
-                if let Some(zero) =  self.zero.take() {
-                    self.inner.push(zero);
-                }
-                self.inner.extend(inner.rev());
-                self.zero = zero.clone();
-
-                zero
-            }
-        }
-    }
-
-    fn newer(&mut self, n: usize) -> Option<Jump> {
-        let n = cmp::min(n, self.inner.len());
-        match self.inner.len() {
-            0 => None,
-            _ if n == 0 => None,
-            m /* n <= m */ => {
-                let at = m.saturating_sub(n);
-                let mut inner = self.inner.drain(at..);
-                let zero = inner.next();
-
-                if let Some(zero) =  self.zero.take() {
-                    self.older.push(zero);
-                }
-                self.older.extend(inner.rev());
-                self.zero = zero.clone();
-
-                zero
-            }
-        }
-    }
-
-    fn adjust(&mut self, event: Event) -> Event {
-        match event {
-            Event::Edit(edit) => {
-                self.zero = match self.zero.take() {
-                    Some(zero) => zero.adjust(&edit),
-                    None => None,
-                };
-                self.older = {
-                    let iter = self.older.drain(..);
-                    iter.filter_map(|jmp| jmp.adjust(&edit)).collect()
-                };
-                self.inner = {
-                    let iter = self.inner.drain(..);
-                    iter.filter_map(|jmp| jmp.adjust(&edit)).collect()
-                };
-                Event::Edit(edit)
-            }
-            event => event,
         }
     }
 }
