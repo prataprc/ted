@@ -50,6 +50,11 @@ impl Mark {
     }
 
     #[inline]
+    pub fn to_buffer_id(&self) -> String {
+        self.buf_id.clone()
+    }
+
+    #[inline]
     pub fn to_cursor(&self) -> usize {
         self.cursor
     }

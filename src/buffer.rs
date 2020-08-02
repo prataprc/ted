@@ -665,21 +665,26 @@ impl Buffer {
             }
             // motion command marks and jumps
             Event::Mt(Mto::Jump(typ, mindex)) => {
-                let cursor = {
-                    let mark = mark::get_mark(&self.marks, mindex);
-                    mark.map(|m| m.to_cursor())
-                };
-                cursor.map(|c| self.set_cursor(c).clear_sticky_col());
-                if typ == '\'' {
-                    let cursor = mto_line_home(self, DP::TextCol)?;
-                    self.set_cursor(cursor);
+                let mrk = mark::get_mark(&self.marks, mindex);
+                match mrk {
+                    Some(mrk) if typ == '`' => {
+                        let cursor = mrk.to_cursor();
+                        self.set_cursor(cursor).clear_sticky_col();
+                        Event::Noop
+                    }
+                    Some(mrk) if typ == '\'' => {
+                        self.set_cursor(mrk.to_cursor());
+                        let cursor = mto_line_home(self, DP::TextCol)?;
+                        self.set_cursor(cursor).clear_sticky_col();
+                        Event::Noop
+                    }
+                    _ => Event::Mt(Mto::Jump(typ, mindex)),
                 }
-                Event::Noop
             }
             Event::Mark(mrk) => match mrk.to_index() {
                 'a'..='z' | '\'' | '`' => {
-                    let index = mrk.to_index() as usize;
-                    self.marks[index] = Some(mrk.into_mark(self));
+                    let mrk = mrk.into_mark(self);
+                    mark::set_mark(&mut self.marks, mrk);
                     Event::Noop
                 }
                 'A'..='Z' => Event::Mark(mrk.into_mark(self)),

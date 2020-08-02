@@ -338,12 +338,27 @@ impl Application for Code {
     }
 
     fn on_event(&mut self, evnt: Event) -> Result<Event> {
+        use crate::event::Mto;
+
         let inner = mem::replace(&mut self.inner, Inner::default());
         let (mut inner, evnt) = match (inner, evnt) {
             (Inner::Edit(edit), Event::Mark(mrk)) => {
-                let index = mrk.to_index() as usize;
-                self.marks[index] = Some(mrk);
+                mark::set_mark(&mut self.marks, mrk);
                 (Inner::Edit(edit), Event::Noop)
+            }
+            (Inner::Edit(edit), Event::Mt(Mto::Jump('`', _mindex))) => {
+                // TODO: use `:buffer` command to load the buffer.
+                // TODO: set the cursor, clear-sticky-col
+                (Inner::Edit(edit), Event::Noop)
+            }
+            (Inner::Edit(edit), Event::Mt(Mto::Jump('\'', _mindex))) => {
+                // TODO: use `:buffer` command to load the buffer.
+                // TODO: set the cursor, clear-sticky-col
+                // TODO: mto_line_home
+                (Inner::Edit(edit), Event::Noop)
+            }
+            (Inner::Edit(edit), Event::Mt(Mto::Jump(typ, mindex))) => {
+                (Inner::Edit(edit), Event::Mt(Mto::Jump(typ, mindex)))
             }
             (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
                 let prefix = edit.wfile.to_event_prefix();
