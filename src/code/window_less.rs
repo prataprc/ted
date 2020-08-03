@@ -1,7 +1,10 @@
 #[allow(unused_imports)]
 use log::trace;
 
-use std::{convert::TryInto, fmt, io, mem, result};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt, io, mem, result,
+};
 
 use crate::{
     buffer::Buffer,
@@ -10,7 +13,7 @@ use crate::{
     location::Location,
     text,
     window::{Coord, Cursor, Window},
-    Result,
+    Error, Result,
 };
 
 pub struct WindowLess {
@@ -26,9 +29,13 @@ impl fmt::Display for WindowLess {
     }
 }
 
-impl<'a, 'b> From<(&'a code::Code, &'b str, Coord)> for WindowLess {
-    fn from((_, content, coord): (&'a code::Code, &'b str, Coord)) -> Self {
-        let loc = Location::new_ted("win-less", io::empty()).unwrap();
+impl<'a, 'b> TryFrom<(&'a code::Code, &'b str, Coord)> for WindowLess {
+    type Error = Error;
+
+    fn try_from(arg: (&'a code::Code, &'b str, Coord)) -> Result<Self> {
+        let (_, content, coord) = arg;
+        let read_only = true;
+        let loc = Location::new_ted("win-less", io::empty(), read_only)?;
         let mut w = WindowLess {
             coord,
             status_line: String::default(),
@@ -36,7 +43,7 @@ impl<'a, 'b> From<(&'a code::Code, &'b str, Coord)> for WindowLess {
             buffer: Buffer::from_reader(content.as_bytes(), loc).unwrap(),
         };
         w.buffer.mode_normal();
-        w
+        Ok(w)
     }
 }
 

@@ -2,7 +2,10 @@ use crossterm::{cursor as term_cursor, queue};
 #[allow(unused_imports)]
 use log::trace;
 
-use std::{convert::TryInto, fmt, io, mem, result};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt, io, mem, result,
+};
 
 use crate::{
     buffer::{self, Buffer},
@@ -36,22 +39,25 @@ impl fmt::Display for WindowCmd {
     }
 }
 
-impl<'a> From<(&'a code::Code, Coord)> for WindowCmd {
-    fn from((app, coord): (&'a code::Code, Coord)) -> WindowCmd {
+impl<'a> TryFrom<(&'a code::Code, Coord)> for WindowCmd {
+    type Error = Error;
+
+    fn try_from((app, coord): (&'a code::Code, Coord)) -> Result<WindowCmd> {
         use crate::view::NoWrap;
 
-        let buf = {
-            let loc = Location::new_ted("code-cmd", io::empty()).unwrap();
-            let mut buf = Buffer::from_reader(io::empty(), loc).unwrap();
-            buf.mode_insert();
-            buf.cmd_insert_char(':').unwrap();
-            buf
+        let mut buf = {
+            let read_only = false;
+            let loc = Location::new_ted("code-cmd", io::empty(), read_only)?;
+            Buffer::from_reader(io::empty(), loc)?
         };
+        buf.mode_insert();
+        buf.cmd_insert_char(':').unwrap();
+
         let cursor = NoWrap::initial_cursor(false /*line_number*/);
         let obc_xy = (0, 0).into();
         let scheme = app.to_color_scheme(None);
         let syn_code_cmd = syntax::CodeCmd::new("", &scheme).unwrap();
-        WindowCmd {
+        Ok(WindowCmd {
             coord,
             cursor,
             obc_xy,
@@ -59,7 +65,7 @@ impl<'a> From<(&'a code::Code, Coord)> for WindowCmd {
             syn: syntax::Type::CodeCmd(syn_code_cmd),
             scheme,
             keymap: Keymap::new_cmd(),
-        }
+        })
     }
 }
 

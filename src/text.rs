@@ -4,26 +4,26 @@ use std::io;
 
 use crate::{Error, Result};
 
-pub enum Encoded {
+pub enum Encoding {
     Utf8(String),
 }
 
-impl From<String> for Encoded {
-    fn from(s: String) -> Encoded {
-        Encoded::Utf8(s)
+impl From<String> for Encoding {
+    fn from(s: String) -> Encoding {
+        Encoding::Utf8(s)
     }
 }
 
-impl From<Encoded> for String {
-    fn from(enc: Encoded) -> String {
+impl From<Encoding> for String {
+    fn from(enc: Encoding) -> String {
         match enc {
-            Encoded::Utf8(s) => s,
+            Encoding::Utf8(s) => s,
         }
     }
 }
 
-impl Encoded {
-    pub fn from_reader<R>(mut r: R, fenc: &str) -> Result<Encoded>
+impl Encoding {
+    pub fn from_reader<R>(mut r: R, fenc: &str) -> Result<Encoding>
     where
         R: io::Read,
     {
@@ -35,7 +35,7 @@ impl Encoded {
         match fenc {
             "utf8" | "utf-8" => {
                 let buf = err_at!(FailConvert, from_utf8(&buf))?;
-                Ok(Encoded::Utf8(buf.to_string()))
+                Ok(Encoding::Utf8(buf.to_string()))
             }
             _ => {
                 let s = format!("encoding {}", fenc);
@@ -49,7 +49,7 @@ impl Encoded {
         W: io::Write,
     {
         match self {
-            Encoded::Utf8(s) => err_at!(IOError, w.write_all(s.as_bytes())),
+            Encoding::Utf8(s) => err_at!(IOError, w.write_all(s.as_bytes())),
         }
     }
 }
@@ -110,4 +110,26 @@ where
     I: Iterator<Item = char>,
 {
     iter.filter_map(|ch| ch.width()).sum()
+}
+
+pub fn take_width<I>(mut iter: I, wth: usize) -> std::vec::IntoIter<char>
+where
+    I: Iterator<Item = char>,
+{
+    let mut n = 0_usize;
+    let mut chars = vec![];
+    loop {
+        match iter.next() {
+            Some(ch) => {
+                let w = ch.width().unwrap_or(0);
+                if (n + w) > wth {
+                    break chars.into_iter();
+                } else {
+                    n += w;
+                    chars.push(ch);
+                }
+            }
+            None => break chars.into_iter(),
+        }
+    }
 }

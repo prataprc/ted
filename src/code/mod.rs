@@ -20,7 +20,7 @@ mod window_prompt;
 use log::{debug, error, trace};
 use toml;
 
-use std::{ffi, mem, sync::mpsc};
+use std::{convert::TryFrom, ffi, mem, sync::mpsc};
 
 use crate::{
     app::Application,
@@ -365,7 +365,7 @@ impl Application for Code {
                 let mut val = Command {
                     edit,
                     tbcline: ("tbcline", self.to_coord_tbcline()).into(),
-                    wcmd: (&*self, self.to_coord_wcmd()).into(),
+                    wcmd: TryFrom::try_from((&*self, self.to_coord_wcmd()))?,
                 };
                 let evnt = val.wcmd.on_event(self, prefix)?;
                 (Inner::Command(val), evnt)
@@ -400,10 +400,11 @@ impl Application for Code {
             inner = match evnt {
                 Event::Code(event::Code::Less(ref content)) => {
                     let edit = inner.into_edit();
-                    Inner::Less(Less {
-                        edit,
-                        wless: (&*self, content.as_str(), self.coord).into(),
-                    })
+                    let wless = {
+                        let coord = self.coord;
+                        TryFrom::try_from((&*self, content.as_str(), coord))?
+                    };
+                    Inner::Less(Less { edit, wless })
                 }
                 Event::Esc => Inner::Edit(inner.into_edit()),
                 evnt => {

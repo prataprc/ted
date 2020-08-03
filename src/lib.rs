@@ -82,7 +82,7 @@ impl fmt::Debug for Error {
 }
 
 impl Error {
-    fn to_loc(&self) -> String {
+    pub fn to_loc(&self) -> String {
         use Error::{BadPattern, Fatal, IOError, Invalid, NoTopic, IPC};
         use Error::{FailBuffer, FailConvert, FailParse};
 
@@ -99,7 +99,7 @@ impl Error {
         }
     }
 
-    fn to_error(&self) -> String {
+    pub fn to_error(&self) -> String {
         use Error::{BadPattern, Fatal, IOError, Invalid, NoTopic, IPC};
         use Error::{FailBuffer, FailConvert, FailParse};
 
