@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use log::{debug, trace};
+use regex::RegexSet;
 use tree_sitter as ts;
 
 use std::{borrow::Borrow, convert::TryFrom, fmt, mem, rc::Rc, result};
@@ -76,7 +77,7 @@ impl Token {
 
 #[derive(Clone)]
 enum Span {
-    Pos(usize, usize),
+    Pos(usize, usize), // (inclusive-start, inclusive-end)
     Text(String),
 }
 
@@ -92,7 +93,7 @@ impl fmt::Display for Span {
 
         match self {
             Pos(a, z) => write!(f, "{},{}", *a, *z),
-            Text(txt) => write!(f, "{:?}", txt),
+            Text(txt) => write!(f, "{}", txt),
         }
     }
 }
@@ -104,13 +105,10 @@ impl Span {
 }
 
 impl Span {
-    fn pos_to_text(&mut self, tss: &str) -> Result<()> {
+    fn pos_to_text(self, tss: &str) -> Self {
         match self {
-            Span::Pos(a, z) => {
-                *self = Span::Text(tss[*a..*z].to_string());
-                Ok(())
-            }
-            Span::Text(_) => Ok(()),
+            Span::Pos(a, z) => Span::Text(tss[a..z].to_string()),
+            val @ Span::Text(_) => val,
         }
     }
 
@@ -122,10 +120,11 @@ impl Span {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Automata {
     name: String,
     patterns: Vec<Rc<Node>>,
+    patterns_re: RegexSet,
     open_nodes: Vec<Node>,
 }
 
@@ -158,6 +157,7 @@ impl Automata {
 
         let mut tc = root.walk();
         let mut patterns = vec![];
+        let mut kinds = vec![];
         for i in 0..root.child_count() {
             let child = root.child(i).unwrap();
             if child.kind() != "hl_rule" {
@@ -177,18 +177,22 @@ impl Automata {
             };
             for n_sel in n_selectors.into_iter() {
                 let style = style.clone();
-                patterns.push(Rc::new(Node::compile_pattern(
-                    n_sel,
-                    tss,
-                    style.clone(),
-                    &mut tc,
-                )?))
+                let node = Node::compile_pattern(n_sel, tss, style, &mut tc)?;
+                match &node {
+                    Node::Pattern(Edge::Kind(k), _) => {
+                        let s = k.as_text()?.to_string();
+                        kinds.push(s);
+                    }
+                    _ => (),
+                };
+                patterns.push(Rc::new(node))
             }
         }
 
         Ok(Automata {
             name: name.to_string(),
             patterns,
+            patterns_re: err_at!(Fatal, RegexSet::new(&kinds))?,
             open_nodes: Vec::default(),
         })
     }
@@ -196,72 +200,74 @@ impl Automata {
 
 impl Automata {
     pub fn shift_in(&mut self, token: &Token) -> Result<Option<Style>> {
-        use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
-
         // check whether there is a match with open-patterns.
         let mut style1: Option<Style> = None;
         let mut ops = vec![];
+
         // trace!("open_nodes: {:?}", self.open_nodes);
         for (off, open_node) in self.open_nodes.iter().enumerate() {
-            let (next, drop) = open_node.is_match(token)?;
-            style1 = match next {
-                Some(Node::End(style)) if drop => {
+            style1 = match open_node.is_match(token)? {
+                (Some(Node::End(style)), true) => {
                     ops.push((off, None));
                     Some(style1.unwrap_or(style))
                 }
-                Some(Node::End(style)) => Some(style1.unwrap_or(style)),
-                Some(next) => {
+                (Some(Node::End(style)), _) => Some(style1.unwrap_or(style)),
+                (Some(next), _) => {
                     ops.push((off, Some(next)));
                     style1
                 }
-                None if drop => {
+                (None, true) => {
                     ops.push((off, None));
                     style1
                 }
-                None => style1,
-            }
-        }
-        // trace!("ops: {:?}", ops);
-        for (off, next) in ops.into_iter().rev() {
-            match next {
-                Some(next) => {
-                    let _ = mem::replace(&mut self.open_nodes[off], next);
-                }
-                None => {
-                    self.open_nodes.remove(off);
-                }
+                (None, false) => style1,
             }
         }
 
-        let msg = format!("unreachable");
-        let mut style2: Option<Style> = None;
-        for node in self.patterns.iter() {
-            style2 = match node.borrow() {
-                Pattern(e, n) if e.is_match(token)? => match n.borrow() {
-                    End(style) => Some(style2.unwrap_or(style.clone())),
-                    Pattern(_, _) => {
-                        let open_node = n.to_open_node(token)?;
-                        self.open_nodes.push(open_node);
-                        style2
-                    }
-                    Twin { .. } => err_at!(Fatal, msg: msg)?,
-                    Sibling { .. } => err_at!(Fatal, msg: msg)?,
-                    Child { .. } => err_at!(Fatal, msg: msg)?,
-                    Descendant { .. } => err_at!(Fatal, msg: msg)?,
-                },
-                Pattern(_, _) => style2,
-                Twin { .. } => err_at!(Fatal, msg: msg)?,
-                Sibling { .. } => err_at!(Fatal, msg: msg)?,
-                Child { .. } => err_at!(Fatal, msg: msg)?,
-                Descendant { .. } => err_at!(Fatal, msg: msg)?,
-                End(_) => err_at!(Fatal, msg: msg)?,
-            }
+        // trace!("ops: {:?}", ops);
+        for (off, next) in ops.into_iter().rev() {
+            let _ = match next {
+                Some(next) => mem::replace(&mut self.open_nodes[off], next),
+                None => self.open_nodes.remove(off),
+            };
         }
+
+        let msg = format!("unreachable");
+        let style2 = match self.match_pattern(&token) {
+            Some(Node::End(style)) => Some(style),
+            Some(Node::Pattern(_, n)) => {
+                let n: &Node = n.borrow();
+                self.open_nodes.push(n.to_open_node(token)?);
+                None
+            }
+            Some(Node::Twin { .. }) => err_at!(Fatal, msg: msg)?,
+            Some(Node::Sibling { .. }) => err_at!(Fatal, msg: msg)?,
+            Some(Node::Child { .. }) => err_at!(Fatal, msg: msg)?,
+            Some(Node::Descendant { .. }) => err_at!(Fatal, msg: msg)?,
+            None => None,
+        };
 
         if let Some(style) = style1 {
             Ok(Some(style))
         } else {
             Ok(style2)
+        }
+    }
+
+    fn match_pattern(&self, token: &Token) -> Option<Node> {
+        let indexes: Vec<usize> = {
+            let iter = self.patterns_re.matches(&token.kind).into_iter();
+            iter.collect()
+        };
+        match indexes.last() {
+            Some(i) => match self.patterns[*i].borrow() {
+                Node::Pattern(_, n) => {
+                    let n: &Node = n.borrow();
+                    Some(n.clone())
+                }
+                _ => None,
+            },
+            None => None,
         }
     }
 }
@@ -390,30 +396,28 @@ impl fmt::Debug for Node {
 
 impl Node {
     fn to_open_node(&self, token: &Token) -> Result<Node> {
-        use Edge::{Child, Descendant, Kind, Sibling, Twin};
-
         match self {
             Node::Pattern(edge, next) => match edge {
-                Kind(_) => err_at!(Fatal, msg: format!("unreachable")),
-                Twin(ne) => Ok(Node::Twin {
+                Edge::Kind(_) => err_at!(Fatal, msg: format!("unreachable")),
+                Edge::Twin(ne) => Ok(Node::Twin {
                     edge: ne.as_ref().clone(),
                     next: Rc::clone(next),
                     nth_child: token.sibling,
                     depth: token.depth,
                 }),
-                Sibling(ne) => Ok(Node::Sibling {
+                Edge::Sibling(ne) => Ok(Node::Sibling {
                     edge: ne.as_ref().clone(),
                     next: Rc::clone(next),
                     nth_child: token.sibling,
                     depth: token.depth,
                 }),
-                Child(ne) => Ok(Node::Child {
+                Edge::Child(ne) => Ok(Node::Child {
                     edge: ne.as_ref().clone(),
                     next: Rc::clone(next),
                     nth_child: token.sibling,
                     depth: token.depth,
                 }),
-                Descendant(ne) => Ok(Node::Descendant {
+                Edge::Descendant(ne) => Ok(Node::Descendant {
                     edge: ne.as_ref().clone(),
                     next: Rc::clone(next),
                     nth_child: token.sibling,
@@ -429,11 +433,9 @@ impl Node {
     }
 
     fn is_match(&self, token: &Token) -> Result<(Option<Node>, bool)> {
-        use Node::{Child, Descendant, End, Pattern, Sibling, Twin};
-
         let (ok, drop, next) = match self {
-            Pattern(_, _) => return Ok((None, false)),
-            Twin {
+            Node::Pattern(_, _) => return Ok((None, false)),
+            Node::Twin {
                 edge,
                 next,
                 depth,
@@ -444,7 +446,7 @@ impl Node {
                 let ok3 = edge.is_match(token)?;
                 (ok1 && ok2 && ok3, !(ok1 && ok2), next)
             }
-            Sibling {
+            Node::Sibling {
                 edge,
                 next,
                 depth,
@@ -455,21 +457,21 @@ impl Node {
                 let ok3 = edge.is_match(token)?;
                 (ok1 && ok2 && ok3, !ok1, next)
             }
-            Child {
+            Node::Child {
                 edge, next, depth, ..
             } => {
                 let ok1 = token.depth == *depth + 1;
                 let ok3 = edge.is_match(token)?;
                 (ok1 && ok3, token.depth > (*depth + 1), next)
             }
-            Descendant {
+            Node::Descendant {
                 edge, next, depth, ..
             } => {
                 let ok1 = *depth < token.depth;
                 let ok3 = edge.is_match(token)?;
                 (ok1 && ok3, false, next)
             }
-            End(_) => return Ok((None, false)),
+            Node::End(_) => return Ok((None, false)),
         };
 
         // trace!("node.is_match {} {}", ok, drop);
@@ -504,8 +506,10 @@ impl Node {
         let canvas = scheme.to_style(Highlight::Canvas);
         let style = match ts_node.kind() {
             "highlight" => {
-                let mut cont = Span::from_node(&ts_node.child(0).unwrap());
-                cont.pos_to_text(tss)?;
+                let cont = {
+                    let nd = ts_node.child(0).unwrap();
+                    Span::from_node(&nd).pos_to_text(tss)
+                };
                 match cont {
                     Span::Text(hl) => {
                         let hl: Highlight = TryFrom::try_from(hl.as_str())?;
@@ -528,8 +532,10 @@ impl Node {
                     })
                     .collect();
                 for nprop in sp_nodes.into_iter() {
-                    let mut cont = Span::from_node(&nprop.child(2).unwrap());
-                    cont.pos_to_text(tss)?;
+                    let cont = {
+                        let nd = nprop.child(2).unwrap();
+                        Span::from_node(&nd).pos_to_text(tss)
+                    };
                     match nprop.kind() {
                         "fg" => {
                             style.fg = match &cont {
@@ -600,11 +606,7 @@ impl Node {
         let chd = &cs[0];
         match chd.kind() {
             "sel_kind" => {
-                let edge = Edge::Kind({
-                    let mut cont = Span::from_node(&chd);
-                    cont.pos_to_text(tss)?;
-                    cont
-                });
+                let edge = Edge::Kind(Span::from_node(&chd).pos_to_text(tss));
                 Ok(Node::Pattern(edge, Rc::new(next)))
             }
             "sel_twins" => {
@@ -626,3 +628,7 @@ impl Node {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tss_test.rs"]
+mod tss_test;
