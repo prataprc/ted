@@ -629,6 +629,122 @@ impl Node {
     }
 }
 
+#[derive(Clone)]
+struct KindTrie(Vec<Trie>);
+
+impl From<(String, usize)> for KindTrie {
+    fn from((selector, index): (String, usize)) -> Self {
+        let mut chars = selector.chars().rev();
+        let mut tries = match chars.next() {
+            Some(ch) => (ch, index).into(),
+            None => KindTrie(vec![Trie::default(); 128]),
+        };
+        for ch in chars {
+            tries = (ch, tries).into();
+        }
+        tries
+    }
+}
+
+impl From<(char, usize)> for KindTrie {
+    fn from((ch, index): (char, usize)) -> Self {
+        let mut tries = KindTrie(vec![Trie::default(); 128]);
+        let off = ch as usize;
+        tries.0[off] = index.into();
+        tries
+    }
+}
+
+impl From<(char, Self)> for KindTrie {
+    fn from((ch, child_ka): (char, Self)) -> Self {
+        let mut tries = KindTrie(vec![Trie::default(); 128]);
+        let off = ch as usize;
+        tries.0[off] = child_ka.into();
+        tries
+    }
+}
+
+impl KindTrie {
+    fn merge(self, other: Self) -> Self {
+        use Trie::{Index, IndexTable, Table};
+
+        let iter = self.0.into_iter().zip(other.0.into_iter());
+        let tries: Vec<Trie> = iter
+            .map(|item| match item {
+                (Trie::None, trie) => trie,
+                (trie, Trie::None) => trie,
+                (Index(_), trie @ Index(_)) => trie,
+                (Index(idx), Table(tries)) => IndexTable(idx, tries),
+                (Index(_), trie @ IndexTable(_, _)) => trie,
+                (Table(tries), Index(idx)) => IndexTable(idx, tries),
+                (Table(x), Table(y)) => Table(Box::new(x.merge(*y))),
+                (Table(x), IndexTable(idx, y)) => {
+                    let trie = Box::new(x.merge(*y));
+                    IndexTable(idx, trie)
+                }
+                (IndexTable(_, tries), Index(idx)) => IndexTable(idx, tries),
+                (IndexTable(idx, x), Table(y)) => {
+                    let trie = Box::new(x.merge(*y));
+                    IndexTable(idx, trie)
+                }
+                (IndexTable(_, x), IndexTable(idx, y)) => {
+                    let trie = Box::new(x.merge(*y));
+                    IndexTable(idx, trie)
+                }
+            })
+            .collect();
+        KindTrie(tries)
+    }
+
+    fn lookup(tries: &KindTrie, chars: &[char]) -> Trie {
+        use Trie::{Index, IndexTable, Table};
+
+        let n = chars.len();
+        match chars.first() {
+            Some(ch) => match &tries.0[(*ch as usize)] {
+                Index(index) if n == 1 => Trie::Index(*index),
+                Table(tries) if n > 1 => Self::lookup(tries, &chars[1..]),
+                IndexTable(index, _) if n == 1 => Trie::Index(*index),
+                IndexTable(_, tries) if n > 1 => Self::lookup(tries, &chars[1..]),
+                _ => Trie::default(),
+            },
+            None => Trie::default(),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum Trie {
+    Index(usize),
+    Table(Box<KindTrie>),
+    IndexTable(usize, Box<KindTrie>),
+    None,
+}
+
+impl Default for Trie {
+    fn default() -> Self {
+        Trie::None
+    }
+}
+
+impl From<usize> for Trie {
+    fn from(index: usize) -> Self {
+        Trie::Index(index)
+    }
+}
+
+impl From<KindTrie> for Trie {
+    fn from(tries: KindTrie) -> Self {
+        Trie::Table(Box::new(tries))
+    }
+}
+
+impl From<(usize, KindTrie)> for Trie {
+    fn from((index, tries): (usize, KindTrie)) -> Self {
+        Trie::IndexTable(index, Box::new(tries))
+    }
+}
+
 #[cfg(test)]
 #[path = "tss_test.rs"]
 mod tss_test;
