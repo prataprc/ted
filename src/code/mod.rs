@@ -442,6 +442,9 @@ impl Application for Code {
     }
 
     fn to_tab_title(&self, wth: usize) -> state::TabTitle {
+        use crate::text;
+        use std::iter::FromIterator;
+
         let edit = match &self.inner {
             Inner::Edit(edit) => edit,
             Inner::Prompt(val) => &val.edit,
@@ -452,7 +455,13 @@ impl Application for Code {
         let active = false;
         match self.as_buffer(&edit.wfile.to_buffer_id()) {
             Some(buf) => {
-                let text = buf.to_location().to_tab_title(wth);
+                let text = match buf.to_location().to_tab_title(wth) {
+                    Ok(text) => text,
+                    Err(_) => {
+                        let iter = text::take_width(buf.to_id().chars().rev(), wth);
+                        String::from_iter(iter)
+                    }
+                };
                 let modified = buf.is_modified();
                 state::TabTitle {
                     text,

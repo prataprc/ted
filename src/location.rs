@@ -115,11 +115,11 @@ impl Location {
         }
     }
 
-    pub fn to_tab_title(&self, wth: usize) -> String {
+    pub fn to_tab_title(&self, wth: usize) -> Result<String> {
         match self {
             Location::Disk { loc, .. } => disk_to_tab_title(loc, wth),
-            Location::Memory { name, .. } => format!(" M({:13}) ", name),
-            Location::Ted { name, .. } => format!(" T({:13}) ", name),
+            Location::Memory { name, .. } => Ok(format!(" M({:13}) ", name)),
+            Location::Ted { name, .. } => Ok(format!(" T({:13}) ", name)),
         }
     }
 
@@ -217,82 +217,97 @@ fn disk_cwd_loc(loc: path::PathBuf) -> Result<ffi::OsString> {
     Ok(loc)
 }
 
-fn disk_to_tab_title1<'a, 'b>(
+fn disk_to_tab_title_file<'a, 'b>(
     loc: &'a [path::Component<'b>],
-    acc: &mut String,
     wth: usize,
-) -> Result<&'a [path::Component<'b>]> {
+) -> Result<(String, &'a [path::Component<'b>])> {
     use std::iter::FromIterator;
 
-    let rem = match loc.iter().rev().next().clone() {
-        Some(path::Component::Prefix(p)) => {
-            match p.as_os_str().to_str() {
-                Some(s) => acc.push_str(&s.to_string()),
-                None => acc.push_str(&format!("{:?}", p)),
-            }
-            &loc[loc.len()..]
+    let acc = match loc.iter().rev().next().clone() {
+        Some(path::Component::RootDir) => path::MAIN_SEPARATOR.to_string(),
+        Some(path::Component::Normal(s)) => {
+            let s = match s.to_str() {
+                Some(s) => s.to_string(),
+                None => format!("{:?}", s),
+            };
+            String::from_iter(text::take_width(s.chars(), wth))
         }
+        Some(p) => err_at!(Fatal, msg: format!("invalid loc {:?}", p))?,
+        None => "".to_string(),
+    };
+    Ok((acc, &loc[..loc.len().saturating_sub(1)]))
+}
+
+fn disk_to_tab_title_path<'a, 'b>(
+    loc: &'a [path::Component<'b>],
+    mut acc: String,
+    mut wth: usize,
+) -> Result<String> {
+    use std::iter::FromIterator;
+
+    match loc.iter().rev().next().clone() {
         Some(path::Component::RootDir) => {
-            acc.push(path::MAIN_SEPARATOR);
-            &loc[loc.len()..]
+            acc = path::MAIN_SEPARATOR.to_string() + &acc;
+            wth = wth.saturating_sub(1);
         }
         Some(path::Component::Normal(s)) => {
             let s = match s.to_str() {
                 Some(s) => s.to_string(),
                 None => format!("{:?}", s),
             };
-            acc.push_str(&String::from_iter(text::take_width(s.chars(), wth)));
-            &loc[..(loc.len() - 1)]
+            let mut s = String::from_iter(text::take_width(s.chars(), wth));
+            s.push(path::MAIN_SEPARATOR);
+            wth = wth.saturating_sub(text::width(s.chars()));
+            acc = s + &acc;
         }
         Some(p) => err_at!(Fatal, msg: format!("invalid loc {:?}", p))?,
-        None => &loc[..],
+        None => (),
     };
-    Ok(rem)
+
+    let loc = &loc[..loc.len().saturating_sub(1)];
+    if loc.len() > 0 && wth > 0 {
+        disk_to_tab_title_path(loc, acc, wth)
+    } else {
+        Ok(acc)
+    }
 }
 
-fn disk_to_tab_title(loc: &ffi::OsStr, wth: usize) -> String {
-    use std::iter::FromIterator;
-
-    let p = path::Path::new(loc);
-    let parts: Vec<path::Component> = p.components().collect();
-    let last = parts.len().saturating_sub(1);
-
-    let mut title = "".to_string();
-    let mut iter = parts.into_iter().enumerate();
-    loop {
-        match iter.next() {
-            Some((0, path::Component::RootDir)) => {
-                title.push(path::MAIN_SEPARATOR);
-            }
-            Some((n, path::Component::Normal(s))) if s.len() > 0 && n < last => {
-                let s = {
-                    let debug_s = format!("{:?}", s);
-                    s.to_str().map(|s| s.to_string()).unwrap_or(debug_s)
-                };
-                match s.as_str() {
-                    ".." | "." | "~" => title.push_str(&s),
-                    s => title.push(s.chars().next().unwrap()),
-                }
-                title.push(path::MAIN_SEPARATOR);
-            }
-            Some((_, path::Component::Normal(s))) => {
-                let s = {
-                    let debug_s = format!("{:?}", s);
-                    s.to_str().map(|s| s.to_string()).unwrap_or(debug_s)
-                };
-                let chars: Vec<char> = s.chars().collect();
-                break if wth > text::width(chars.clone().into_iter()) {
-                    String::from_iter(&chars[(chars.len() - wth)..])
-                } else {
-                    title.push_str(&s);
-                    title
-                };
-            }
-            Some(_) => {
-                title.push_str("∞");
-                title.push(path::MAIN_SEPARATOR);
-            }
-            None => unreachable!(),
+fn disk_to_tab_title(loc: &ffi::OsStr, mut wth: usize) -> Result<String> {
+    let loc = disk_cwd_loc(loc.into())?;
+    let parts: Vec<path::Component> = path::Path::new(&loc).components().collect();
+    let (prefix, loc) = match parts.first() {
+        Some(path::Component::Prefix(p)) => {
+            let prefix = match p.as_os_str().to_str() {
+                Some(s) => s.to_string(),
+                None => format!("{:?}", p),
+            };
+            (prefix + &path::MAIN_SEPARATOR.to_string(), &parts[1..])
         }
-    }
+        Some(path::Component::RootDir) => {
+            let prefix = path::MAIN_SEPARATOR.to_string();
+            (prefix, &parts[1..])
+        }
+        Some(path::Component::Normal(s)) => {
+            if s == &"~".parse::<ffi::OsString>().unwrap() {
+                let prefix = "~".to_string() + &path::MAIN_SEPARATOR.to_string();
+                (prefix, &parts[1..])
+            } else {
+                ("".to_string(), &parts[..])
+            }
+        }
+        Some(p) => (format!("{:?}", p), &parts[1..]),
+        None => ("".to_string(), &parts[parts.len()..]),
+    };
+
+    wth = wth.saturating_sub(text::width(prefix.chars()));
+    let (acc, loc) = disk_to_tab_title_file(loc, wth)?;
+    wth = wth.saturating_sub(text::width(acc.chars()));
+
+    let acc = if loc.len() > 0 && wth > 0 {
+        prefix + &disk_to_tab_title_path(loc, acc, wth)?
+    } else {
+        prefix + &acc
+    };
+
+    Ok(acc)
 }
