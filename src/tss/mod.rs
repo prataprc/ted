@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use log::{debug, trace};
-use regex::RegexSet;
 use tree_sitter as ts;
 
 use std::{borrow::Borrow, convert::TryFrom, fmt, mem, rc::Rc, result};
@@ -124,7 +123,7 @@ impl Span {
 pub struct Automata {
     name: String,
     patterns: Vec<Rc<Node>>,
-    patterns_re: RegexSet,
+    patterns_trie: KindTrie,
     open_nodes: Vec<Node>,
 }
 
@@ -192,9 +191,17 @@ impl Automata {
         Ok(Automata {
             name: name.to_string(),
             patterns,
-            patterns_re: err_at!(Fatal, RegexSet::new(&kinds))?,
+            patterns_trie: Self::build_trie(kinds),
             open_nodes: Vec::default(),
         })
+    }
+
+    fn build_trie(kinds: Vec<String>) -> KindTrie {
+        let initial = KindTrie::default();
+        kinds
+            .into_iter()
+            .enumerate()
+            .fold(initial, |trie, item| trie.merge(item.into()))
     }
 }
 
@@ -255,19 +262,19 @@ impl Automata {
     }
 
     fn match_pattern(&self, token: &Token) -> Option<Node> {
-        let indexes: Vec<usize> = {
-            let iter = self.patterns_re.matches(&token.kind).into_iter();
-            iter.collect()
-        };
-        match indexes.last() {
-            Some(i) => match self.patterns[*i].borrow() {
-                Node::Pattern(_, n) => {
-                    let n: &Node = n.borrow();
-                    Some(n.clone())
-                }
-                _ => None,
-            },
-            None => None,
+        let chars: Vec<char> = token.kind.chars().collect();
+        let node: &Node = match self.patterns_trie.lookup(&chars) {
+            Trie::None => None,
+            Trie::Index(i) => Some(self.patterns[i].borrow()),
+            Trie::Table(_) => None,
+            Trie::IndexTable(i, _) => Some(self.patterns[i].borrow()),
+        }?;
+        match node {
+            Node::Pattern(_, n) => {
+                let n: &Node = n.borrow();
+                Some(n.clone())
+            }
+            _ => None,
         }
     }
 }
@@ -632,12 +639,18 @@ impl Node {
 #[derive(Clone)]
 struct KindTrie(Vec<Trie>);
 
-impl From<(String, usize)> for KindTrie {
-    fn from((selector, index): (String, usize)) -> Self {
+impl Default for KindTrie {
+    fn default() -> Self {
+        KindTrie(vec![Trie::default(); 128])
+    }
+}
+
+impl From<(usize, String)> for KindTrie {
+    fn from((index, selector): (usize, String)) -> Self {
         let mut chars = selector.chars().rev();
         let mut tries = match chars.next() {
             Some(ch) => (ch, index).into(),
-            None => KindTrie(vec![Trie::default(); 128]),
+            None => KindTrie::default(),
         };
         for ch in chars {
             tries = (ch, tries).into();
@@ -648,7 +661,7 @@ impl From<(String, usize)> for KindTrie {
 
 impl From<(char, usize)> for KindTrie {
     fn from((ch, index): (char, usize)) -> Self {
-        let mut tries = KindTrie(vec![Trie::default(); 128]);
+        let mut tries = KindTrie::default();
         let off = ch as usize;
         tries.0[off] = index.into();
         tries
@@ -657,7 +670,7 @@ impl From<(char, usize)> for KindTrie {
 
 impl From<(char, Self)> for KindTrie {
     fn from((ch, child_ka): (char, Self)) -> Self {
-        let mut tries = KindTrie(vec![Trie::default(); 128]);
+        let mut tries = KindTrie::default();
         let off = ch as usize;
         tries.0[off] = child_ka.into();
         tries
@@ -696,16 +709,16 @@ impl KindTrie {
         KindTrie(tries)
     }
 
-    fn lookup(tries: &KindTrie, chars: &[char]) -> Trie {
+    fn lookup(&self, chars: &[char]) -> Trie {
         use Trie::{Index, IndexTable, Table};
 
         let n = chars.len();
         match chars.first() {
-            Some(ch) => match &tries.0[(*ch as usize)] {
+            Some(ch) => match &self.0[(*ch as usize)] {
                 Index(index) if n == 1 => Trie::Index(*index),
-                Table(tries) if n > 1 => Self::lookup(tries, &chars[1..]),
                 IndexTable(index, _) if n == 1 => Trie::Index(*index),
-                IndexTable(_, tries) if n > 1 => Self::lookup(tries, &chars[1..]),
+                Table(tries) if n > 1 => tries.lookup(&chars[1..]),
+                IndexTable(_, tries) if n > 1 => tries.lookup(&chars[1..]),
                 _ => Trie::default(),
             },
             None => Trie::default(),
