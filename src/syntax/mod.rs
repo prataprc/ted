@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
 #[allow(unused_imports)]
-use log::{debug, error, trace};
+use log::{debug, error, trace, warn};
 use tree_sitter as ts;
 
 use std::{
@@ -178,7 +178,6 @@ pub fn highlight(
     syns.sort_by(|a, b| b.cmp(a)); // reverse sorting
 
     // trace!("sorted syns:{:?}", syns);
-
     let mut hl_spans = HlSpans::new(canvas, from, till);
     while let Some(syn) = syns.pop() {
         syns.extend(hl_spans.pop_after(&syn));
@@ -187,7 +186,6 @@ pub fn highlight(
     }
 
     trace!("Hlspans {}", hl_spans);
-
     hl_spans.into_span_line(buf)
 }
 

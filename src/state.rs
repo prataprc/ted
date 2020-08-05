@@ -295,8 +295,8 @@ impl State {
     pub fn event_loop(mut self) -> Result<String> {
         use crossterm::event::read;
 
-        let mut stats = util::Latency::new();
-        let mut r_stats = util::Latency::new();
+        let mut stats = util::Latency::new("EVENT");
+        let mut r_stats = util::Latency::new("READT");
 
         // initial screen refresh
         let mut inner = mem::replace(&mut self.inner, Inner::default());
@@ -337,8 +337,8 @@ impl State {
             stats.sample(start.elapsed().unwrap());
         }
 
-        let mut s = format!("read: {}\n", r_stats.pretty_print());
-        s.push_str(&format!("  {}", stats.pretty_print()));
+        let mut s = format!("{}\n", r_stats.pretty_print());
+        s.push_str(&format!("{}", stats.pretty_print()));
         Ok(s)
     }
 

@@ -96,6 +96,7 @@ where
 
 #[derive(Clone, Default, Debug)]
 pub struct Latency {
+    name: String,
     samples: usize,
     min: Duration,
     max: Duration,
@@ -104,8 +105,9 @@ pub struct Latency {
 }
 
 impl Latency {
-    pub fn new() -> Latency {
+    pub fn new(name: &str) -> Latency {
         let mut stats: Latency = Latency::default();
+        stats.name = name.to_string();
         stats.durations = Vec::with_capacity(256);
         stats.durations.resize(256, 0);
         stats
@@ -172,13 +174,12 @@ impl Latency {
     pub fn pretty_print(&self) -> String {
         let mean = self.mean();
         let mut outs = format!(
-            //
-            "duration (min, avg, max): {:?}",
-            (self.min, mean, self.max)
+            "{:?} duration min:{:?}, avg:{:?}, max:{:?}",
+            self.name, self.min, mean, self.max
         );
         for (dur, n) in self.percentiles().into_iter() {
             if n > 0 {
-                outs.push_str(&format!("  {} percentile = {}", dur, n));
+                outs.push_str(&format!("  {}-percentile = {}", dur, n));
             }
         }
 
