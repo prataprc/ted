@@ -1,4 +1,3 @@
-use crossterm::event::KeyModifiers;
 #[allow(unused_imports)]
 use log::{debug, trace};
 
@@ -45,17 +44,18 @@ impl KeyEdit {
     fn normal_fold(&mut self, evnt: Event) -> Result<Event> {
         use crate::event::Event::*;
         use crate::event::{Code, Opr};
+        use crossterm::event::KeyModifiers as KM;
 
         let noop = Event::Noop;
 
         let prefix = mem::replace(&mut self.prefix, Event::default());
-        let (m_empty, ctrl) = {
+        let (m_empty, ctrl, shift) = {
             let m = evnt.to_modifiers();
-            (m.is_empty(), m == KeyModifiers::CONTROL)
+            (m.is_empty(), m.contains(KM::CONTROL), m.contains(KM::SHIFT))
         };
 
         let (prefix, evnt) = match prefix {
-            Event::Noop if m_empty => match evnt {
+            Event::Noop if m_empty | shift => match evnt {
                 // motion command - characterwise
                 Backspace(_) => (noop, Mt(Mto::Left(1, DP::Nobound))),
                 Left(_) => (noop, Mt(Mto::Left(1, DP::LineBound))),
