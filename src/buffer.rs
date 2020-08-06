@@ -15,7 +15,7 @@ use std::{
     fmt, io,
     iter::FromIterator,
     mem,
-    ops::Bound,
+    ops::{Bound, RangeBounds},
     rc::{self, Rc},
     result,
     sync::Mutex,
@@ -312,15 +312,26 @@ impl WinBuffer for Buffer {
         }
     }
 
+    #[inline]
+    fn slice<R>(&self, char_range: R) -> String
+    where
+        R: RangeBounds<usize>,
+    {
+        self.to_change().rope.slice(char_range).to_string()
+    }
+
+    #[inline]
     fn line_to_char(&self, line_idx: usize) -> usize {
         self.to_change().rope.line_to_char(line_idx)
     }
 
+    #[inline]
     fn line(&self, line_idx: usize) -> String {
         let change = self.to_change();
         change.rope.line(line_idx).to_string()
     }
 
+    #[inline]
     fn n_chars(&self) -> usize {
         let change = &self.to_change();
         change.rope.len_chars()
@@ -341,6 +352,7 @@ impl WinBuffer for Buffer {
         0
     }
 
+    #[inline]
     fn len_line(&self, line_idx: usize) -> usize {
         let change = &self.to_change();
         change.rope.line(line_idx).len_chars()

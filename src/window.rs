@@ -1,6 +1,6 @@
 use crossterm;
 
-use std::{cmp, fmt, ops::Add, result};
+use std::{cmp, fmt, ops::Add, ops::RangeBounds, result};
 
 use crate::{
     buffer::{self, Buffer},
@@ -73,6 +73,10 @@ pub trait WinBuffer {
         char_idx: usize,
         dp: DP,
     ) -> Result<Box<dyn Iterator<Item = char> + 'a>>;
+
+    fn slice<R>(&self, char_range: R) -> String
+    where
+        R: RangeBounds<usize>;
 
     /// Return the character offset of first character for the requested
     /// `line_idx`. Note that, `0 <= line_idx < last_line_idx`.
