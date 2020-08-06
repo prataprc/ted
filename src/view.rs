@@ -32,14 +32,20 @@ pub struct Wrap {
     nu: ColNu,
     scroll_off: u16,
     line_number: bool,
+    screen_lines: Vec<ScrLine>,
 }
 
 impl fmt::Display for Wrap {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         write!(
             f,
-            "Wrap<{:?} {} {} {}@{}>",
-            self.name, self.nu, self.obc_xy, self.cursor, self.coord,
+            "Wrap<{:?} {} {} {}@{} {}>",
+            self.name,
+            self.nu,
+            self.obc_xy,
+            self.cursor,
+            self.coord,
+            self.screen_lines.len()
         )
     }
 }
@@ -49,16 +55,20 @@ where
     W: Window,
 {
     fn from((w, obc_xy): (&'a W, buffer::Cursor)) -> Wrap {
+        let scroll_off = w.config_scroll_offset();
         let line_number = w.config_line_number();
-        Wrap {
+        let mut value = Wrap {
             name: w.to_name(),
             coord: w.to_coord(),
             cursor: w.to_cursor(),
             obc_xy,
             nu: ColNu::new(obc_xy.row, line_number),
-            scroll_off: w.config_scroll_offset(),
+            scroll_off,
             line_number,
-        }
+            screen_lines: Vec::default(),
+        };
+        value.discount_nu(ColNu::new(obc_xy.row, line_number).to_width());
+        value
     }
 }
 
@@ -71,39 +81,14 @@ impl Wrap {
         Cursor { row: 0, col }
     }
 
-    pub fn to_screen_lines<B>(&mut self, buf: &B) -> Result<Vec<ScrLine>>
-    where
-        B: WinBuffer,
-    {
-        let nu_wth = self.nu.to_width();
-        self.discount_nu(nu_wth);
-        let scroll = false;
-        let (_, _, screen_lines) = self.shift_cursor(buf, scroll);
-        Ok(screen_lines)
+    #[inline]
+    pub fn to_screen_lines(&self) -> Vec<ScrLine> {
+        self.screen_lines.clone()
     }
 
     // scroll is true, on screen cursor position remains the same, buffer
     // is aligned with the screen/window.
-    pub fn render<R>(mut self, buf: &R::Buf, r: &R, scroll: bool) -> Result<Cursor>
-    where
-        R: Render,
-        <R as Render>::Buf: WinBuffer,
-    {
-        let nu_wth = self.nu.to_width();
-        let nbc_xy = buf.to_xy_cursor(None);
-        self.discount_nu(nu_wth);
-        let screen_lines = {
-            let (coord, cursor, screen_lines) = self.shift_cursor(buf, scroll);
-            self.coord = coord;
-            self.cursor = cursor;
-            screen_lines
-        };
-        self.nu = ColNu::new(nbc_xy.row, self.line_number);
-        self.nu.set_color_scheme(r.as_color_scheme());
-        Ok(self.refresh(buf, r, screen_lines)?.account_nu(nu_wth))
-    }
-
-    fn shift_cursor<B>(&self, buf: &B, scroll: bool) -> (Coord, Cursor, Vec<ScrLine>)
+    pub fn shift_cursor<B>(&mut self, buf: &B, scroll: bool)
     where
         B: WinBuffer,
     {
@@ -130,10 +115,28 @@ impl Wrap {
             screen_lines.len()
         );
 
-        (coord, cursor, screen_lines)
+        // update this wrap-view.
+        self.coord = coord;
+        self.cursor = cursor;
+        self.screen_lines = screen_lines;
     }
 
-    fn refresh<R>(self, buf: &R::Buf, r: &R, screen_lines: Vec<ScrLine>) -> Result<Cursor>
+    pub fn render<R>(mut self, buf: &R::Buf, r: &R) -> Result<Cursor>
+    where
+        R: Render,
+        <R as Render>::Buf: WinBuffer,
+    {
+        self.nu = ColNu::new(buf.to_xy_cursor(None).row, self.line_number);
+        self.nu.set_color_scheme(r.as_color_scheme());
+        let cursor = {
+            let (obc_xy, line_number) = (self.obc_xy, self.line_number);
+            let cursor = self.refresh(buf, r)?;
+            cursor.account_nu(ColNu::new(obc_xy.row, line_number).to_width())
+        };
+        Ok(cursor)
+    }
+
+    fn refresh<R>(self, buf: &R::Buf, r: &R) -> Result<Cursor>
     where
         R: Render,
         <R as Render>::Buf: WinBuffer,
@@ -148,7 +151,7 @@ impl Wrap {
         let (col, row) = full_coord.to_origin_cursor();
 
         let rows = row..(row + full_coord.hgt);
-        for (row, sline) in rows.zip(screen_lines.into_iter()) {
+        for (row, sline) in rows.zip(self.screen_lines.into_iter()) {
             let nu_span = {
                 let mut nu_span = self.nu.to_span(sline.colk);
                 nu_span.set_cursor(Cursor { col, row });
@@ -207,6 +210,7 @@ pub struct NoWrap {
     nu: ColNu,
     scroll_off: u16,
     line_number: bool,
+    screen_lines: Vec<ScrLine>,
 }
 
 impl fmt::Display for NoWrap {
@@ -225,15 +229,19 @@ where
 {
     fn from((w, obc_xy): (&'a W, buffer::Cursor)) -> NoWrap {
         let line_number = w.config_line_number();
-        NoWrap {
+        let scroll_off = w.config_scroll_offset();
+        let mut value = NoWrap {
             name: w.to_name(),
             coord: w.to_coord(),
             cursor: w.to_cursor(),
             obc_xy,
             nu: ColNu::new(obc_xy.row, line_number),
-            scroll_off: w.config_scroll_offset(),
+            scroll_off,
             line_number,
-        }
+            screen_lines: Vec::default(),
+        };
+        value.discount_nu(ColNu::new(obc_xy.row, line_number).to_width());
+        value
     }
 }
 
@@ -246,39 +254,13 @@ impl NoWrap {
         Cursor { row: 0, col }
     }
 
-    pub fn to_screen_lines<B>(&mut self, buf: &B) -> Result<Vec<ScrLine>>
-    where
-        B: WinBuffer,
-    {
-        let nu_wth = self.nu.to_width();
-        self.discount_nu(nu_wth);
-        let scroll = false;
-        let (_, _, screen_lines) = self.shift_cursor(buf, scroll);
-        Ok(screen_lines)
+    pub fn to_screen_lines(&self) -> Vec<ScrLine> {
+        self.screen_lines.clone()
     }
 
     // scroll is true, on screen cursor position remains the same, buffer
     // is aligned with the screen/window.
-    pub fn render<R>(mut self, buf: &R::Buf, r: &R, scroll: bool) -> Result<Cursor>
-    where
-        R: Render,
-        <R as Render>::Buf: WinBuffer,
-    {
-        let nu_wth = self.nu.to_width();
-        let nbc_xy = buf.to_xy_cursor(None);
-        self.discount_nu(nu_wth);
-        let screen_lines = {
-            let (coord, cursor, screen_lines) = self.shift_cursor(buf, scroll);
-            self.coord = coord;
-            self.cursor = cursor;
-            screen_lines
-        };
-        self.nu = ColNu::new(nbc_xy.row, self.line_number);
-        self.nu.set_color_scheme(r.as_color_scheme());
-        Ok(self.refresh(buf, r, screen_lines)?.account_nu(nu_wth))
-    }
-
-    fn shift_cursor<B>(&self, buf: &B, scroll: bool) -> (Coord, Cursor, Vec<ScrLine>)
+    pub fn shift_cursor<B>(&mut self, buf: &B, scroll: bool)
     where
         B: WinBuffer,
     {
@@ -341,15 +323,36 @@ impl NoWrap {
         };
 
         debug!(
-            "SHIFT {}@{} screen_lines:{}",
+            "SHIFT {}->{} {}@{} screen_lines:{}",
+            self.obc_xy,
+            nbc_xy,
             cursor,
             coord,
             screen_lines.len()
         );
-        (coord, cursor, screen_lines)
+
+        // update this wrap-view.
+        self.coord = coord;
+        self.cursor = cursor;
+        self.screen_lines = screen_lines;
     }
 
-    fn refresh<R>(self, buf: &R::Buf, r: &R, screen_lines: Vec<ScrLine>) -> Result<Cursor>
+    pub fn render<R>(mut self, buf: &R::Buf, r: &R) -> Result<Cursor>
+    where
+        R: Render,
+        <R as Render>::Buf: WinBuffer,
+    {
+        self.nu = ColNu::new(buf.to_xy_cursor(None).row, self.line_number);
+        self.nu.set_color_scheme(r.as_color_scheme());
+        let cursor = {
+            let (obc_xy, line_number) = (self.obc_xy, self.line_number);
+            let cursor = self.refresh(buf, r)?;
+            cursor.account_nu(ColNu::new(obc_xy.row, line_number).to_width())
+        };
+        Ok(cursor)
+    }
+
+    fn refresh<R>(self, buf: &R::Buf, r: &R) -> Result<Cursor>
     where
         R: Render,
         <R as Render>::Buf: WinBuffer,
@@ -364,7 +367,7 @@ impl NoWrap {
         let (col, row) = full_coord.to_origin_cursor();
 
         let rows = row..(row + full_coord.hgt);
-        for (row, sline) in rows.zip(screen_lines.into_iter()) {
+        for (row, sline) in rows.zip(self.screen_lines.into_iter()) {
             let nu_span = {
                 let mut span = self.nu.to_span(sline.colk);
                 span.set_cursor(Cursor { col, row });

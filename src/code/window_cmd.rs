@@ -135,8 +135,9 @@ impl Window for WindowCmd {
         let (col, row) = self.coord.to_origin_cursor();
         err_at!(Fatal, termqu!(term_cursor::MoveTo(col, row)))?;
 
-        let v: NoWrap = (&*self, self.obc_xy).into();
-        self.cursor = v.render(&self.buf, self, false /*scroll*/)?;
+        let mut v: NoWrap = (&*self, self.obc_xy).into();
+        v.shift_cursor(&self.buf, false /*scroll*/);
+        self.cursor = v.render(&self.buf, self)?;
         self.obc_xy = self.buf.to_xy_cursor(None);
 
         Ok(())

@@ -261,10 +261,12 @@ impl WindowEdit {
 
         let screen_lines = if app.as_ref().wrap {
             let mut v: Wrap = (&*self, self.obc_xy).into();
-            v.to_screen_lines(buf)?
+            v.shift_cursor(buf, false /*scroll*/);
+            v.to_screen_lines()
         } else {
             let mut v: NoWrap = (&*self, self.obc_xy).into();
-            v.to_screen_lines(buf)?
+            v.shift_cursor(buf, false /*scroll*/);
+            v.to_screen_lines()
         };
         let screen_lines: Vec<ScrLine> = {
             let iter = screen_lines.into_iter();
@@ -296,10 +298,12 @@ impl WindowEdit {
 
         let screen_lines = if app.as_ref().wrap {
             let mut v: Wrap = (&*self, self.obc_xy).into();
-            v.to_screen_lines(buf)?
+            v.shift_cursor(buf, false /*scroll*/);
+            v.to_screen_lines()
         } else {
             let mut v: NoWrap = (&*self, self.obc_xy).into();
-            v.to_screen_lines(buf)?
+            v.shift_cursor(buf, false /*scroll*/);
+            v.to_screen_lines()
         };
         let screen_lines: Vec<ScrLine> = {
             let iter = screen_lines.into_iter();
@@ -326,10 +330,12 @@ impl WindowEdit {
 
         let screen_lines = if app.as_ref().wrap {
             let mut v: Wrap = (&*self, self.obc_xy).into();
-            v.to_screen_lines(buf)?
+            v.shift_cursor(buf, false /*scroll*/);
+            v.to_screen_lines()
         } else {
             let mut v: NoWrap = (&*self, self.obc_xy).into();
-            v.to_screen_lines(buf)?
+            v.shift_cursor(buf, false /*scroll*/);
+            v.to_screen_lines()
         };
         let screen_lines: Vec<ScrLine> = {
             let iter = screen_lines.into_iter();
@@ -459,13 +465,15 @@ impl Window for WindowEdit {
             Error::Invalid(String::new(), s)
         };
         self.cursor = if app.as_ref().wrap {
-            let v: Wrap = (&*self, self.obc_xy).into();
+            let mut v: Wrap = (&*self, self.obc_xy).into();
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
-            v.render(buf, self, false /*scroll*/)?
+            v.shift_cursor(buf, false /*scroll*/);
+            v.render(buf, self)?
         } else {
-            let v: NoWrap = (&*self, self.obc_xy).into();
+            let mut v: NoWrap = (&*self, self.obc_xy).into();
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
-            v.render(buf, self, false /*scroll*/)?
+            v.shift_cursor(buf, false /*scroll*/);
+            v.render(buf, self)?
         };
         self.obc_xy = {
             let err = {
