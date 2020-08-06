@@ -133,7 +133,7 @@ impl KeyEdit {
                 Char(ch @ '0'..='9', _) => (N(parse_n!(0, ch)), noop),
                 evnt => (noop, evnt),
             },
-            N(n) if m_empty => match evnt {
+            N(n) if m_empty | shift => match evnt {
                 // motion command - characterwise
                 Backspace(_) => (noop, Mt(Mto::Left(n, DP::Nobound))),
                 Left(_) => (noop, Mt(Mto::Left(n, DP::LineBound))),
@@ -210,7 +210,7 @@ impl KeyEdit {
                 Char(ch @ '0'..='9', _) => (N(parse_n!(n, ch)), noop),
                 evnt => (noop, evnt),
             },
-            G(n) if m_empty => match evnt {
+            G(n) if m_empty | shift => match evnt {
                 Char('g', _) if ctrl => (noop, Event::Code(Code::StatusCursor)),
                 // motion command - characterwise
                 Home(_) => (noop, Mt(Mto::ScreenHome(DP::None))),
