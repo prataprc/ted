@@ -223,7 +223,7 @@ impl fmt::Display for Event {
             Enter(_) => write!(f, "enter"),
             Tab(_) => write!(f, "tab"),
             Delete(_) => write!(f, "delete"),
-            Char(ch, _) => write!(f, "char({:?})", ch),
+            Char(ch, m) => write!(f, "char({:?},{:?})", ch, m),
             FKey(ch, _) => write!(f, "fkey({})", ch),
             Insert(_) => write!(f, "insert"),
             Left(_) => write!(f, "left"),
