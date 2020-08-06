@@ -539,6 +539,7 @@ impl Buffer {
             }
         };
 
+        debug!("buffer {}", evnt);
         let evnt = match evnt {
             Event::Noop => Event::Noop,
             // motion command - characterwise.
@@ -1927,7 +1928,7 @@ impl MtoWord {
                 (_, _, Some(_)) => self.match_char(dir, pos, item),
             },
         };
-        debug!("push {:?} {} -> {}", item, self, state);
+        trace!("push {:?} {} -> {}", item, self, state);
         state
     }
 }
@@ -2065,7 +2066,7 @@ impl MtoWWord {
                 (_, _, Some(_)) => self.match_char(dir, pos, item),
             },
         };
-        debug!("push {:?} {} -> {}", item, self, state);
+        trace!("push {:?} {} -> {}", item, self, state);
         state
     }
 }
@@ -2173,7 +2174,7 @@ impl MtoSentence {
                 (_, _, Some(_)) => self.match_char(dir, item),
             },
         };
-        debug!("push {:?} {} -> {}", item, self, state);
+        trace!("push {:?} {} -> {}", item, self, state);
         state
     }
 }
