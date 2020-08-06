@@ -2,13 +2,18 @@
 use log::{debug, trace};
 use tree_sitter as ts;
 
-use std::{borrow::Borrow, convert::TryFrom, fmt, mem, rc::Rc, result};
+use std::{
+    borrow::Borrow,
+    convert::{TryFrom, TryInto},
+    fmt, mem,
+    rc::Rc,
+    result,
+};
 
 use crate::{
     buffer::Buffer,
     colors::{ColorScheme, Highlight},
-    term::Style,
-    Error, Result,
+    term, Error, Result,
 };
 
 /// Ted style sheet for `toml` format.
@@ -206,9 +211,9 @@ impl Automata {
 }
 
 impl Automata {
-    pub fn shift_in(&mut self, token: &Token) -> Result<Option<Style>> {
+    pub fn shift_in(&mut self, token: &Token) -> Result<Option<term::Style>> {
         // check whether there is a match with open-patterns.
-        let mut style1: Option<Style> = None;
+        let mut style1: Option<term::Style> = None;
         let mut ops = vec![];
 
         // trace!("open_nodes: {:?}", self.open_nodes);
@@ -349,7 +354,7 @@ enum Node {
         depth: usize,
         nth_child: usize,
     },
-    End(Style),
+    End(term::Style),
 }
 
 impl fmt::Display for Node {
@@ -510,7 +515,6 @@ impl Node {
         tc: &mut ts::TreeCursor<'a>,
         scheme: &ColorScheme,
     ) -> Result<Node> {
-        let canvas = scheme.to_style(Highlight::Canvas);
         let style = match ts_node.kind() {
             "highlight" => {
                 let cont = {
@@ -526,7 +530,7 @@ impl Node {
                 }?
             }
             "properties" => {
-                let mut style: Style = scheme.to_style(Highlight::Canvas);
+                let mut style: term::Style = scheme.to_style(Highlight::Canvas);
                 let sp_nodes: Vec<ts::Node> = ts_node
                     .children(tc)
                     .enumerate()
@@ -543,30 +547,15 @@ impl Node {
                         let nd = nprop.child(2).unwrap();
                         Span::from_node(&nd).pos_to_text(tss)
                     };
-                    match nprop.kind() {
-                        "fg" => {
-                            style.fg = match &cont {
-                                Span::Text(color) => {
-                                    let fg = Style::to_color(color, &canvas)?;
-                                    Ok(fg)
-                                }
-                                _ => err_at!(Fatal, msg: format!("unexpected")),
-                            }?;
+                    match (nprop.kind(), &cont) {
+                        ("fg", Span::Text(color)) => {
+                            style.fg = Some(color.try_into()?);
                         }
-                        "bg" => {
-                            style.bg = match &cont {
-                                Span::Text(color) => {
-                                    let bg = Style::to_color(color, &canvas)?;
-                                    Ok(bg)
-                                }
-                                _ => err_at!(Fatal, msg: format!("unexpected")),
-                            }?;
+                        ("bg", Span::Text(color)) => {
+                            style.bg = Some(color.try_into()?);
                         }
-                        "attrb" | "attribute" => {
-                            style.attrs = match &cont {
-                                Span::Text(attrs) => Ok(Style::to_attrs(attrs)?),
-                                _ => err_at!(Fatal, msg: format!("unexpected")),
-                            }?;
+                        ("attrb", Span::Text(attrs)) | ("attribute", Span::Text(attrs)) => {
+                            style.attrs = term::Style::to_attrs(attrs)?;
                         }
                         _ => err_at!(Fatal, msg: format!("unexpected"))?,
                     }

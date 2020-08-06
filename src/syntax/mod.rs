@@ -16,7 +16,7 @@ use crate::{
     colors::{ColorScheme, Highlight},
     event::Event,
     location::Location,
-    term::{Span, Spanline, Style},
+    term,
     tss::{Automata, Token},
     window::WinBuffer,
     Error, Result,
@@ -37,9 +37,9 @@ pub trait Syntax {
 
     fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event>;
 
-    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline>;
+    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<term::Spanline>;
 
-    fn to_status_cursor(&self) -> Result<Span>;
+    fn to_status_cursor(&self) -> Result<term::Span>;
 }
 
 macro_rules! syntax_for {
@@ -98,14 +98,14 @@ macro_rules! syntax_for {
                 }
             }
 
-            fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+            fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<term::Spanline> {
                 match self {
                     $(Type::$variant(val) => val.to_span_line(buf, a, z),)*
                     Type::None => Ok("".to_string().into())
                 }
             }
 
-            fn to_status_cursor(&self) -> Result<Span> {
+            fn to_status_cursor(&self) -> Result<term::Span> {
                 match self {
                     $(Type::$variant(val) => val.to_status_cursor(),)*
                     Type::None => Ok("".to_string().into())
@@ -151,7 +151,7 @@ pub fn highlight(
     atmt: &mut Automata,
     from: usize,
     till: usize,
-) -> Result<Spanline> {
+) -> Result<term::Spanline> {
     let canvas = scheme.to_style(Highlight::Canvas);
     let root = tree.root_node();
     let mut syns = {
@@ -236,11 +236,11 @@ fn do_highlight(
     Ok(syns)
 }
 
-// list of matching spans, sort it and convert them into spanline.
+// per line, list of matching spans, sort it and convert them into spanline.
 struct HlSpans {
     from: usize,
     till: usize,
-    canvas: Style, // default style
+    canvas: term::Style, // canvas style
     syns: Vec<SyntSpan>,
 }
 
@@ -255,7 +255,7 @@ impl fmt::Display for HlSpans {
 }
 
 impl HlSpans {
-    fn new(canvas: Style, from: usize, till: usize) -> HlSpans {
+    fn new(canvas: term::Style, from: usize, till: usize) -> HlSpans {
         HlSpans {
             from,
             till,
@@ -364,7 +364,7 @@ impl HlSpans {
         Ok(())
     }
 
-    fn into_span_line(&mut self, buf: &Buffer) -> Result<Spanline> {
+    fn into_span_line(&mut self, buf: &Buffer) -> Result<term::Spanline> {
         match self.syns.pop() {
             Some(SyntSpan { depth, a, z, style }) if z < self.till => {
                 self.syns.push(SyntSpan { depth, a, z, style });
@@ -397,8 +397,8 @@ impl HlSpans {
             }
         }
 
-        let mut spans: Vec<Span> = vec![];
-        for syn in self.syns.iter() {
+        let mut spans: Vec<term::Span> = vec![];
+        for syn in self.syns.iter_mut() {
             spans.push(syn.into_span(buf)?);
         }
         Ok(spans.into_iter().collect())
@@ -411,7 +411,7 @@ struct SyntSpan {
     depth: usize,
     a: usize, // character position, inclusive
     z: usize, // character position, exclusive
-    style: Style,
+    style: term::Style,
 }
 
 impl fmt::Display for SyntSpan {
@@ -471,14 +471,14 @@ impl Ord for SyntSpan {
 }
 
 impl SyntSpan {
-    fn into_span(&self, buf: &Buffer) -> Result<Span> {
+    fn into_span(&mut self, buf: &Buffer) -> Result<term::Span> {
         use crate::event::DP;
 
-        let span: Span = {
+        let span: term::Span = {
             let iter = buf.chars_at(self.a, DP::Right)?.take(self.z - self.a);
             String::from_iter(iter).into()
         };
-        // trace!("SyntSpan.into_span {}, style:{}", self, self.style);
+        // warn!("SyntSpan.into_span {}, style:{}", self, self.style);
         Ok(span.using(self.style.clone()))
     }
 

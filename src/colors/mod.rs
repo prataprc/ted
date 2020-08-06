@@ -41,8 +41,8 @@ impl TryFrom<toml::Value> for ColorScheme {
 
     fn try_from(value: toml::Value) -> Result<Self> {
         let table = {
-            let err = Error::Invalid(String::new(), format!("bad color sheme"));
-            value.as_table().ok_or(err)?
+            let (p, msg) = (String::new(), format!("bad color sheme"));
+            err_at!(value.as_table().ok_or(Error::Invalid(p, msg)))?
         };
 
         let mut name = String::default();
@@ -52,23 +52,31 @@ impl TryFrom<toml::Value> for ColorScheme {
             hs
         };
 
-        let canvas: Style = Style::default();
         for (key, value) in table.iter() {
             match key.as_str() {
                 "name" => {
-                    let err = {
-                        let s = format!("bad value for {}", key);
-                        Error::Invalid(String::new(), s)
-                    };
-                    name = value.as_str().ok_or(err)?.to_string();
+                    let msg = format!("bad value for {}", key);
+                    let err = Error::Invalid(String::new(), msg);
+                    name = err_at!(value.as_str().ok_or(err))?.to_string();
                 }
                 hl => {
                     let off = {
                         let h: Highlight = TryFrom::try_from(hl)?;
                         (h as u32) as usize
                     };
-                    hs[off] = Style::from_toml(&value, &canvas)?;
+                    hs[off] = Style::from_toml(&value)?;
                 }
+            }
+        }
+
+        // if highlight-style has None for fg or bg, use canvas-fg/bg.
+        let canvas = hs[Highlight::Canvas as u32 as usize].clone();
+        for style in hs.iter_mut() {
+            if style.fg.is_none() {
+                style.fg = canvas.fg.clone();
+            }
+            if style.bg.is_none() {
+                style.bg = canvas.bg.clone();
             }
         }
 

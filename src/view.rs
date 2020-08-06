@@ -1,5 +1,6 @@
 use crossterm::queue;
-use log::{debug, trace};
+#[allow(unused_imports)]
+use log::{debug, trace, warn};
 
 use std::{cmp, fmt, result};
 
@@ -139,7 +140,7 @@ impl Wrap {
     {
         debug!("WRAP-REFRESH {}", self);
 
-        let s_canvas = {
+        let canvas = {
             let scheme = r.as_color_scheme();
             scheme.to_style(Highlight::Canvas)
         };
@@ -161,7 +162,12 @@ impl Wrap {
                 let n = sline.n.saturating_sub(line_span.trim_newline() as u16);
                 self.coord.wth.saturating_sub(n)
             };
-            line_span.right_padding(padding, s_canvas.clone());
+            line_span.right_padding(padding);
+            line_span.optimize_spans(canvas.clone());
+            match &canvas.bg {
+                Some(bg) => err_at!(Fatal, termbg!(bg.clone()))?,
+                None => (),
+            };
             err_at!(Fatal, termqu!(nu_span, line_span))?;
 
             trace!(
@@ -350,7 +356,7 @@ impl NoWrap {
     {
         debug!("NOWRAP-REFRESH {}", self);
 
-        let s_canvas = {
+        let canvas = {
             let scheme = r.as_color_scheme();
             scheme.to_style(Highlight::Canvas)
         };
@@ -372,7 +378,12 @@ impl NoWrap {
                 let n = sline.n.saturating_sub(line_span.trim_newline() as u16);
                 self.coord.wth.saturating_sub(n)
             };
-            line_span.right_padding(padding, s_canvas.clone());
+            line_span.right_padding(padding);
+            line_span.optimize_spans(canvas.clone());
+            match &canvas.bg {
+                Some(bg) => err_at!(Fatal, termbg!(bg.clone()))?,
+                None => (),
+            };
             err_at!(Fatal, termqu!(nu_span, line_span))?;
         }
 

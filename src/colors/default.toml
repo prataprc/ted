@@ -1,46 +1,46 @@
 name            = "default"
-canvas          = { on = "#202020", with = "#d0d0d0"}
-tab             = { on = "#202020", with = "#d0d0d0"}
-tab-modified    = { on = "#202020", with = "#d0d0d0"}
-comment         = { on = "#202020", with = "#707070"}
-constant        = { on = "#202020", with = "#67c16d"}
-string          = { on = "#202020", with = "#afaf87"}
-escape-seq      = { on = "#202020", with = "#4ab5a8"}
-char            = { on = "#202020", with = "#d0d0d0"}
-number          = { on = "#202020", with = "#ed4076"}
-boolean         = { on = "#202020", with = "#e950e6"}
-float           = { on = "#202020", with = "#e97fa0"}
-identifier      = { on = "#202020", with = "#d0d0d0"}
-function        = { on = "#202020", with = "#d0d0d0"}
-statement       = { on = "#202020", with = "#d0d0d0"}
-conditional     = { on = "#202020", with = "#d0d0d0"}
-repeat          = { on = "#202020", with = "#d0d0d0"}
-label           = { on = "#202020", with = "#d0d0d0"}
-operator        = { on = "#202020", with = "#d0d0d0"}
-keyword         = { on = "#202020", with = "#d0d0d0"}
-exception       = { on = "#202020", with = "#d0d0d0"}
-preproc         = { on = "#202020", with = "#d0d0d0"}
-include         = { on = "#202020", with = "#d0d0d0"}
-define          = { on = "#202020", with = "#d0d0d0"}
-macro           = { on = "#202020", with = "#d0d0d0"}
-precondit       = { on = "#202020", with = "#d0d0d0"}
-type            = { on = "#202020", with = "#fa8701"}
-storage-class   = { on = "#202020", with = "#d0d0d0"}
-structure       = { on = "#202020", with = "#ce7121"}
-typedef         = { on = "#202020", with = "#d0d0d0"}
-special         = { on = "#202020", with = "#d0d0d0"}
-special-char    = { on = "#202020", with = "#d6d700"}
-tag             = { on = "#202020", with = "#d0d0d0"}
-delimiter       = { on = "#202020", with = "#d0d0d0"}
-special-comment = { on = "#202020", with = "#d0d0d0"}
-debug           = { on = "#202020", with = "#d0d0d0"}
-underline       = { on = "#202020", with = "#d0d0d0"}
-ignore          = { on = "#202020", with = "#d0d0d0"}
-error           = { on = "#202020", with = "#e64f4f"}
-todo            = { on = "#202020", with = "#d0d0d0"}
-line-nr         = { on = "#202020", with = "#86875f"}
-prompt          = { on = "#202020", with = "#cf7d00"}
-status-line     = { on = "#202020", with = "#cf7d00"}
-tabc-line       = { on = "#202020", with = "#cf7d00"}
-tabc-option     = { on = "#202020", with = "#cf7d00"}
-tabc-select     = { on = "#202020", with = "#cf7d00"}
+canvas          = { on = 234, with = 252 }
+tab             = { with = 252 }
+tab-modified    = { with = 160 }
+comment         = { with = 241 }
+constant        = { with = 109 }
+string          = { with = 142 }
+escape-seq      = { with =  39 }
+char            = { with = "#d0d0d0"}
+number          = { with = 199 }
+boolean         = { with = 201 }
+float           = { with = 204}
+identifier      = { with = "#d0d0d0"}
+function        = { with = "#d0d0d0"}
+statement       = { with = "#d0d0d0"}
+conditional     = { with = "#d0d0d0"}
+repeat          = { with = "#d0d0d0"}
+label           = { with = "#d0d0d0"}
+operator        = { with = 196 }
+keyword         = { with = "#d0d0d0"}
+exception       = { with = "#d0d0d0"}
+preproc         = { with = "#d0d0d0"}
+include         = { with = "#d0d0d0"}
+define          = { with = "#d0d0d0"}
+macro           = { with = "#d0d0d0"}
+precondit       = { with = "#d0d0d0"}
+type            = { with = 172 }
+storage-class   = { with = "#d0d0d0"}
+structure       = { with = 130 }
+typedef         = { with = "#d0d0d0"}
+special         = { with = "#d0d0d0"}
+special-char    = { with = 220 }
+tag             = { with = "#d0d0d0"}
+delimiter       = { with = "#d0d0d0"}
+special-comment = { with = "#d0d0d0"}
+debug           = { with = "#d0d0d0"}
+underline       = { with = "#d0d0d0"}
+ignore          = { with = "#d0d0d0"}
+error           = { with = "#e64f4f"}
+todo            = { with = "#d0d0d0"}
+line-nr         = { with = "#86875f"}
+prompt          = { with = "#cf7d00"}
+status-line     = { with = "#cf7d00"}
+tabc-line       = { with = "#cf7d00"}
+tabc-option     = { with = "#cf7d00"}
+tabc-select     = { with = "#cf7d00"}
