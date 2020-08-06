@@ -82,8 +82,18 @@ impl Wrap {
     }
 
     #[inline]
-    pub fn to_screen_lines(&self) -> Vec<ScrLine> {
-        self.screen_lines.clone()
+    pub fn to_screen_lines<B>(&self, buf: &B) -> Vec<ScrLine>
+    where
+        B: WinBuffer,
+    {
+        use crate::text;
+
+        let mut screen_lines = self.screen_lines.clone();
+        for sl in screen_lines.iter_mut() {
+            let txt = buf.slice(sl.bc..(sl.bc + (sl.n as usize)));
+            sl.text = Some(text::visual_line(&txt).to_string());
+        }
+        screen_lines
     }
 
     // scroll is true, on screen cursor position remains the same, buffer
@@ -121,7 +131,12 @@ impl Wrap {
         self.screen_lines = screen_lines;
     }
 
-    pub fn render<R>(mut self, buf: &R::Buf, r: &R) -> Result<Cursor>
+    pub fn render<R>(
+        mut self,
+        buf: &R::Buf,
+        r: &R,
+        old_screen: Option<Vec<ScrLine>>,
+    ) -> Result<Cursor>
     where
         R: Render,
         <R as Render>::Buf: WinBuffer,
@@ -130,13 +145,13 @@ impl Wrap {
         self.nu.set_color_scheme(r.as_color_scheme());
         let cursor = {
             let (obc_xy, line_number) = (self.obc_xy, self.line_number);
-            let cursor = self.refresh(buf, r)?;
+            let cursor = self.refresh(buf, r, old_screen)?;
             cursor.account_nu(ColNu::new(obc_xy.row, line_number).to_width())
         };
         Ok(cursor)
     }
 
-    fn refresh<R>(self, buf: &R::Buf, r: &R) -> Result<Cursor>
+    fn refresh<R>(self, buf: &R::Buf, r: &R, old_screen: Option<Vec<ScrLine>>) -> Result<Cursor>
     where
         R: Render,
         <R as Render>::Buf: WinBuffer,
@@ -151,7 +166,13 @@ impl Wrap {
         let (col, row) = full_coord.to_origin_cursor();
 
         let rows = row..(row + full_coord.hgt);
-        for (row, sline) in rows.zip(self.screen_lines.into_iter()) {
+        let iter = self.to_screen_lines(buf).into_iter().enumerate();
+        for (row, (i, sline)) in rows.zip(iter) {
+            match old_screen.as_ref() {
+                Some(old_screen) if sline == old_screen[i] => continue,
+                _ => (),
+            }
+
             let nu_span = {
                 let mut nu_span = self.nu.to_span(sline.colk);
                 nu_span.set_cursor(Cursor { col, row });
@@ -254,8 +275,19 @@ impl NoWrap {
         Cursor { row: 0, col }
     }
 
-    pub fn to_screen_lines(&self) -> Vec<ScrLine> {
-        self.screen_lines.clone()
+    #[inline]
+    pub fn to_screen_lines<B>(&self, buf: &B) -> Vec<ScrLine>
+    where
+        B: WinBuffer,
+    {
+        use crate::text;
+
+        let mut screen_lines = self.screen_lines.clone();
+        for sl in screen_lines.iter_mut() {
+            let txt = buf.slice(sl.bc..(sl.bc + (sl.n as usize)));
+            sl.text = Some(text::visual_line(&txt).to_string());
+        }
+        screen_lines
     }
 
     // scroll is true, on screen cursor position remains the same, buffer
@@ -337,7 +369,12 @@ impl NoWrap {
         self.screen_lines = screen_lines;
     }
 
-    pub fn render<R>(mut self, buf: &R::Buf, r: &R) -> Result<Cursor>
+    pub fn render<R>(
+        mut self,
+        buf: &R::Buf,
+        r: &R,
+        old_screen: Option<Vec<ScrLine>>,
+    ) -> Result<Cursor>
     where
         R: Render,
         <R as Render>::Buf: WinBuffer,
@@ -346,13 +383,13 @@ impl NoWrap {
         self.nu.set_color_scheme(r.as_color_scheme());
         let cursor = {
             let (obc_xy, line_number) = (self.obc_xy, self.line_number);
-            let cursor = self.refresh(buf, r)?;
+            let cursor = self.refresh(buf, r, old_screen)?;
             cursor.account_nu(ColNu::new(obc_xy.row, line_number).to_width())
         };
         Ok(cursor)
     }
 
-    fn refresh<R>(self, buf: &R::Buf, r: &R) -> Result<Cursor>
+    fn refresh<R>(self, buf: &R::Buf, r: &R, old_screen: Option<Vec<ScrLine>>) -> Result<Cursor>
     where
         R: Render,
         <R as Render>::Buf: WinBuffer,
@@ -367,7 +404,13 @@ impl NoWrap {
         let (col, row) = full_coord.to_origin_cursor();
 
         let rows = row..(row + full_coord.hgt);
-        for (row, sline) in rows.zip(self.screen_lines.into_iter()) {
+        let iter = self.to_screen_lines(buf).into_iter().enumerate();
+        for (row, (i, sline)) in rows.zip(iter) {
+            match old_screen.as_ref() {
+                Some(old_screen) if sline == old_screen[i] => continue,
+                _ => (),
+            }
+
             let nu_span = {
                 let mut span = self.nu.to_span(sline.colk);
                 span.set_cursor(Cursor { col, row });
@@ -625,12 +668,13 @@ fn col_kinds(nu: usize, n: usize) -> Vec<ColKind> {
     list
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ScrLine {
     pub colk: ColKind,
     pub line_idx: usize,
     pub bc: usize,
     pub n: u16,
+    pub text: Option<String>,
 }
 
 impl fmt::Display for ScrLine {
@@ -652,6 +696,7 @@ impl ScrLine {
             line_idx,
             bc,
             n,
+            text: None,
         }
     }
 
@@ -661,6 +706,7 @@ impl ScrLine {
             line_idx,
             bc,
             n,
+            text: None,
         }
     }
 
@@ -670,6 +716,7 @@ impl ScrLine {
             line_idx: usize::default(),
             bc: usize::default(),
             n: u16::default(),
+            text: None,
         }
     }
 }

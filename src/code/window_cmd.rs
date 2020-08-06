@@ -137,7 +137,7 @@ impl Window for WindowCmd {
 
         let mut v: NoWrap = (&*self, self.obc_xy).into();
         v.shift_cursor(&self.buf, false /*scroll*/);
-        self.cursor = v.render(&self.buf, self)?;
+        self.cursor = v.render(&self.buf, self, None)?;
         self.obc_xy = self.buf.to_xy_cursor(None);
 
         Ok(())

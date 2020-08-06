@@ -12,6 +12,7 @@ use crate::{
     event::{self, Event, DP},
     syntax::{self, Syntax},
     term::Spanline,
+    view,
     window::{Coord, Cursor, Render, WinBuffer, Window},
     Error, Result,
 };
@@ -25,6 +26,7 @@ pub struct WindowEdit {
     syn: syntax::Type,
     scheme: ColorScheme,
     keymap: Keymap,
+    old_screen: Option<Vec<view::ScrLine>>,
     // configuration.
     scroll_off: u16,
     line_number: bool,
@@ -60,6 +62,7 @@ impl<'a, 'b> From<(&'a code::Code, &'b Buffer, Coord)> for WindowEdit {
             syn: syntax::detect(buf, &scheme).unwrap(),
             scheme,
             keymap: Keymap::new_edit(),
+            old_screen: None,
             // configuration
             scroll_off: app.as_ref().scroll_off,
             line_number: app.as_ref().line_number,
@@ -196,8 +199,6 @@ impl WindowEdit {
     }
 
     fn mto_screen_up(&self, app: &mut code::Code, buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
-        use crate::view;
-
         let cursor = if app.as_ref().wrap {
             let scr_wth = self.to_screen_width();
             let scr_col = self.to_cursor_col() as usize;
@@ -228,8 +229,6 @@ impl WindowEdit {
         n: usize,
         dp: DP,
     ) -> Result<usize> {
-        use crate::view;
-
         let cursor = if app.as_ref().wrap {
             let scr_wth = self.to_screen_width();
             let scr_col = self.to_cursor_col() as usize;
@@ -262,11 +261,11 @@ impl WindowEdit {
         let screen_lines = if app.as_ref().wrap {
             let mut v: Wrap = (&*self, self.obc_xy).into();
             v.shift_cursor(buf, false /*scroll*/);
-            v.to_screen_lines()
+            v.to_screen_lines(buf)
         } else {
             let mut v: NoWrap = (&*self, self.obc_xy).into();
             v.shift_cursor(buf, false /*scroll*/);
-            v.to_screen_lines()
+            v.to_screen_lines(buf)
         };
         let screen_lines: Vec<ScrLine> = {
             let iter = screen_lines.into_iter();
@@ -299,11 +298,11 @@ impl WindowEdit {
         let screen_lines = if app.as_ref().wrap {
             let mut v: Wrap = (&*self, self.obc_xy).into();
             v.shift_cursor(buf, false /*scroll*/);
-            v.to_screen_lines()
+            v.to_screen_lines(buf)
         } else {
             let mut v: NoWrap = (&*self, self.obc_xy).into();
             v.shift_cursor(buf, false /*scroll*/);
-            v.to_screen_lines()
+            v.to_screen_lines(buf)
         };
         let screen_lines: Vec<ScrLine> = {
             let iter = screen_lines.into_iter();
@@ -331,11 +330,11 @@ impl WindowEdit {
         let screen_lines = if app.as_ref().wrap {
             let mut v: Wrap = (&*self, self.obc_xy).into();
             v.shift_cursor(buf, false /*scroll*/);
-            v.to_screen_lines()
+            v.to_screen_lines(buf)
         } else {
             let mut v: NoWrap = (&*self, self.obc_xy).into();
             v.shift_cursor(buf, false /*scroll*/);
-            v.to_screen_lines()
+            v.to_screen_lines(buf)
         };
         let screen_lines: Vec<ScrLine> = {
             let iter = screen_lines.into_iter();
@@ -468,12 +467,14 @@ impl Window for WindowEdit {
             let mut v: Wrap = (&*self, self.obc_xy).into();
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.shift_cursor(buf, false /*scroll*/);
-            v.render(buf, self)?
+            let old_screen = self.old_screen.replace(v.to_screen_lines(buf));
+            v.render(buf, self, old_screen)?
         } else {
             let mut v: NoWrap = (&*self, self.obc_xy).into();
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.shift_cursor(buf, false /*scroll*/);
-            v.render(buf, self)?
+            let old_screen = self.old_screen.replace(v.to_screen_lines(buf));
+            v.render(buf, self, old_screen)?
         };
         self.obc_xy = {
             let err = {
