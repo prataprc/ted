@@ -83,12 +83,8 @@ impl Window for WindowLine {
     }
 
     #[inline]
-    fn to_cursor(&self) -> Cursor {
-        match self.inner {
-            Inner::Status { .. } => unreachable!(),
-            Inner::Tab { .. } => unreachable!(),
-            Inner::None => unreachable!(),
-        }
+    fn to_cursor(&self) -> Option<Cursor> {
+        None
     }
 
     #[inline]

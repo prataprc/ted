@@ -327,13 +327,13 @@ impl Application for Code {
         self.subscribers.notify(topic, msg)
     }
 
-    fn to_cursor(&self) -> Cursor {
+    fn to_cursor(&self) -> Option<Cursor> {
         match &self.inner {
             Inner::Edit(val) => val.wfile.to_cursor(),
             Inner::Prompt(val) => val.prompts[0].to_cursor(),
             Inner::Command(val) => val.wcmd.to_cursor(),
             Inner::Less(val) => val.wless.to_cursor(),
-            Inner::None => Cursor::default(),
+            Inner::None => None,
         }
     }
 

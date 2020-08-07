@@ -2,7 +2,7 @@ use crossterm::queue;
 #[allow(unused_imports)]
 use log::{debug, trace, warn};
 
-use std::{cmp, fmt, result};
+use std::{cmp, convert::TryFrom, fmt, result};
 
 use crate::{
     buffer::{self},
@@ -50,17 +50,23 @@ impl fmt::Display for Wrap {
     }
 }
 
-impl<'a, W> From<(&'a W, buffer::Cursor)> for Wrap
+impl<'a, W> TryFrom<(&'a W, buffer::Cursor)> for Wrap
 where
     W: Window,
 {
-    fn from((w, obc_xy): (&'a W, buffer::Cursor)) -> Wrap {
+    type Error = Error;
+
+    fn try_from((w, obc_xy): (&'a W, buffer::Cursor)) -> Result<Wrap> {
+        let cursor = {
+            let e = Error::Invalid(String::default(), "no-cursor".to_string());
+            err_at!(w.to_cursor().ok_or(e))?
+        };
         let scroll_off = w.config_scroll_offset();
         let line_number = w.config_line_number();
         let mut value = Wrap {
             name: w.to_name(),
             coord: w.to_coord(),
-            cursor: w.to_cursor(),
+            cursor,
             obc_xy,
             nu: ColNu::new(obc_xy.row, line_number),
             scroll_off,
@@ -68,7 +74,7 @@ where
             screen_lines: Vec::default(),
         };
         value.discount_nu(ColNu::new(obc_xy.row, line_number).to_width());
-        value
+        Ok(value)
     }
 }
 
@@ -244,17 +250,23 @@ impl fmt::Display for NoWrap {
     }
 }
 
-impl<'a, W> From<(&'a W, buffer::Cursor)> for NoWrap
+impl<'a, W> TryFrom<(&'a W, buffer::Cursor)> for NoWrap
 where
     W: Window,
 {
-    fn from((w, obc_xy): (&'a W, buffer::Cursor)) -> NoWrap {
+    type Error = Error;
+
+    fn try_from((w, obc_xy): (&'a W, buffer::Cursor)) -> Result<NoWrap> {
+        let cursor = {
+            let e = Error::Invalid(String::default(), "no-cursor".to_string());
+            err_at!(w.to_cursor().ok_or(e))?
+        };
         let line_number = w.config_line_number();
         let scroll_off = w.config_scroll_offset();
         let mut value = NoWrap {
             name: w.to_name(),
             coord: w.to_coord(),
-            cursor: w.to_cursor(),
+            cursor,
             obc_xy,
             nu: ColNu::new(obc_xy.row, line_number),
             scroll_off,
@@ -262,7 +274,7 @@ where
             screen_lines: Vec::default(),
         };
         value.discount_nu(ColNu::new(obc_xy.row, line_number).to_width());
-        value
+        Ok(value)
     }
 }
 

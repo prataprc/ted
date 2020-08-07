@@ -166,7 +166,7 @@ impl Inner {
         }
     }
 
-    fn to_cursor(&self) -> Cursor {
+    fn to_cursor(&self) -> Option<Cursor> {
         match self {
             Inner::Mono { tab } => tab.to_cursor(),
             Inner::Multi { tabs, .. } => {
@@ -175,9 +175,9 @@ impl Inner {
                         return tab.to_cursor();
                     }
                 }
-                Cursor::default()
+                None
             }
-            Inner::None => unreachable!(),
+            Inner::None => None,
         }
     }
 }
@@ -301,7 +301,9 @@ impl State {
         // initial screen refresh
         let mut inner = mem::replace(&mut self.inner, Inner::default());
         inner.on_refresh(&self)?;
-        err_at!(Fatal, termex!(inner.to_cursor()))?;
+        if let Some(cursor) = inner.to_cursor() {
+            err_at!(Fatal, termex!(cursor))?;
+        }
 
         let mut evnts = Event::Noop;
         loop {
@@ -333,7 +335,9 @@ impl State {
                 };
                 inner.on_refresh(&self)?;
             }
-            err_at!(Fatal, termex!(inner.to_cursor()))?;
+            if let Some(cursor) = inner.to_cursor() {
+                err_at!(Fatal, termex!(cursor))?;
+            }
             stats.sample(start.elapsed().unwrap());
         }
 
@@ -385,7 +389,7 @@ impl Tab {
         self.app.on_refresh()
     }
 
-    fn to_cursor(&self) -> Cursor {
+    fn to_cursor(&self) -> Option<Cursor> {
         self.app.to_cursor()
     }
 

@@ -61,9 +61,9 @@ impl Window for WindowLess {
     }
 
     #[inline]
-    fn to_cursor(&self) -> Cursor {
+    fn to_cursor(&self) -> Option<Cursor> {
         let col: usize = text::width(self.status_line.chars());
-        Cursor::new(col.try_into().unwrap(), curz!(self.coord.hgt))
+        Some(Cursor::new(col.try_into().unwrap(), curz!(self.coord.hgt)))
     }
 
     #[inline]

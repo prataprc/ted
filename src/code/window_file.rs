@@ -153,7 +153,7 @@ impl Window for WindowFile {
     }
 
     #[inline]
-    fn to_cursor(&self) -> Cursor {
+    fn to_cursor(&self) -> Option<Cursor> {
         self.we.to_cursor()
     }
 

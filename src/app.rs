@@ -23,7 +23,7 @@ pub trait Application {
     fn on_refresh(&mut self) -> Result<()>;
 
     /// Return the cursor within application's view-port.
-    fn to_cursor(&self) -> Cursor;
+    fn to_cursor(&self) -> Option<Cursor>;
 
     /// Return a string less than the specified width.
     fn to_tab_title(&self, wth: usize) -> state::TabTitle;
@@ -55,10 +55,10 @@ impl App {
         }
     }
 
-    pub fn to_cursor(&self) -> Cursor {
+    pub fn to_cursor(&self) -> Option<Cursor> {
         match self {
             App::Code(app) => app.to_cursor(),
-            App::None => Cursor::default(),
+            App::None => None,
         }
     }
 

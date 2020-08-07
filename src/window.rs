@@ -28,7 +28,7 @@ pub trait Window {
 
     fn to_coord(&self) -> Coord;
 
-    fn to_cursor(&self) -> Cursor;
+    fn to_cursor(&self) -> Option<Cursor>;
 
     fn config_line_number(&self) -> bool;
 

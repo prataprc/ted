@@ -83,8 +83,8 @@ impl Window for WindowCmd {
     }
 
     #[inline]
-    fn to_cursor(&self) -> Cursor {
-        self.coord.to_top_left() + self.cursor
+    fn to_cursor(&self) -> Option<Cursor> {
+        Some(self.coord.to_top_left() + self.cursor)
     }
 
     #[inline]
@@ -135,7 +135,7 @@ impl Window for WindowCmd {
         let (col, row) = self.coord.to_origin_cursor();
         err_at!(Fatal, termqu!(term_cursor::MoveTo(col, row)))?;
 
-        let mut v: NoWrap = (&*self, self.obc_xy).into();
+        let mut v: NoWrap = (&*self, self.obc_xy).try_into()?;
         v.shift_cursor(&self.buf, false /*scroll*/);
         self.cursor = v.render(&self.buf, self, None)?;
         self.obc_xy = self.buf.to_xy_cursor(None);

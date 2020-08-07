@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use log::{debug, trace};
 
-use std::{cmp, fmt, result};
+use std::{cmp, convert::TryInto, fmt, result};
 
 use crate::{
     app::Application,
@@ -259,11 +259,11 @@ impl WindowEdit {
         };
 
         let screen_lines = if app.as_ref().wrap {
-            let mut v: Wrap = (&*self, self.obc_xy).into();
+            let mut v: Wrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf, false /*scroll*/);
             v.to_screen_lines(buf)
         } else {
-            let mut v: NoWrap = (&*self, self.obc_xy).into();
+            let mut v: NoWrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf, false /*scroll*/);
             v.to_screen_lines(buf)
         };
@@ -296,11 +296,11 @@ impl WindowEdit {
         };
 
         let screen_lines = if app.as_ref().wrap {
-            let mut v: Wrap = (&*self, self.obc_xy).into();
+            let mut v: Wrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf, false /*scroll*/);
             v.to_screen_lines(buf)
         } else {
-            let mut v: NoWrap = (&*self, self.obc_xy).into();
+            let mut v: NoWrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf, false /*scroll*/);
             v.to_screen_lines(buf)
         };
@@ -328,11 +328,11 @@ impl WindowEdit {
         };
 
         let screen_lines = if app.as_ref().wrap {
-            let mut v: Wrap = (&*self, self.obc_xy).into();
+            let mut v: Wrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf, false /*scroll*/);
             v.to_screen_lines(buf)
         } else {
-            let mut v: NoWrap = (&*self, self.obc_xy).into();
+            let mut v: NoWrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf, false /*scroll*/);
             v.to_screen_lines(buf)
         };
@@ -373,8 +373,8 @@ impl Window for WindowEdit {
     }
 
     #[inline]
-    fn to_cursor(&self) -> Cursor {
-        self.coord.to_top_left() + self.cursor
+    fn to_cursor(&self) -> Option<Cursor> {
+        Some(self.coord.to_top_left() + self.cursor)
     }
 
     #[inline]
@@ -464,13 +464,13 @@ impl Window for WindowEdit {
             Error::Invalid(String::new(), s)
         };
         self.cursor = if app.as_ref().wrap {
-            let mut v: Wrap = (&*self, self.obc_xy).into();
+            let mut v: Wrap = (&*self, self.obc_xy).try_into()?;
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.shift_cursor(buf, false /*scroll*/);
             let old_screen = self.old_screen.replace(v.to_screen_lines(buf));
             v.render(buf, self, old_screen)?
         } else {
-            let mut v: NoWrap = (&*self, self.obc_xy).into();
+            let mut v: NoWrap = (&*self, self.obc_xy).try_into()?;
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.shift_cursor(buf, false /*scroll*/);
             let old_screen = self.old_screen.replace(v.to_screen_lines(buf));

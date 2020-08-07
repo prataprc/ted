@@ -99,7 +99,7 @@ impl Window for WindowPrompt {
     }
 
     #[inline]
-    fn to_cursor(&self) -> Cursor {
+    fn to_cursor(&self) -> Option<Cursor> {
         let col: u16 = match self.span_lines.last() {
             Some(line) => {
                 let n: u16 = {
@@ -111,7 +111,7 @@ impl Window for WindowPrompt {
             }
             None => 0,
         };
-        Cursor::new(col, curz!(self.coord.row) + self.coord.hgt)
+        Some(Cursor::new(col, curz!(self.coord.row) + self.coord.hgt))
     }
 
     #[inline]
