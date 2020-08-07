@@ -593,7 +593,12 @@ impl Mto {
 /// Event specific to application `code`.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Code {
-    Less(String),
+    Less {
+        name: String,    // content type, for syntax highlighting.
+        hgt: u16,        // window height.
+        content: String, // content inside WindowLess.
+        wrap: bool,      // whether to wrap text.
+    },
     Prompt(String),
     StatusFile,
     StatusCursor,
@@ -604,7 +609,7 @@ impl fmt::Display for Code {
         use Code::{Less, Prompt, StatusCursor, StatusFile};
 
         match self {
-            Less(_) => write!(f, "less"),
+            Less { .. } => write!(f, "less"),
             Prompt(_) => write!(f, "prompt"),
             StatusFile => write!(f, "status_file"),
             StatusCursor => write!(f, "status_cursor"),

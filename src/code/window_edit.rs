@@ -53,7 +53,7 @@ impl<'a, 'b> From<(&'a code::Code, &'b Buffer, Coord)> for WindowEdit {
         };
 
         let scheme = app.to_color_scheme(None);
-        let we = WindowEdit {
+        let w = WindowEdit {
             coord,
             cursor,
             obc_xy: (0, 0).into(),
@@ -67,8 +67,8 @@ impl<'a, 'b> From<(&'a code::Code, &'b Buffer, Coord)> for WindowEdit {
             scroll_off: app.as_ref().scroll_off,
             line_number: app.as_ref().line_number,
         };
-        debug!("{} {} {}", we, we.scroll_off, we.line_number);
-        we
+        debug!("{} {} {}", w, w.scroll_off, w.line_number);
+        w
     }
 }
 

@@ -2350,6 +2350,25 @@ impl Search {
     }
 }
 
+pub fn visual_lines(content: &str, wth: Option<usize>) -> Result<usize> {
+    let loc = {
+        let read_only = true;
+        Location::new_ted("", io::empty(), read_only)?
+    };
+    let buf = Buffer::from_reader(content.as_bytes(), loc)?;
+    let mut m = 0_usize;
+    for line in buf.lines_at(0, DP::Right)? {
+        m += match wth {
+            Some(wth) => {
+                let n = text::visual_line_n(&line);
+                (n / wth) + if_else!((n % wth) > 0, 1, 0)
+            }
+            None => 1,
+        };
+    }
+    Ok(m)
+}
+
 #[cfg(test)]
 #[path = "buffer_test.rs"]
 mod buffer_test;

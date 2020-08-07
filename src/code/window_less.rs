@@ -1,26 +1,29 @@
 #[allow(unused_imports)]
-use log::trace;
+use log::{debug, trace};
 
-use std::{
-    convert::{TryFrom, TryInto},
-    fmt, io, mem, result,
-};
+use std::{cmp, convert::TryFrom, fmt, io, mem, result};
 
 use crate::{
     buffer::Buffer,
     code::{self, keymap::Keymap},
-    event::Event,
+    colors::ColorScheme,
+    event::{self, Event},
     location::Location,
-    text,
+    syntax, view,
     window::{Coord, Cursor, Window},
     Error, Result,
 };
 
 pub struct WindowLess {
     coord: Coord,
-    status_line: String,
-    keymap: Keymap,
+    cursor: Cursor,
     buffer: Buffer,
+    syn: syntax::Type,
+    scheme: ColorScheme,
+    keymap: Keymap,
+    old_screen: Option<Vec<view::ScrLine>>,
+    // configuration
+    wrap: bool,
 }
 
 impl fmt::Display for WindowLess {
@@ -29,19 +32,41 @@ impl fmt::Display for WindowLess {
     }
 }
 
-impl<'a, 'b> TryFrom<(&'a code::Code, &'b str, Coord)> for WindowLess {
+impl<'a> TryFrom<(&'a code::Code, event::Code, Coord)> for WindowLess {
     type Error = Error;
 
-    fn try_from(arg: (&'a code::Code, &'b str, Coord)) -> Result<Self> {
-        let (_, content, coord) = arg;
-        let read_only = true;
-        let loc = Location::new_ted("win-less", io::empty(), read_only)?;
+    fn try_from(arg: (&'a code::Code, event::Code, Coord)) -> Result<Self> {
+        let (app, less, mut coord) = arg;
+        let (name, content, wrap) = match less {
+            event::Code::Less {
+                name,
+                hgt,
+                content,
+                wrap,
+            } => {
+                coord.hgt = cmp::min(hgt, coord.hgt);
+                (name, content, wrap)
+            }
+            val => err_at!(Invalid, msg: format!("{} != WindowLess", val))?,
+        };
+        let loc = {
+            let read_only = true;
+            Location::new_ted(&name, io::empty(), read_only)?
+        };
+        let scheme = app.to_color_scheme(None);
+        let buf = Buffer::from_reader(content.as_bytes(), loc)?;
+        let syn = syntax::detect(&buf, &scheme)?;
         let mut w = WindowLess {
             coord,
-            status_line: String::default(),
-            keymap: Keymap::new_less(),
-            buffer: Buffer::from_reader(content.as_bytes(), loc).unwrap(),
+            cursor: Cursor::default(),
+            buffer: buf,
+            syn,
+            scheme,
+            keymap: Keymap::new_edit(),
+            old_screen: None,
+            wrap,
         };
+        debug!("{}", w);
         w.buffer.mode_normal();
         Ok(w)
     }
@@ -62,8 +87,7 @@ impl Window for WindowLess {
 
     #[inline]
     fn to_cursor(&self) -> Option<Cursor> {
-        let col: usize = text::width(self.status_line.chars());
-        Some(Cursor::new(col.try_into().unwrap(), curz!(self.coord.hgt)))
+        None
     }
 
     #[inline]
@@ -78,7 +102,7 @@ impl Window for WindowLess {
 
     fn on_event(&mut self, app: &mut code::Code, evnt: Event) -> Result<Event> {
         match evnt {
-            Event::Esc => Ok(Event::Noop),
+            evnt @ Event::Esc => Ok(evnt),
             evnt => {
                 let mut km = mem::replace(&mut self.keymap, Keymap::default());
                 let evnt = km.fold(app, &self.buffer, evnt)?;

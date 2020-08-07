@@ -468,7 +468,6 @@ struct WrapView {
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     scroll_off: u16,
-    line_number: bool,
 }
 
 impl From<Wrap> for WrapView {
@@ -478,7 +477,6 @@ impl From<Wrap> for WrapView {
             cursor: w.cursor,
             obc_xy: w.obc_xy,
             scroll_off: w.scroll_off,
-            line_number: w.line_number,
         }
     }
 }
@@ -666,18 +664,6 @@ where
             slines
         }
     }
-}
-
-fn col_kinds(nu: usize, n: usize) -> Vec<ColKind> {
-    use std::iter::repeat;
-
-    let mut list = vec![ColKind::Nu(nu)];
-    let tail: Vec<ColKind> = {
-        let iter = repeat(ColKind::Wrap).take(n.saturating_sub(1));
-        iter.collect()
-    };
-    list.extend(tail);
-    list
 }
 
 #[derive(Clone, Eq, PartialEq)]

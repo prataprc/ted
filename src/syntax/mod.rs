@@ -134,8 +134,12 @@ pub fn detect(buf: &Buffer, scheme: &ColorScheme) -> Result<Type> {
                 Some(_) | None => "".to_string(),
             }
         }
+        Location::Ted { name, .. } => match name.as_str() {
+            "code-buffer-list" => "code-buffer-list".to_string(),
+            "code-config" => "code-config".to_string(),
+            _ => "".to_string(),
+        },
         Location::Memory { .. } => "".to_string(),
-        Location::Ted { .. } => "".to_string(),
     };
 
     // TODO: find other ways to detect the file's type.

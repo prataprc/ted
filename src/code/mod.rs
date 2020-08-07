@@ -398,12 +398,9 @@ impl Application for Code {
         let mut new_evnt: Event = Event::default();
         for evnt in evnt.into_iter() {
             inner = match evnt {
-                Event::Code(event::Code::Less(ref content)) => {
+                Event::Code(val @ event::Code::Less { .. }) => {
                     let edit = inner.into_edit();
-                    let wless = {
-                        let coord = self.coord;
-                        TryFrom::try_from((&*self, content.as_str(), coord))?
-                    };
+                    let wless = TryFrom::try_from((&*self, val, self.coord))?;
                     Inner::Less(Less { edit, wless })
                 }
                 Event::Esc => Inner::Edit(inner.into_edit()),
