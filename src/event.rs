@@ -10,7 +10,9 @@ use tree_sitter as ts;
 
 use std::{fmt, iter::FromIterator, mem, result};
 
-use crate::{mark, pubsub::Notify, Error, Result};
+use crate::{
+    mark, pubsub::Notify, window_less::WindowLess, window_prompt::WindowPrompt, Error, Result,
+};
 
 /// Events
 #[derive(Clone, Eq, PartialEq)]
@@ -52,7 +54,7 @@ pub enum Event {
     Write(Input),
     List(Vec<Event>),
     Notify(Notify),
-    Code(Code),
+    Appn(Appn),
     Ted(Ted),
     Noop,
 }
@@ -78,7 +80,7 @@ impl Event {
             Mark(_) | Md(_) | Mt(_) => empty,
             // other events
             JumpFrom(_) | Edit(_) | Write(_) => empty,
-            List(_) | Notify(_) | Code(_) | Ted(_) => empty,
+            List(_) | Notify(_) | Appn(_) | Ted(_) => empty,
             Noop => empty,
         }
     }
@@ -210,9 +212,9 @@ impl Extend<Event> for Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        use Event::{Appn, Edit, JumpFrom, List, Noop, Notify, Ted, Write};
         use Event::{BackTab, FKey, Insert};
         use Event::{Backspace, Char, Delete, Enter, Esc, Tab};
-        use Event::{Code, Edit, JumpFrom, List, Noop, Notify, Ted, Write};
         use Event::{Down, End, Home, Left, PageDown, PageUp, Right, Up};
         use Event::{Mark, Md, Mt};
         use Event::{Op, B, F, G, J, M, N, T};
@@ -255,7 +257,7 @@ impl fmt::Display for Event {
             Write(val) => write!(f, "write({})", val),
             List(es) => write!(f, "list({})", es.len()),
             Notify(notf) => write!(f, "notify({})", notf),
-            Code(cd) => write!(f, "Code({})", cd),
+            Appn(cd) => write!(f, "Appn({})", cd),
             Ted(td) => write!(f, "Ted({})", td),
             Noop => write!(f, "noop"),
         }
@@ -592,24 +594,19 @@ impl Mto {
 
 /// Event specific to application `code`.
 #[derive(Clone, Eq, PartialEq)]
-pub enum Code {
-    Less {
-        name: String,    // content type, for syntax highlighting.
-        hgt: u16,        // window height.
-        content: String, // content inside WindowLess.
-        wrap: bool,      // whether to wrap text.
-    },
-    Prompt(String),
+pub enum Appn {
+    Less(Box<WindowLess>),
+    Prompt(Box<WindowPrompt>),
     StatusFile,
     StatusCursor,
 }
 
-impl fmt::Display for Code {
+impl fmt::Display for Appn {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Code::{Less, Prompt, StatusCursor, StatusFile};
+        use Appn::{Less, Prompt, StatusCursor, StatusFile};
 
         match self {
-            Less { .. } => write!(f, "less"),
+            Less(_) => write!(f, "less"),
             Prompt(_) => write!(f, "prompt"),
             StatusFile => write!(f, "status_file"),
             StatusCursor => write!(f, "status_cursor"),

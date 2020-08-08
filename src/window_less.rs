@@ -1,19 +1,20 @@
 #[allow(unused_imports)]
 use log::{debug, trace};
 
-use std::{cmp, convert::TryFrom, fmt, io, mem, result};
+use std::{convert::TryInto, fmt, io, mem, result};
 
 use crate::{
     buffer::Buffer,
-    code::{self, keymap::Keymap},
     colors::ColorScheme,
-    event::{self, Event},
+    event::Event,
+    keymap::Keymap,
     location::Location,
     syntax, view,
-    window::{Coord, Cursor, Window},
-    Error, Result,
+    window::{Coord, Cursor},
+    Result,
 };
 
+#[derive(Clone)]
 pub struct WindowLess {
     coord: Coord,
     cursor: Cursor,
@@ -26,86 +27,82 @@ pub struct WindowLess {
     wrap: bool,
 }
 
+impl Eq for WindowLess {}
+
+impl PartialEq for WindowLess {
+    fn eq(&self, other: &Self) -> bool {
+        let mut ok = self.coord == other.coord;
+        ok = ok && self.buffer.to_string() == other.buffer.to_string();
+        ok && self.wrap == other.wrap
+    }
+}
+
 impl fmt::Display for WindowLess {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         write!(f, "WindowLess<{}>", self.coord)
     }
 }
 
-impl<'a> TryFrom<(&'a code::Code, event::Code, Coord)> for WindowLess {
-    type Error = Error;
-
-    fn try_from(arg: (&'a code::Code, event::Code, Coord)) -> Result<Self> {
-        let (app, less, mut coord) = arg;
-        let (name, content, wrap) = match less {
-            event::Code::Less {
-                name,
-                hgt,
-                content,
-                wrap,
-            } => {
-                coord.hgt = cmp::min(hgt, coord.hgt);
-                (name, content, wrap)
-            }
-            val => err_at!(Invalid, msg: format!("{} != WindowLess", val))?,
-        };
-        let loc = {
+impl WindowLess {
+    pub fn new(name: &str, content: &str, coord: Coord, scheme: ColorScheme) -> Result<Self> {
+        let buf = {
             let read_only = true;
-            Location::new_ted(&name, io::empty(), read_only)?
+            let loc = Location::new_ted(&name, io::empty(), read_only)?;
+            Buffer::from_reader(content.as_bytes(), loc)?
         };
-        let scheme = app.to_color_scheme(None);
-        let buf = Buffer::from_reader(content.as_bytes(), loc)?;
-        let syn = syntax::detect(&buf, &scheme)?;
         let mut w = WindowLess {
             coord,
             cursor: Cursor::default(),
             buffer: buf,
-            syn,
+            syn: (name, content, scheme.clone()).try_into()?,
             scheme,
-            keymap: Keymap::new_edit(),
+            keymap: Keymap::new_less(),
             old_screen: None,
-            wrap,
+            wrap: false,
         };
         debug!("{}", w);
         w.buffer.mode_normal();
         Ok(w)
     }
+
+    pub fn set_wrap(&mut self, wrap: bool) -> &mut Self {
+        self.wrap = wrap;
+        self
+    }
 }
 
-impl Window for WindowLess {
-    type App = code::Code;
-
+impl WindowLess {
     #[inline]
-    fn to_name(&self) -> String {
+    pub fn to_name(&self) -> String {
         "window-less".to_string()
     }
 
     #[inline]
-    fn to_coord(&self) -> Coord {
+    pub fn to_coord(&self) -> Coord {
         self.coord
     }
 
     #[inline]
-    fn to_cursor(&self) -> Option<Cursor> {
+    pub fn to_cursor(&self) -> Option<Cursor> {
         None
     }
 
     #[inline]
-    fn config_line_number(&self) -> bool {
+    pub fn config_line_number(&self) -> bool {
         false
     }
 
     #[inline]
-    fn config_scroll_offset(&self) -> u16 {
+    pub fn config_scroll_offset(&self) -> u16 {
         0
     }
 
-    fn on_event(&mut self, app: &mut code::Code, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
         match evnt {
             evnt @ Event::Esc => Ok(evnt),
             evnt => {
                 let mut km = mem::replace(&mut self.keymap, Keymap::default());
-                let evnt = km.fold(app, &self.buffer, evnt)?;
+                let evnt = km.fold(&self.buffer, evnt)?;
                 let evnt = self.buffer.on_event(evnt)?;
                 self.keymap = km;
                 Ok(evnt)
@@ -113,7 +110,7 @@ impl Window for WindowLess {
         }
     }
 
-    fn on_refresh(&mut self, _: &mut code::Code) -> Result<()> {
+    pub fn on_refresh(&mut self) -> Result<()> {
         //use crate::Error;
         //use crossterm::queue;
         //use std::io::{self, Write};

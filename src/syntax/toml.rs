@@ -23,8 +23,25 @@ pub struct Toml {
     scheme: ColorScheme,
 }
 
+impl Clone for Toml {
+    fn clone(&self) -> Self {
+        let lang = unsafe { tree_sitter_toml() };
+        let parser = {
+            let mut parser = ts::Parser::new();
+            parser.set_language(lang).ok();
+            parser
+        };
+        Toml {
+            parser,
+            tree: self.tree.clone(),
+            atmt: self.atmt.clone(),
+            scheme: self.scheme.clone(),
+        }
+    }
+}
+
 impl Toml {
-    pub fn new(s: &str, scheme: &ColorScheme) -> Result<Toml> {
+    pub fn new(s: &str, scheme: ColorScheme) -> Result<Toml> {
         let lang = unsafe { tree_sitter_toml() };
         let mut parser = {
             let mut parser = ts::Parser::new();
@@ -42,7 +59,7 @@ impl Toml {
             }
         };
         let atmt = {
-            let atmt = Automata::from_str("toml", tss::TOML, scheme)?;
+            let atmt = Automata::from_str("toml", tss::TOML, &scheme)?;
             debug!("{}", atmt);
             atmt
         };
@@ -50,7 +67,7 @@ impl Toml {
             parser,
             tree,
             atmt,
-            scheme: scheme.clone(),
+            scheme,
         })
     }
 }

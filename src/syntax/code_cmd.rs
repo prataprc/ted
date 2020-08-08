@@ -23,8 +23,25 @@ pub struct CodeCmd {
     scheme: ColorScheme,
 }
 
+impl Clone for CodeCmd {
+    fn clone(&self) -> Self {
+        let lang = unsafe { tree_sitter_code_cmd() };
+        let parser = {
+            let mut parser = ts::Parser::new();
+            parser.set_language(lang).ok();
+            parser
+        };
+        CodeCmd {
+            parser,
+            tree: self.tree.clone(),
+            atmt: self.atmt.clone(),
+            scheme: self.scheme.clone(),
+        }
+    }
+}
+
 impl CodeCmd {
-    pub fn new(s: &str, scheme: &ColorScheme) -> Result<CodeCmd> {
+    pub fn new(s: &str, scheme: ColorScheme) -> Result<CodeCmd> {
         let lang = unsafe { tree_sitter_code_cmd() };
         let mut parser = {
             let mut parser = ts::Parser::new();
@@ -42,7 +59,7 @@ impl CodeCmd {
             }
         };
         let atmt = {
-            let atmt = Automata::from_str("code_cmd", tss::CODE_CMD, scheme)?;
+            let atmt = Automata::from_str("code_cmd", tss::CODE_CMD, &scheme)?;
             debug!("{}", atmt);
             atmt
         };
@@ -50,7 +67,7 @@ impl CodeCmd {
             parser,
             tree,
             atmt,
-            scheme: scheme.clone(),
+            scheme,
         })
     }
 }

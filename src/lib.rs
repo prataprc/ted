@@ -11,9 +11,12 @@ pub mod util;
 #[macro_use]
 pub mod config;
 #[macro_use]
-pub mod window;
-#[macro_use]
 pub mod term;
+
+#[macro_use]
+pub mod window;
+mod window_less;
+mod window_prompt;
 
 pub mod state;
 
@@ -30,6 +33,11 @@ mod view;
 
 pub mod app;
 mod code;
+
+pub mod keymap;
+mod keymap_cmd;
+mod keymap_edit;
+mod keymap_less;
 
 mod syntax;
 mod text;

@@ -9,9 +9,10 @@ use std::{
 
 use crate::{
     buffer::{self, Buffer},
-    code::{self, cmd, keymap::Keymap},
+    code::{self, cmd},
     colors::ColorScheme,
     event::Event,
+    keymap::Keymap,
     location::Location,
     syntax::{self, Syntax},
     term::Spanline,
@@ -56,7 +57,7 @@ impl<'a> TryFrom<(&'a code::Code, Coord)> for WindowCmd {
         let cursor = NoWrap::initial_cursor(false /*line_number*/);
         let obc_xy = (0, 0).into();
         let scheme = app.to_color_scheme(None);
-        let syn_code_cmd = syntax::CodeCmd::new("", &scheme).unwrap();
+        let syn_code_cmd = syntax::CodeCmd::new("", scheme.clone()).unwrap();
         Ok(WindowCmd {
             coord,
             cursor,
@@ -101,7 +102,7 @@ impl Window for WindowCmd {
         use crate::code::cmd::Command;
 
         let mut buf = mem::replace(&mut self.buf, Buffer::default());
-        evnt = match self.keymap.fold(app, &mut buf, evnt)? {
+        evnt = match self.keymap.fold(&mut buf, evnt)? {
             Event::N(n) => {
                 buf.cmd_insert(0, &format!(".,.+{}", n.saturating_sub(1)))?;
                 Event::Noop

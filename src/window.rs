@@ -105,7 +105,7 @@ pub trait Render {
 
 // Terminal coordinates, describes the four corners of a window.
 // Origin is at (1, 1).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Coord {
     pub col: u16,
     pub row: u16,

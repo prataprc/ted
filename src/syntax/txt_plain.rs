@@ -21,8 +21,24 @@ pub struct PlainText {
     scheme: ColorScheme,
 }
 
+impl Clone for PlainText {
+    fn clone(&self) -> Self {
+        let lang = unsafe { tree_sitter_txt_plain() };
+        let parser = {
+            let mut parser = ts::Parser::new();
+            parser.set_language(lang).ok();
+            parser
+        };
+        PlainText {
+            parser,
+            tree: self.tree.clone(),
+            scheme: self.scheme.clone(),
+        }
+    }
+}
+
 impl PlainText {
-    pub fn new(s: &str, scheme: &ColorScheme) -> Result<PlainText> {
+    pub fn new(s: &str, scheme: ColorScheme) -> Result<PlainText> {
         let lang = unsafe { tree_sitter_txt_plain() };
         let mut parser = {
             let mut parser = ts::Parser::new();

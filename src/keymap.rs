@@ -1,13 +1,11 @@
-use crate::{
-    buffer::Buffer,
-    code,
-    code::{keymap_cmd::KeyCmd, keymap_edit::KeyEdit, keymap_less::KeyLess},
-    event::Event,
-    Error, Result,
-};
+use crate::{buffer::Buffer, event::Event, Error, Result};
+
+pub use crate::keymap_cmd::KeyCmd;
+pub use crate::keymap_edit::KeyEdit;
+pub use crate::keymap_less::KeyLess;
 
 trait Keymapper {
-    fn fold(&mut self, _: &code::Code, buf: &Buffer, evnt: Event) -> Result<Event>;
+    fn fold(&mut self, buf: &Buffer, evnt: Event) -> Result<Event>;
 }
 
 #[derive(Clone)]
@@ -39,11 +37,11 @@ impl Keymap {
 }
 
 impl Keymap {
-    pub fn fold(&mut self, app: &code::Code, buf: &Buffer, evnt: Event) -> Result<Event> {
+    pub fn fold(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
         match self {
-            Keymap::Edit(km) => km.fold(app, buf, evnt),
-            Keymap::Cmd(km) => km.fold(app, buf, evnt),
-            Keymap::Less(km) => km.fold(app, buf, evnt),
+            Keymap::Edit(km) => km.fold(buf, evnt),
+            Keymap::Cmd(km) => km.fold(buf, evnt),
+            Keymap::Less(km) => km.fold(buf, evnt),
             Keymap::None => err_at!(Fatal, msg: format!("keymap is none")),
         }
     }

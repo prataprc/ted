@@ -171,7 +171,7 @@ impl Drop for Terminal {
 }
 
 /// Attribute details for terminal text.
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Attribute {
     Reset,
     Bold,
@@ -565,7 +565,7 @@ impl Style {
 }
 
 // Span object to render on screen.
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Span {
     pub content: String,
     pub fg: Option<Color>,
@@ -696,7 +696,7 @@ impl Command for Span {
 /// screen-line and can be padded to the right to cover the entire width of
 /// the window's viewport. A spanline can be composed of one or more Span
 /// values.
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Spanline {
     spans: Vec<Span>,
     cursor: Option<Cursor>,

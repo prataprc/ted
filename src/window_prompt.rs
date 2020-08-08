@@ -8,12 +8,11 @@ use std::{cmp, convert::TryInto, fmt, result};
 
 use crate::{
     buffer::Buffer,
-    code,
     colors::{ColorScheme, Highlight},
     event::Event,
     term::{Span, Spanline, Style},
     text,
-    window::{Coord, Cursor, Window},
+    window::{Coord, Cursor},
     Error, Result,
 };
 
@@ -21,11 +20,26 @@ lazy_static! {
     static ref RE_ERROR: Regex = Regex::new(r"(?i)error").unwrap();
 }
 
+#[derive(Clone)]
 pub struct WindowPrompt {
     coord: Coord,
     span_lines: Vec<Spanline>,
     buffer: Buffer,
     options: Vec<Regex>,
+}
+
+impl Eq for WindowPrompt {}
+
+impl PartialEq for WindowPrompt {
+    fn eq(&self, other: &Self) -> bool {
+        let mut ok = self.coord == other.coord;
+        ok = ok && self.span_lines.len() == other.span_lines.len();
+        ok && self
+            .span_lines
+            .iter()
+            .zip(other.span_lines.iter())
+            .all(|(a, b)| a == b)
+    }
 }
 
 impl fmt::Display for WindowPrompt {
@@ -34,9 +48,8 @@ impl fmt::Display for WindowPrompt {
     }
 }
 
-impl<'a> From<(&'a code::Code, Coord, Vec<String>)> for WindowPrompt {
-    fn from((app, coord, lines): (&'a code::Code, Coord, Vec<String>)) -> Self {
-        let scheme = app.to_color_scheme(None);
+impl<'a> From<(Coord, Vec<String>, ColorScheme)> for WindowPrompt {
+    fn from((coord, lines, scheme): (Coord, Vec<String>, ColorScheme)) -> Self {
         let style = Self::to_style(&lines, &scheme);
         let span_lines: Vec<Spanline> = {
             let iter = lines.into_iter().map(|l| {
@@ -85,21 +98,19 @@ impl WindowPrompt {
     }
 }
 
-impl Window for WindowPrompt {
-    type App = code::Code;
-
+impl WindowPrompt {
     #[inline]
-    fn to_name(&self) -> String {
+    pub fn to_name(&self) -> String {
         "window-prompt".to_string()
     }
 
     #[inline]
-    fn to_coord(&self) -> Coord {
+    pub fn to_coord(&self) -> Coord {
         self.coord
     }
 
     #[inline]
-    fn to_cursor(&self) -> Option<Cursor> {
+    pub fn to_cursor(&self) -> Option<Cursor> {
         let col: u16 = match self.span_lines.last() {
             Some(line) => {
                 let n: u16 = {
@@ -115,23 +126,23 @@ impl Window for WindowPrompt {
     }
 
     #[inline]
-    fn config_line_number(&self) -> bool {
+    pub fn config_line_number(&self) -> bool {
         false
     }
 
     #[inline]
-    fn config_scroll_offset(&self) -> u16 {
+    pub fn config_scroll_offset(&self) -> u16 {
         0
     }
 
-    fn on_event(&mut self, _: &mut code::Code, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Esc => Ok(Event::Noop),
             evnt => self.buffer.on_event(evnt),
         }
     }
 
-    fn on_refresh(&mut self, _: &mut code::Code) -> Result<()> {
+    pub fn on_refresh(&mut self) -> Result<()> {
         let col = curz!(self.coord.col);
         let till = curz!(self.coord.row) + self.coord.hgt;
         let rows = {

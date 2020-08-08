@@ -50,17 +50,18 @@ macro_rules! syntax_for {
             ];
         }
 
+        #[derive(Clone)]
         pub enum Type {
             $($variant($t),)*
             None,
         }
 
-        impl<'a, 'b> TryFrom<(String, &'a str, &'b ColorScheme)> for Type {
+        impl<'a, 'b> TryFrom<(&'a str, &'b str, ColorScheme)> for Type {
             type Error = Error;
 
-            fn try_from(args: (String, &'a str, &'b ColorScheme)) -> Result<Self> {
+            fn try_from(args: (&'a str, &'b str, ColorScheme)) -> Result<Self> {
                 let (typ, s, scheme) = args;
-                let val = match typ.as_str() {
+                let val = match typ {
                     $($name => Type::$variant($t::new(s, scheme)?),)*
                     _ => Type::PlainText(PlainText::new(s, scheme)?),
                 };
@@ -134,17 +135,13 @@ pub fn detect(buf: &Buffer, scheme: &ColorScheme) -> Result<Type> {
                 Some(_) | None => "".to_string(),
             }
         }
-        Location::Ted { name, .. } => match name.as_str() {
-            "code-buffer-list" => "code-buffer-list".to_string(),
-            "code-config" => "code-config".to_string(),
-            _ => "".to_string(),
-        },
+        Location::Ted { .. } => "".to_string(),
         Location::Memory { .. } => "".to_string(),
     };
 
     // TODO: find other ways to detect the file's type.
 
-    (tt, buf.to_string().as_str(), scheme).try_into()
+    (tt.as_str(), buf.to_string().as_str(), scheme.clone()).try_into()
 }
 
 /// Syntax highlighting using tree-sitter and ted-style-sheet automata.

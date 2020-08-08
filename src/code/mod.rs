@@ -5,16 +5,10 @@ mod cmd_set;
 //mod cmd_write;
 
 mod config;
-mod keymap;
-mod keymap_cmd;
-mod keymap_edit;
-mod keymap_less;
 mod window_cmd;
 mod window_edit;
 mod window_file;
-mod window_less;
 mod window_line;
-mod window_prompt;
 
 #[allow(unused_imports)]
 use log::{debug, error, trace};
@@ -28,9 +22,7 @@ use crate::{
     code::config::Config,
     code::window_cmd::WindowCmd,
     code::window_file::WindowFile,
-    code::window_less::WindowLess,
     code::window_line::WindowLine,
-    code::window_prompt::WindowPrompt,
     colors::ColorScheme,
     event::{self, Event},
     location::Location,
@@ -38,6 +30,8 @@ use crate::{
     pubsub::{self, PubSub},
     state::{self, State},
     window::{Coord, Cursor, Window},
+    window_less::WindowLess,
+    window_prompt::WindowPrompt,
     Result,
 };
 
@@ -274,6 +268,7 @@ impl Code {
     fn open_cmd_files(&self, files: Vec<(String, String)>) -> (Vec<Buffer>, Vec<WindowPrompt>) {
         let coord = self.to_coord_prompt();
         let (mut buffers, mut prompts) = (vec![], vec![]);
+        let scheme = self.to_color_scheme(None);
 
         let mut locs: Vec<Location> = vec![];
         for (f, e) in files.into_iter() {
@@ -285,7 +280,7 @@ impl Code {
                         format!("error opening {:?} : {}", f, err.to_error()),
                         format!("-press any key to continue-"),
                     ];
-                    prompts.push((self, coord, lines).into());
+                    prompts.push((coord, lines, scheme.clone()).into());
                 }
             }
         }
@@ -309,7 +304,7 @@ impl Code {
                         format!("error opening {} : {}", loc, err.to_error()),
                         format!("-press any key to continue-"),
                     ];
-                    prompts.push((self, coord, lines).into());
+                    prompts.push((coord, lines, scheme.clone()).into());
                 }
             }
         }
@@ -375,7 +370,7 @@ impl Application for Code {
                 (Inner::Edit(edit), evnt)
             }
             (Inner::Prompt(mut prompt), evnt) => {
-                let evnt = prompt.prompts[0].on_event(self, evnt)?;
+                let evnt = prompt.prompts[0].on_event(evnt)?;
                 if let Some(_) = prompt.prompts[0].prompt_match() {
                     prompt.prompts.remove(0);
                 }
@@ -389,7 +384,7 @@ impl Application for Code {
                 (Inner::Command(cmd), evnt)
             }
             (Inner::Less(mut less), evnt) => {
-                let evnt = less.wless.on_event(self, evnt)?;
+                let evnt = less.wless.on_event(evnt)?;
                 (Inner::Less(less), evnt)
             }
             (Inner::None, _) => unreachable!(),
@@ -398,11 +393,10 @@ impl Application for Code {
         let mut new_evnt: Event = Event::default();
         for evnt in evnt.into_iter() {
             inner = match evnt {
-                Event::Code(val @ event::Code::Less { .. }) => {
-                    let edit = inner.into_edit();
-                    let wless = TryFrom::try_from((&*self, val, self.coord))?;
-                    Inner::Less(Less { edit, wless })
-                }
+                Event::Appn(event::Appn::Less(wless)) => Inner::Less(Less {
+                    edit: inner.into_edit(),
+                    wless: *wless,
+                }),
                 Event::Esc => Inner::Edit(inner.into_edit()),
                 evnt => {
                     new_evnt.push(evnt);
@@ -424,13 +418,13 @@ impl Application for Code {
                 // TODO: edit.tbcline.on_refresh(self)?;
             }
             Inner::Prompt(prompt) => match prompt.prompts.first_mut() {
-                Some(p) => p.on_refresh(self)?,
+                Some(p) => p.on_refresh()?,
                 None => (),
             },
             Inner::Command(cmd) => {
                 cmd.wcmd.on_refresh(self)?;
             }
-            Inner::Less(less) => less.wless.on_refresh(self)?,
+            Inner::Less(less) => less.wless.on_refresh()?,
             Inner::None => unreachable!(),
         }
         self.inner = inner;

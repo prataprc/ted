@@ -6,10 +6,11 @@ use std::{cmp, convert::TryInto, fmt, result};
 use crate::{
     app::Application,
     buffer::{self, Buffer},
-    code::{self, keymap::Keymap},
+    code::{self},
     col_nu::ColNu,
     colors::ColorScheme,
     event::{self, Event, DP},
+    keymap::Keymap,
     syntax::{self, Syntax},
     term::Spanline,
     view,
@@ -391,7 +392,7 @@ impl Window for WindowEdit {
         use crate::{event::Mto, pubsub::Notify};
 
         let (evnt, buf) = match app.take_buffer(&self.curr_buf_id) {
-            Some(mut buf) => match self.keymap.fold(app, &mut buf, evnt)? {
+            Some(mut buf) => match self.keymap.fold(&mut buf, evnt)? {
                 Event::Mt(Mto::ScreenHome(dp)) => {
                     let cursor = self.mto_screen_home(&buf, dp)?;
                     buf.set_cursor(cursor).clear_sticky_col();
@@ -438,7 +439,7 @@ impl Window for WindowEdit {
                     buf.set_cursor(cursor).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
-                Event::Code(event::Code::StatusCursor) => {
+                Event::Appn(event::Appn::StatusCursor) => {
                     let msg = vec![self.syn.to_status_cursor()?];
                     app.notify("code", Notify::Status(msg))?;
                     (Event::Noop, Some(buf))

@@ -120,6 +120,7 @@ impl Default for StickyCol {
 }
 
 // all bits and pieces of content is managed by buffer.
+#[derive(Clone)]
 pub struct Buffer {
     /// Source for this buffer, typically a file from local disk.
     pub location: Location,

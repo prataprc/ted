@@ -54,6 +54,7 @@ impl Encoding {
     }
 }
 
+#[derive(Clone)]
 pub enum Format {
     Dos,
     Mac,

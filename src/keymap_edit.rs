@@ -5,8 +5,7 @@ use std::mem;
 
 use crate::{
     buffer::Buffer,
-    code,
-    event::{Event, Mod, Mto, DP},
+    event::{self, Event, Mod, Mto, DP},
     Error, Result,
 };
 
@@ -23,7 +22,7 @@ pub struct KeyEdit {
 }
 
 impl KeyEdit {
-    pub fn fold(&mut self, _: &code::Code, buf: &Buffer, evnt: Event) -> Result<Event> {
+    pub fn fold(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
             "insert" => self.insert_fold(evnt),
             "normal" => self.normal_fold(evnt),
@@ -43,7 +42,6 @@ impl KeyEdit {
 
     fn normal_fold(&mut self, evnt: Event) -> Result<Event> {
         use crate::event::Event::*;
-        use crate::event::{Code, Opr};
         use crossterm::event::KeyModifiers as KM;
 
         let noop = Event::Noop;
@@ -118,17 +116,20 @@ impl KeyEdit {
                 //
                 Char('[', _) => (B(1, DP::Left), noop),
                 Char(']', _) => (B(1, DP::Right), noop),
-                Char('g', _) if ctrl => (noop, Event::Code(Code::StatusFile)),
+                Char('g', _) if ctrl => {
+                    let evnt = Event::Appn(event::Appn::StatusFile);
+                    (noop, evnt)
+                }
                 Char('g', _) => (G(1), noop),
                 // operation prefix
-                Char('c', _) => (Op(Opr::Change(1, Mto::None)), noop),
-                Char('d', _) => (Op(Opr::Delete(1, Mto::None)), noop),
-                Char('y', _) => (Op(Opr::Yank(1, Mto::None)), noop),
-                Char('~', _) => (Op(Opr::Swapcase(1, Mto::None)), noop),
-                Char('!', _) => (Op(Opr::Filter(1, Mto::None)), noop),
-                Char('=', _) => (Op(Opr::Equal(1, Mto::None)), noop),
-                Char('<', _) => (Op(Opr::RShift(1, Mto::None)), noop),
-                Char('>', _) => (Op(Opr::LShift(1, Mto::None)), noop),
+                Char('c', _) => (Op(event::Opr::Change(1, Mto::None)), noop),
+                Char('d', _) => (Op(event::Opr::Delete(1, Mto::None)), noop),
+                Char('y', _) => (Op(event::Opr::Yank(1, Mto::None)), noop),
+                Char('~', _) => (Op(event::Opr::Swapcase(1, Mto::None)), noop),
+                Char('!', _) => (Op(event::Opr::Filter(1, Mto::None)), noop),
+                Char('=', _) => (Op(event::Opr::Equal(1, Mto::None)), noop),
+                Char('<', _) => (Op(event::Opr::RShift(1, Mto::None)), noop),
+                Char('>', _) => (Op(event::Opr::LShift(1, Mto::None)), noop),
                 // numeric prefix
                 Char(ch @ '0'..='9', _) => (N(parse_n!(0, ch)), noop),
                 evnt => (noop, evnt),
@@ -195,23 +196,29 @@ impl KeyEdit {
                 //
                 Char('[', _) => (B(n, DP::Left), noop),
                 Char(']', _) => (B(n, DP::Right), noop),
-                Char('g', _) if ctrl => (noop, Event::Code(Code::StatusFile)),
+                Char('g', _) if ctrl => {
+                    let evnt = Event::Appn(event::Appn::StatusFile);
+                    (noop, evnt)
+                }
                 Char('g', _) => (G(n), noop),
                 // operation prefix
-                Char('c', _) => (Op(Opr::Change(n, Mto::None)), noop),
-                Char('d', _) => (Op(Opr::Delete(n, Mto::None)), noop),
-                Char('y', _) => (Op(Opr::Yank(n, Mto::None)), noop),
-                Char('~', _) => (Op(Opr::Swapcase(n, Mto::None)), noop),
-                Char('!', _) => (Op(Opr::Filter(n, Mto::None)), noop),
-                Char('=', _) => (Op(Opr::Equal(n, Mto::None)), noop),
-                Char('<', _) => (Op(Opr::RShift(n, Mto::None)), noop),
-                Char('>', _) => (Op(Opr::LShift(n, Mto::None)), noop),
+                Char('c', _) => (Op(event::Opr::Change(n, Mto::None)), noop),
+                Char('d', _) => (Op(event::Opr::Delete(n, Mto::None)), noop),
+                Char('y', _) => (Op(event::Opr::Yank(n, Mto::None)), noop),
+                Char('~', _) => (Op(event::Opr::Swapcase(n, Mto::None)), noop),
+                Char('!', _) => (Op(event::Opr::Filter(n, Mto::None)), noop),
+                Char('=', _) => (Op(event::Opr::Equal(n, Mto::None)), noop),
+                Char('<', _) => (Op(event::Opr::RShift(n, Mto::None)), noop),
+                Char('>', _) => (Op(event::Opr::LShift(n, Mto::None)), noop),
                 // continue with numberic prefix
                 Char(ch @ '0'..='9', _) => (N(parse_n!(n, ch)), noop),
                 evnt => (noop, evnt),
             },
             G(n) if m_empty | shift => match evnt {
-                Char('g', _) if ctrl => (noop, Event::Code(Code::StatusCursor)),
+                Char('g', _) if ctrl => {
+                    let evnt = Event::Appn(event::Appn::StatusCursor);
+                    (noop, evnt)
+                }
                 // motion command - characterwise
                 Home(_) => (noop, Mt(Mto::ScreenHome(DP::None))),
                 End(_) => (noop, Mt(Mto::ScreenEnd(n, DP::None))),
@@ -234,12 +241,12 @@ impl KeyEdit {
                 Char('o', _) => (noop, Mt(Mto::Cursor(n))),
                 Char('I', _) => (noop, Md(Mod::Insert(n, DP::TextCol))),
                 // operation prefix
-                Char('~', _) => (Op(Opr::Swapcase(n, Mto::None)), noop),
-                Char('u', _) => (Op(Opr::Lowercase(n, Mto::None)), noop),
-                Char('U', _) => (Op(Opr::Uppercase(n, Mto::None)), noop),
-                Char('w', _) => (Op(Opr::Format(n, Mto::None)), noop),
-                Char('?', _) => (Op(Opr::Encode(n, Mto::None)), noop),
-                Char('@', _) => (Op(Opr::Func(n, Mto::None)), noop),
+                Char('~', _) => (Op(event::Opr::Swapcase(n, Mto::None)), noop),
+                Char('u', _) => (Op(event::Opr::Lowercase(n, Mto::None)), noop),
+                Char('U', _) => (Op(event::Opr::Uppercase(n, Mto::None)), noop),
+                Char('w', _) => (Op(event::Opr::Format(n, Mto::None)), noop),
+                Char('?', _) => (Op(event::Opr::Encode(n, Mto::None)), noop),
+                Char('@', _) => (Op(event::Opr::Func(n, Mto::None)), noop),
                 evnt => (noop, evnt),
             },
             B(n, d) if m_empty => match evnt {

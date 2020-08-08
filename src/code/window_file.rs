@@ -171,7 +171,7 @@ impl Window for WindowFile {
         use crate::pubsub::Notify;
 
         match self.we.on_event(app, evnt)? {
-            Event::Code(event::Code::StatusFile { .. }) => {
+            Event::Appn(event::Appn::StatusFile { .. }) => {
                 let span = self.status_file(app)?;
                 app.notify("code", Notify::Status(vec![span]))?;
                 Ok(Event::Noop)

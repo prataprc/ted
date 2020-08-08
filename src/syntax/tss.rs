@@ -23,8 +23,25 @@ pub struct Tss {
     scheme: ColorScheme,
 }
 
+impl Clone for Tss {
+    fn clone(&self) -> Self {
+        let lang = unsafe { tree_sitter_tss() };
+        let parser = {
+            let mut parser = ts::Parser::new();
+            parser.set_language(lang).ok();
+            parser
+        };
+        Tss {
+            parser,
+            tree: self.tree.clone(),
+            atmt: self.atmt.clone(),
+            scheme: self.scheme.clone(),
+        }
+    }
+}
+
 impl Tss {
-    pub fn new(s: &str, scheme: &ColorScheme) -> Result<Tss> {
+    pub fn new(s: &str, scheme: ColorScheme) -> Result<Tss> {
         let lang = unsafe { tree_sitter_tss() };
         let mut parser = {
             let mut parser = ts::Parser::new();
@@ -42,7 +59,7 @@ impl Tss {
             }
         };
         let atmt = {
-            let atmt = Automata::from_str("tss", tss::TSS, scheme)?;
+            let atmt = Automata::from_str("tss", tss::TSS, &scheme)?;
             debug!("{}", atmt);
             atmt
         };
@@ -50,7 +67,7 @@ impl Tss {
             parser,
             tree,
             atmt,
-            scheme: scheme.clone(),
+            scheme,
         })
     }
 }
