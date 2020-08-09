@@ -51,65 +51,65 @@ macro_rules! syntax_for {
         }
 
         #[derive(Clone)]
-        pub enum Type {
+        pub enum Syn {
             $($variant($t),)*
             None,
         }
 
-        impl<'a, 'b> TryFrom<(&'a str, &'b str, ColorScheme)> for Type {
+        impl<'a, 'b> TryFrom<(&'a str, &'b str, ColorScheme)> for Syn {
             type Error = Error;
 
             fn try_from(args: (&'a str, &'b str, ColorScheme)) -> Result<Self> {
                 let (typ, s, scheme) = args;
                 let val = match typ {
-                    $($name => Type::$variant($t::new(s, scheme)?),)*
-                    _ => Type::PlainText(PlainText::new(s, scheme)?),
+                    $($name => Syn::$variant($t::new(s, scheme)?),)*
+                    _ => Syn::PlainText(PlainText::new(s, scheme)?),
                 };
                 Ok(val)
             }
         }
 
-        impl Type {
+        impl Syn {
             pub fn as_name(&self) -> &'static str {
                 match self {
-                    $(Type::$variant(_) => $name,)*
-                    Type::None => "invalid-syntax-type"
+                    $(Syn::$variant(_) => $name,)*
+                    Syn::None => "invalid-syntax-type"
                 }
             }
         }
 
-        impl Default for Type {
-            fn default() -> Type {
-                Type::None
+        impl Default for Syn {
+            fn default() -> Syn {
+                Syn::None
             }
         }
 
-        impl Syntax for Type {
+        impl Syntax for Syn {
             fn to_language(&self) -> Option<ts::Language> {
                 match self {
-                    $(Type::$variant(val) => val.to_language(),)*
-                    Type::None => None,
+                    $(Syn::$variant(val) => val.to_language(),)*
+                    Syn::None => None,
                 }
             }
 
             fn on_edit(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
                 match self {
-                    $(Type::$variant(val) => val.on_edit(buf, evnt),)*
-                    Type::None => Ok(evnt)
+                    $(Syn::$variant(val) => val.on_edit(buf, evnt),)*
+                    Syn::None => Ok(evnt)
                 }
             }
 
             fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<term::Spanline> {
                 match self {
-                    $(Type::$variant(val) => val.to_span_line(buf, a, z),)*
-                    Type::None => Ok("".to_string().into())
+                    $(Syn::$variant(val) => val.to_span_line(buf, a, z),)*
+                    Syn::None => Ok("".to_string().into())
                 }
             }
 
             fn to_status_cursor(&self) -> Result<term::Span> {
                 match self {
-                    $(Type::$variant(val) => val.to_status_cursor(),)*
-                    Type::None => Ok("".to_string().into())
+                    $(Syn::$variant(val) => val.to_status_cursor(),)*
+                    Syn::None => Ok("".to_string().into())
                 }
             }
         }
@@ -123,7 +123,7 @@ syntax_for![
     (PlainText, PlainText, "txt-plain")
 ];
 
-pub fn detect(buf: &Buffer, scheme: &ColorScheme) -> Result<Type> {
+pub fn detect(buf: &Buffer, scheme: &ColorScheme) -> Result<Syn> {
     let loc = buf.to_location();
 
     let tt = match &loc {

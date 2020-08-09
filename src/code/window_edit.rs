@@ -24,7 +24,7 @@ pub struct WindowEdit {
     obc_xy: buffer::Cursor,
     curr_buf_id: String,
     altn_buf_id: Option<String>,
-    syn: syntax::Type,
+    syn: syntax::Syn,
     scheme: ColorScheme,
     keymap: Keymap,
     old_screen: Option<Vec<view::ScrLine>>,

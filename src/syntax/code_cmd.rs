@@ -6,9 +6,8 @@ use crate::{
     buffer::{self, Buffer},
     colors::ColorScheme,
     event::Event,
-    syntax::{self, Syntax},
+    syntax::Syntax,
     term::{Span, Spanline},
-    tss::{self, Automata},
     Error, Result,
 };
 
@@ -19,8 +18,6 @@ extern "C" {
 pub struct CodeCmd {
     parser: ts::Parser,
     tree: Option<ts::Tree>,
-    atmt: Automata,
-    scheme: ColorScheme,
 }
 
 impl Clone for CodeCmd {
@@ -34,14 +31,12 @@ impl Clone for CodeCmd {
         CodeCmd {
             parser,
             tree: self.tree.clone(),
-            atmt: self.atmt.clone(),
-            scheme: self.scheme.clone(),
         }
     }
 }
 
 impl CodeCmd {
-    pub fn new(s: &str, scheme: ColorScheme) -> Result<CodeCmd> {
+    pub fn new(s: &str, _: ColorScheme) -> Result<CodeCmd> {
         let lang = unsafe { tree_sitter_code_cmd() };
         let mut parser = {
             let mut parser = ts::Parser::new();
@@ -58,17 +53,18 @@ impl CodeCmd {
                 None
             }
         };
-        let atmt = {
-            let atmt = Automata::from_str("code_cmd", tss::CODE_CMD, &scheme)?;
-            debug!("{}", atmt);
-            atmt
-        };
-        Ok(CodeCmd {
-            parser,
-            tree,
-            atmt,
-            scheme,
-        })
+        Ok(CodeCmd { parser, tree })
+    }
+
+    pub fn to_command_name(&self) -> Option<String> {
+        let root = self.tree.as_ref()?.root_node();
+        match root.child(root.child_count().saturating_sub(1)) {
+            Some(node) => match node.kind() {
+                "cmd" => Some(node.child(0).as_ref()?.kind().to_string()),
+                _ => None,
+            },
+            None => None,
+        }
     }
 }
 
@@ -99,13 +95,7 @@ impl Syntax for CodeCmd {
     }
 
     fn to_span_line(&self, b: &Buffer, a: usize, z: usize) -> Result<Spanline> {
-        match self.tree.as_ref() {
-            Some(tree) => {
-                let mut atmt = self.atmt.clone();
-                syntax::highlight(b, &self.scheme, tree, &mut atmt, a, z)
-            }
-            None => buffer::to_span_line(b, a, z),
-        }
+        buffer::to_span_line(b, a, z)
     }
 
     fn to_status_cursor(&self) -> Result<Span> {

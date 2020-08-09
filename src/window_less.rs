@@ -19,7 +19,7 @@ pub struct WindowLess {
     coord: Coord,
     cursor: Cursor,
     buffer: Buffer,
-    syn: syntax::Type,
+    syn: syntax::Syn,
     scheme: ColorScheme,
     keymap: Keymap,
     old_screen: Option<Vec<view::ScrLine>>,

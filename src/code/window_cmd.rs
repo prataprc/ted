@@ -14,7 +14,6 @@ use crate::{
     event::Event,
     keymap::Keymap,
     location::Location,
-    syntax::{self, Syntax},
     term::Spanline,
     window::{Coord, Cursor, Render, WinBuffer, Window},
     Error, Result,
@@ -25,7 +24,6 @@ pub struct WindowCmd {
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     buf: Buffer,
-    syn: syntax::Type,
     scheme: ColorScheme,
     keymap: Keymap,
 }
@@ -56,15 +54,12 @@ impl<'a> TryFrom<(&'a code::Code, Coord)> for WindowCmd {
 
         let cursor = NoWrap::initial_cursor(false /*line_number*/);
         let obc_xy = (0, 0).into();
-        let scheme = app.to_color_scheme(None);
-        let syn_code_cmd = syntax::CodeCmd::new("", scheme.clone()).unwrap();
         Ok(WindowCmd {
             coord,
             cursor,
             obc_xy,
             buf,
-            syn: syntax::Type::CodeCmd(syn_code_cmd),
-            scheme,
+            scheme: app.to_color_scheme(None),
             keymap: Keymap::new_cmd(),
         })
     }
@@ -108,23 +103,15 @@ impl Window for WindowCmd {
                 Event::Noop
             }
             Event::Enter(_) => {
-                let line = buf.to_string();
-                let syn = mem::replace(&mut self.syn, syntax::Type::default());
-                match line.split(' ').next() {
-                    Some(name) => {
-                        let name = name.to_string();
-                        let mut val: cmd::Cmd = (name, line, syn).try_into()?;
-                        let mut evnt = val.on_command(app)?;
-                        evnt.push(Event::Esc);
-                        evnt
-                    }
-                    None => Event::Esc,
-                }
+                let mut val: cmd::Cmd = {
+                    let line = buf.to_string();
+                    (line, self.scheme.clone()).try_into()?
+                };
+                let mut evnt = val.on_command(app)?;
+                evnt.push(Event::Esc);
+                evnt
             }
-            evnt => {
-                let evnt = buf.on_event(evnt)?;
-                self.syn.on_edit(&buf, evnt)?
-            }
+            evnt => buf.on_event(evnt)?,
         };
         self.buf = buf;
         Ok(evnt)
@@ -155,6 +142,6 @@ impl Render for WindowCmd {
 
     #[inline]
     fn to_span_line(&self, buf: &Self::Buf, a: usize, z: usize) -> Result<Spanline> {
-        self.syn.to_span_line(buf, a, z)
+        buffer::to_span_line(buf, a, z)
     }
 }

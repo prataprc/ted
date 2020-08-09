@@ -6,6 +6,7 @@ use std::convert::TryFrom;
 
 use crate::{
     code::{cmd_set::Set, Code},
+    colors::ColorScheme,
     event::Event,
     syntax, Error, Result,
 };
@@ -26,14 +27,17 @@ macro_rules! commands {
             $($var($t),)*
         }
 
-        // generate the cmd from (cmd-name, :full-cmd-line, syntax-type)
-        impl TryFrom<(String, String, syntax::Type)> for Cmd {
+        // generate the cmd from (:full-cmd-line, color-scheme)
+        impl TryFrom<(String, ColorScheme)> for Cmd {
             type Error = Error;
 
-            fn try_from((name, s, syn): (String, String, syntax::Type)) -> Result<Self> {
+            fn try_from((line, scheme): (String, ColorScheme)) -> Result<Self> {
+                let syn = syntax::CodeCmd::new(&line, scheme.clone())?;
+                let err = Error::Invalid("".to_string(), format!("no command"));
+                let name = err_at!(syn.to_command_name().ok_or(err))?;
                 match name.as_str() {
-                    $($name => Ok(Cmd::$var($t::new(s, syn)?)),)*
-                    _ => err_at!(Invalid, msg: format!("command {}", name)),
+                    $($name => Ok(Cmd::$var($t::new(syn, scheme)?)),)*
+                    name => err_at!(Invalid, msg: format!("command {}", name)),
                 }
             }
         }

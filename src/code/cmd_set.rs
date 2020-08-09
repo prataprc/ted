@@ -1,16 +1,16 @@
 #[allow(unused_imports)]
 use log::{debug, error, trace};
 
-use crate::{code::cmd::Command, code::Code, event::Event, syntax, Result};
+use crate::{code::cmd::Command, code::Code, colors, event::Event, syntax, Result};
 
 pub struct Set {
-    line: String,
-    syn: syntax::Type,
+    syn: syntax::CodeCmd,
+    scheme: colors::ColorScheme,
 }
 
 impl Set {
-    pub fn new(line: String, syn: syntax::Type) -> Result<Self> {
-        Ok(Set { line, syn })
+    pub fn new(syn: syntax::CodeCmd, scheme: colors::ColorScheme) -> Result<Self> {
+        Ok(Set { syn, scheme })
     }
 }
 
