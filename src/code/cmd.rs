@@ -31,12 +31,14 @@ macro_rules! commands {
         impl TryFrom<(String, ColorScheme)> for Cmd {
             type Error = Error;
 
-            fn try_from((line, scheme): (String, ColorScheme)) -> Result<Self> {
-                let syn = syntax::CodeCmd::new(&line, scheme.clone())?;
-                let err = Error::Invalid("".to_string(), format!("no command"));
-                let name = err_at!(syn.to_command_name().ok_or(err))?;
+            fn try_from((content, scheme): (String, ColorScheme)) -> Result<Self> {
+                let syn = syntax::CodeCmd::new(&content, scheme)?;
+                let name = {
+                    let err = Error::Invalid("".to_string(), format!("no command"));
+                    err_at!(syn.to_command_name().ok_or(err))?
+                };
                 match name.as_str() {
-                    $($name => Ok(Cmd::$var($t::new(syn, scheme)?)),)*
+                    $($name => Ok(Cmd::$var($t::new(syn)?)),)*
                     name => err_at!(Invalid, msg: format!("command {}", name)),
                 }
             }

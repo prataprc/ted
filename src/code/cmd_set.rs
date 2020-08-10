@@ -1,16 +1,39 @@
 #[allow(unused_imports)]
 use log::{debug, error, trace};
 
-use crate::{code::cmd::Command, code::Code, colors, event::Event, syntax, Result};
+use crate::{code::cmd::Command, code::Code, event::Event, syntax, Result};
 
 pub struct Set {
-    syn: syntax::CodeCmd,
-    scheme: colors::ColorScheme,
+    inner: Inner,
+}
+
+enum Inner {
+    Config { param: String },
+    None,
 }
 
 impl Set {
-    pub fn new(syn: syntax::CodeCmd, scheme: colors::ColorScheme) -> Result<Self> {
-        Ok(Set { syn, scheme })
+    pub fn new(syn: syntax::CodeCmd) -> Result<Self> {
+        match Self::convert(syn) {
+            Some(inner) => Ok(Set { inner }),
+            None => Ok(Set { inner: Inner::None }),
+        }
+    }
+
+    fn convert(syn: syntax::CodeCmd) -> Option<Inner> {
+        let tree = syn.into_parse_tree()?;
+
+        let node_cmd = {
+            let root = tree.root_node();
+            root.child(root.child_count().saturating_sub(1))?
+        };
+
+        let node_set = node_cmd.child(0)?;
+        assert_eq!(node_set.kind(), "set", "{}", node_set.kind());
+
+        let node_config_param = node_set.child(1)?;
+        let param = node_config_param.child(0)?.kind().to_string();
+        Some(Inner::Config { param })
     }
 }
 

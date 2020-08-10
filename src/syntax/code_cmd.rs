@@ -66,6 +66,10 @@ impl CodeCmd {
             None => None,
         }
     }
+
+    pub fn into_parse_tree(self) -> Option<ts::Tree> {
+        self.tree
+    }
 }
 
 impl Syntax for CodeCmd {

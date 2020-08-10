@@ -19,6 +19,11 @@
     }
   },
   {
+    "type": "config_param",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "edit",
     "named": true,
     "fields": {}
@@ -70,16 +75,11 @@
       "required": true,
       "types": [
         {
-          "type": "set_flags",
+          "type": "config_param",
           "named": true
         }
       ]
     }
-  },
-  {
-    "type": "set_flags",
-    "named": true,
-    "fields": {}
   },
   {
     "type": ",",

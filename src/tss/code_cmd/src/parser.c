@@ -29,7 +29,7 @@ enum {
   sym_cmd = 11,
   sym_range = 12,
   sym_set = 13,
-  sym_set_flags = 14,
+  sym_config_param = 14,
   sym_edit = 15,
 };
 
@@ -48,7 +48,7 @@ static const char *ts_symbol_names[] = {
   [sym_cmd] = "cmd",
   [sym_range] = "range",
   [sym_set] = "set",
-  [sym_set_flags] = "set_flags",
+  [sym_config_param] = "config_param",
   [sym_edit] = "edit",
 };
 
@@ -67,7 +67,7 @@ static TSSymbol ts_symbol_map[] = {
   [sym_cmd] = sym_cmd,
   [sym_range] = sym_range,
   [sym_set] = sym_set,
-  [sym_set_flags] = sym_set_flags,
+  [sym_config_param] = sym_config_param,
   [sym_edit] = sym_edit,
 };
 
@@ -128,7 +128,7 @@ static const TSSymbolMetadata ts_symbol_metadata[] = {
     .visible = true,
     .named = true,
   },
-  [sym_set_flags] = {
+  [sym_config_param] = {
     .visible = true,
     .named = true,
   },
@@ -426,7 +426,7 @@ static uint16_t ts_small_parse_table[] = {
     ACTIONS(3), 1,
       sym_newline,
     STATE(12), 1,
-      sym_set_flags,
+      sym_config_param,
     ACTIONS(19), 2,
       anon_sym_wrap,
       anon_sym_nowrap,
@@ -518,7 +518,7 @@ static TSParseActionEntry ts_parse_actions[] = {
   [27] = {.entry = {.count = 1, .reusable = true}},  ACCEPT_INPUT(),
   [29] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_cmd, 1),
   [31] = {.entry = {.count = 1, .reusable = true}}, SHIFT(5),
-  [33] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_set_flags, 1),
+  [33] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_config_param, 1),
   [35] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_set, 2),
   [37] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_edit, 2),
   [39] = {.entry = {.count = 1, .reusable = true}}, REDUCE(sym_s, 2),

@@ -94,11 +94,11 @@
         },
         {
           "type": "SYMBOL",
-          "name": "set_flags"
+          "name": "config_param"
         }
       ]
     },
-    "set_flags": {
+    "config_param": {
       "type": "CHOICE",
       "members": [
         {

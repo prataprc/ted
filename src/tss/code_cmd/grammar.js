@@ -14,8 +14,8 @@ module.exports = grammar({
     range_start: $ => /([0-9.%]+|(\?[^?]+\?)|'[a-z])[+-]?[0-9]*/,
     range_end: $ => /([0-9.$]+|(\/.*\/)|'[a-z])[+-]?[0-9]*/,
 
-    set: $ => seq('set', $.set_flags),
-    set_flags: $ => choice(
+    set: $ => seq('set', $.config_param),
+    config_param: $ => choice(
         'wrap',
         'nowrap',
     ),

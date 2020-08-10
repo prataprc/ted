@@ -104,8 +104,10 @@ impl Window for WindowCmd {
             }
             Event::Enter(_) => {
                 let mut val: cmd::Cmd = {
-                    let line = buf.to_string();
-                    (line, self.scheme.clone()).try_into()?
+                    // first character is ':'
+                    let bytes = buf.to_string().as_bytes()[1..].to_vec();
+                    let content = unsafe { String::from_utf8_unchecked(bytes) };
+                    (content, self.scheme.clone()).try_into()?
                 };
                 let mut evnt = val.on_command(app)?;
                 evnt.push(Event::Esc);
