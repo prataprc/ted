@@ -48,8 +48,8 @@ impl fmt::Display for WindowPrompt {
     }
 }
 
-impl<'a> From<(Coord, Vec<String>, ColorScheme)> for WindowPrompt {
-    fn from((coord, lines, scheme): (Coord, Vec<String>, ColorScheme)) -> Self {
+impl WindowPrompt {
+    pub fn new(coord: Coord, lines: Vec<String>, scheme: ColorScheme) -> Self {
         let style = Self::to_style(&lines, &scheme);
         let span_lines: Vec<Spanline> = {
             let iter = lines.into_iter().map(|l| {
@@ -123,16 +123,6 @@ impl WindowPrompt {
             None => 0,
         };
         Some(Cursor::new(col, curz!(self.coord.row) + self.coord.hgt))
-    }
-
-    #[inline]
-    pub fn config_line_number(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    pub fn config_scroll_offset(&self) -> u16 {
-        0
     }
 
     pub fn on_event(&mut self, evnt: Event) -> Result<Event> {

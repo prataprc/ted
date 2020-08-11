@@ -11,7 +11,10 @@ use tree_sitter as ts;
 use std::{fmt, iter::FromIterator, mem, result};
 
 use crate::{
-    mark, pubsub::Notify, window_less::WindowLess, window_prompt::WindowPrompt, Error, Result,
+    mark,
+    pubsub::Notify,
+    window::{WindowLess, WindowPrompt},
+    Error, Result,
 };
 
 /// Events
@@ -48,6 +51,8 @@ pub enum Event {
     Mark(mark::Mark), // (mark-value,)
     Md(Mod),          // Mode       (n, mode-event)
     Mt(Mto),          // Motion     (n, motion-event)
+    TabInsert(String),
+    TabClear,
     // other events
     JumpFrom(usize), // (cursor,)
     Edit(Edit),
@@ -77,7 +82,7 @@ impl Event {
             N(_) | G(_) | B(_, _) | F(_, _) | T(_, _) => empty,
             M | J(_) | Op(_) => empty,
             // folded events for buffer management.
-            Mark(_) | Md(_) | Mt(_) => empty,
+            Mark(_) | Md(_) | Mt(_) | TabInsert(_) | TabClear => empty,
             // other events
             JumpFrom(_) | Edit(_) | Write(_) => empty,
             List(_) | Notify(_) | Appn(_) | Ted(_) => empty,
@@ -212,12 +217,7 @@ impl Extend<Event> for Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Event::{Appn, Edit, JumpFrom, List, Noop, Notify, Ted, Write};
-        use Event::{BackTab, FKey, Insert};
-        use Event::{Backspace, Char, Delete, Enter, Esc, Tab};
-        use Event::{Down, End, Home, Left, PageDown, PageUp, Right, Up};
-        use Event::{Mark, Md, Mt};
-        use Event::{Op, B, F, G, J, M, N, T};
+        use Event::*;
 
         match self {
             // insert events
@@ -251,6 +251,8 @@ impl fmt::Display for Event {
             Mark(mark) => write!(f, "mark({})", mark),
             Md(md) => write!(f, "md({})", md),
             Mt(mt) => write!(f, "mt({})", mt),
+            TabInsert(_) => write!(f, "tab-insert"),
+            TabClear => write!(f, "tab-clear"),
             // other events
             JumpFrom(cursor) => write!(f, "jump-from({})", cursor),
             Edit(val) => write!(f, "edit({})", val),

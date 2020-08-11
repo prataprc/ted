@@ -8,13 +8,13 @@ mod config;
 mod window_cmd;
 mod window_edit;
 mod window_file;
-mod window_line;
+mod window_status;
 
 #[allow(unused_imports)]
 use log::{debug, error, trace};
 use toml;
 
-use std::{convert::TryFrom, ffi, mem, sync::mpsc};
+use std::{ffi, mem, sync::mpsc};
 
 use crate::{
     app::Application,
@@ -22,16 +22,14 @@ use crate::{
     code::config::Config,
     code::window_cmd::WindowCmd,
     code::window_file::WindowFile,
-    code::window_line::WindowLine,
+    code::window_status::WindowStatus,
     colors::ColorScheme,
     event::{self, Event},
     location::Location,
     mark,
     pubsub::{self, PubSub},
     state::{self, State},
-    window::{Coord, Cursor, Window},
-    window_less::WindowLess,
-    window_prompt::WindowPrompt,
+    window::{Coord, Cursor, Window, WindowLess, WindowPrompt, WindowSuggest},
     Result,
 };
 
@@ -78,8 +76,8 @@ impl Inner {
 
 struct Edit {
     wfile: WindowFile,
-    tbcline: WindowLine, // TODO: change this to `tabc`.
-    stsline: WindowLine,
+    wsugg: WindowSuggest,
+    wstat: WindowStatus,
 }
 
 struct Prompt {
@@ -89,7 +87,6 @@ struct Prompt {
 
 struct Command {
     edit: Edit,
-    tbcline: WindowLine, // TODO: change this to `tabc`.
     wcmd: WindowCmd,
 }
 
@@ -156,10 +153,11 @@ impl<'a> From<(&'a State, Coord)> for Code {
 
         let edit = {
             let buffer = buffers.first().unwrap();
+            let scheme = app.to_color_scheme(None);
             Edit {
                 wfile: (&app, buffer, app.to_coord_wfile()).into(),
-                stsline: ("stsline", app.to_coord_stsline()).into(),
-                tbcline: ("tbcline", app.to_coord_tbcline()).into(),
+                wsugg: WindowSuggest::new(app.to_coord_wsugg(), scheme),
+                wstat: WindowStatus::new(app.to_coord_wstat()),
             }
         };
 
@@ -170,46 +168,6 @@ impl<'a> From<(&'a State, Coord)> for Code {
             Inner::Edit(edit)
         };
         app
-    }
-}
-
-impl Code {
-    #[inline]
-    fn to_coord_wfile(&self) -> Coord {
-        let mut coord = self.coord;
-        coord.hgt = coord.hgt.saturating_sub(1);
-        coord
-    }
-
-    #[inline]
-    fn to_coord_wcmd(&self) -> Coord {
-        let mut coord = self.coord;
-        coord.row = coord.hgt;
-        coord.hgt = 1;
-        coord
-    }
-
-    #[inline]
-    fn to_coord_prompt(&self) -> Coord {
-        let mut coord = self.coord;
-        coord.hgt = coord.hgt.saturating_sub(1);
-        coord
-    }
-
-    #[inline]
-    fn to_coord_stsline(&self) -> Coord {
-        let mut coord = self.coord;
-        coord.row = coord.hgt;
-        coord.hgt = 1;
-        coord
-    }
-
-    #[inline]
-    fn to_coord_tbcline(&self) -> Coord {
-        let mut coord = self.coord;
-        coord.row = coord.hgt.saturating_sub(1);
-        coord.hgt = 1;
-        coord
     }
 }
 
@@ -233,6 +191,44 @@ impl Code {
 }
 
 impl Code {
+    #[inline]
+    fn to_coord_wfile(&self) -> Coord {
+        let mut coord = self.coord;
+        coord.hgt = coord.hgt.saturating_sub(1);
+        coord
+    }
+
+    #[inline]
+    fn to_coord_wcmd(&self) -> Coord {
+        let mut coord = self.coord;
+        coord.row = coord.hgt;
+        coord.hgt = 1;
+        coord
+    }
+
+    #[inline]
+    fn to_coord_wprompt(&self) -> Coord {
+        let mut coord = self.coord;
+        coord.hgt = coord.hgt.saturating_sub(1);
+        coord
+    }
+
+    #[inline]
+    fn to_coord_wstat(&self) -> Coord {
+        let mut coord = self.coord;
+        coord.row = coord.hgt;
+        coord.hgt = 1;
+        coord
+    }
+
+    #[inline]
+    fn to_coord_wsugg(&self) -> Coord {
+        let mut coord = self.coord;
+        coord.row = coord.hgt.saturating_sub(1);
+        coord.hgt = 1;
+        coord
+    }
+
     pub fn as_buffer(&self, id: &str) -> Option<&Buffer> {
         self.buffers
             .iter()
@@ -262,11 +258,15 @@ impl Code {
         }
         self.to_color_scheme(Some("default"))
     }
+
+    pub fn to_wsugg(&self) -> WindowSuggest {
+        WindowSuggest::new(self.to_coord_wsugg(), self.to_color_scheme(None))
+    }
 }
 
 impl Code {
     fn open_cmd_files(&self, files: Vec<(String, String)>) -> (Vec<Buffer>, Vec<WindowPrompt>) {
-        let coord = self.to_coord_prompt();
+        let coord = self.to_coord_wprompt();
         let (mut buffers, mut prompts) = (vec![], vec![]);
         let scheme = self.to_color_scheme(None);
 
@@ -280,7 +280,8 @@ impl Code {
                         format!("error opening {:?} : {}", f, err.to_error()),
                         format!("-press any key to continue-"),
                     ];
-                    prompts.push((coord, lines, scheme.clone()).into());
+                    let prompt = WindowPrompt::new(coord, lines, scheme.clone());
+                    prompts.push(prompt)
                 }
             }
         }
@@ -304,7 +305,8 @@ impl Code {
                         format!("error opening {} : {}", loc, err.to_error()),
                         format!("-press any key to continue-"),
                     ];
-                    prompts.push((coord, lines, scheme.clone()).into());
+                    let prompt = WindowPrompt::new(coord, lines, scheme.clone());
+                    prompts.push(prompt)
                 }
             }
         }
@@ -357,11 +359,8 @@ impl Application for Code {
             }
             (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
                 let prefix = edit.wfile.to_event_prefix();
-                let mut val = Command {
-                    edit,
-                    tbcline: ("tbcline", self.to_coord_tbcline()).into(),
-                    wcmd: TryFrom::try_from((&*self, self.to_coord_wcmd()))?,
-                };
+                let wcmd = WindowCmd::new(self.to_coord_wcmd(), self)?;
+                let mut val = Command { edit, wcmd };
                 let evnt = val.wcmd.on_event(self, prefix)?;
                 (Inner::Command(val), evnt)
             }
@@ -414,7 +413,7 @@ impl Application for Code {
         match &mut inner {
             Inner::Edit(edit) => {
                 edit.wfile.on_refresh(self)?;
-                edit.stsline.on_refresh(self)?;
+                edit.wstat.on_refresh(self)?;
                 // TODO: edit.tbcline.on_refresh(self)?;
             }
             Inner::Prompt(prompt) => match prompt.prompts.first_mut() {

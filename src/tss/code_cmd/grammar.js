@@ -4,11 +4,11 @@ module.exports = grammar({
   extras: $ => [/[ \t]/, $.newline],
 
   rules: {
-    s: $ => seq(optional($.range), optional($.cmd)),
+    s: $ => seq(':', optional($.range), optional($.cmd)),
 
     newline: $ => /\r?\n/,
 
-    cmd: $ => choice($.set, $.edit),
+    cmd: $ => choice($.set, $.buffer, $.buffers, $.edit),
 
     range: $ => seq($.range_start, optional(seq(',', $.range_end))),
     range_start: $ => /([0-9.%]+|(\?[^?]+\?)|'[a-z])[+-]?[0-9]*/,
@@ -21,6 +21,10 @@ module.exports = grammar({
     ),
 
     edit: $ => seq('edit', /.*/),
+
+    buffer: $ => seq('buffer', /[0-9]+/),
+
+    buffers: $ => seq('buffers'),
   }
 });
 

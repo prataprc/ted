@@ -2,6 +2,9 @@ use crossterm;
 
 use std::{cmp, fmt, ops::Add, ops::RangeBounds, result};
 
+pub use crate::window_less::WindowLess;
+pub use crate::window_prompt::WindowPrompt;
+pub use crate::window_suggt::WindowSuggest;
 use crate::{
     buffer::{self, Buffer},
     colors::ColorScheme,
@@ -101,6 +104,11 @@ pub trait Render {
     fn as_color_scheme(&self) -> &ColorScheme;
 
     fn to_span_line(&self, buf: &Self::Buf, a: usize, z: usize) -> Result<Spanline>;
+}
+
+/// Suggestion trait for tab completion.
+pub trait Suggestion {
+    fn on_complete(&self, cursor: Cursor) -> Vec<String>;
 }
 
 // Terminal coordinates, describes the four corners of a window.

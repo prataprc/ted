@@ -150,7 +150,6 @@ highlight![
     (TabModified, "tab-modified"),
     // tab completion syntax
     (TabcLine, "tabc-line"),
-    (TabcOption, "tabc-option"),
     (TabcSelect, "tabc-select"),
     // code syntax
     (Comment, "comment"),

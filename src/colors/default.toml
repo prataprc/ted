@@ -42,5 +42,4 @@ line-nr         = { with = "#86875f"}
 prompt          = { with = "#cf7d00"}
 status-line     = { with = "#cf7d00"}
 tabc-line       = { with = "#cf7d00"}
-tabc-option     = { with = "#cf7d00"}
-tabc-select     = { with = "#cf7d00"}
+tabc-select     = { with = "#123456"}

@@ -15,7 +15,7 @@ use std::{
     fmt, io,
     iter::FromIterator,
     mem,
-    ops::{Bound, RangeBounds},
+    ops::RangeBounds,
     rc::{self, Rc},
     result,
     sync::Mutex,
@@ -119,6 +119,18 @@ impl Default for StickyCol {
     }
 }
 
+#[derive(Clone)]
+enum TabState {
+    Active(String),
+    None,
+}
+
+impl Default for TabState {
+    fn default() -> Self {
+        TabState::None
+    }
+}
+
 // all bits and pieces of content is managed by buffer.
 #[derive(Clone)]
 pub struct Buffer {
@@ -133,6 +145,8 @@ pub struct Buffer {
     num: usize, // buffer number
     // Buffer states
     inner: Inner,
+    // current tab-completion state
+    tab_state: TabState,
 
     // mark-list [a-z]
     marks: mark::Marks,
@@ -166,8 +180,10 @@ impl Default for Buffer {
             location: Location::default(),
             read_only: bool::default(),
             format: text::Format::default(),
+
             num: usize::default(),
             inner: Inner::default(),
+            tab_state: TabState::default(),
 
             marks: mark::new_marks(),
             sticky_col: StickyCol::default(),
@@ -191,10 +207,11 @@ impl Buffer {
         let b = Buffer {
             location: loc,
             read_only: false,
+            format: text::Format::default(),
 
             num: *num,
             inner: Inner::Normal(NormalBuffer::new(buf)),
-            format: text::Format::default(),
+            tab_state: TabState::default(),
 
             marks: mark::new_marks(),
             sticky_col: StickyCol::default(),
@@ -525,19 +542,17 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn cmd_remove_at(
-        //
-        &mut self,
-        a: Bound<usize>,
-        z: Bound<usize>,
-    ) -> Result<()> {
+    pub fn cmd_delete_over<R>(&mut self, range: R) -> Result<()>
+    where
+        R: RangeBounds<usize>,
+    {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
         };
 
         *change = Change::to_next_change(change);
-        self.to_mut_change().remove_at(a, z)
+        self.to_mut_change().remove_over(range)
     }
 }
 
@@ -554,7 +569,6 @@ impl Buffer {
 
         debug!("buffer {}", evnt);
         let evnt = match evnt {
-            Event::Noop => Event::Noop,
             // motion command - characterwise.
             Event::Mt(Mto::Left(n, dp)) => {
                 let cursor = mto_left(self, n, dp)?;
@@ -714,7 +728,6 @@ impl Buffer {
                 let e = self.mto_pattern.clone();
                 mto_pattern(self, e.dir_xor(n, dir)?)?
             }
-
             evnt => evnt,
         };
 
@@ -790,6 +803,8 @@ impl Buffer {
     fn handle_i_event(&mut self, evnt: Event) -> Result<Event> {
         match evnt {
             Event::Noop => Ok(Event::Noop),
+            evnt @ Event::TabInsert(_) => self.ex_i_event(evnt),
+            evnt @ Event::TabClear => self.ex_i_event(evnt),
             evnt => {
                 self.last_inserts.push(evnt.clone());
                 self.ex_i_event(evnt)
@@ -798,7 +813,9 @@ impl Buffer {
     }
 
     fn ex_i_event(&mut self, evnt: Event) -> Result<Event> {
-        use crate::event::Event::{Backspace, Char, Delete, Enter, Esc, Mt, Tab};
+        use crate::event::Event::{
+            Backspace, Char, Delete, Enter, Esc, Mt, Tab, TabClear, TabInsert,
+        };
 
         let evnt = match evnt {
             // movement
@@ -858,9 +875,34 @@ impl Buffer {
                 Event::Noop
             }
             Delete(_) => {
-                let from = Bound::Included(self.to_char_cursor());
-                let to = from.clone();
-                self.cmd_remove_at(from, to)?;
+                let cursor = self.to_char_cursor();
+                self.cmd_delete_over(cursor..=cursor)?;
+                Event::Noop
+            }
+            // tab completion events
+            TabInsert(new) => {
+                let cursor = self.to_char_cursor();
+                match &self.tab_state {
+                    TabState::Active(old) => {
+                        let to = cursor + old.chars().count();
+                        self.cmd_delete_over(cursor..to)?;
+                    }
+                    TabState::None => (),
+                }
+                self.cmd_insert(cursor, new.as_str())?;
+                self.tab_state = TabState::Active(new);
+                Event::Noop
+            }
+            TabClear => {
+                match &self.tab_state {
+                    TabState::Active(old) => {
+                        let from = self.to_char_cursor();
+                        let to = from + old.chars().count();
+                        self.cmd_delete_over(from..to)?;
+                    }
+                    TabState::None => (),
+                };
+                self.tab_state = TabState::default();
                 Event::Noop
             }
             evnt => evnt,
@@ -1080,20 +1122,26 @@ impl Change {
         Ok(())
     }
 
-    fn remove_at(&mut self, from: Bound<usize>, to: Bound<usize>) -> Result<()> {
+    fn remove_over<R>(&mut self, range: R) -> Result<()>
+    where
+        R: RangeBounds<usize>,
+    {
         use std::ops::Bound::{Excluded, Included, Unbounded};
 
         let n = self.rope.len_chars();
-        let from = match from {
-            Included(from) => cmp::min(from, n.saturating_sub(1)),
+
+        let from = match range.start_bound() {
+            Included(from) => cmp::min(*from, n.saturating_sub(1)),
             Excluded(from) => cmp::min(from.saturating_add(1), n),
             Unbounded => 0,
         };
-        let to = match to {
-            Included(to) => cmp::min(to.saturating_add(1), n),
-            Excluded(to) => cmp::min(to, n),
+
+        let to = match range.end_bound() {
+            Included(to) => cmp::min((*to).saturating_add(1), n),
+            Excluded(to) => cmp::min(*to, n),
             Unbounded => n,
         };
+
         if from < to {
             self.rope.remove(from..to);
         }

@@ -2,10 +2,7 @@ use crossterm::{cursor as term_cursor, queue};
 #[allow(unused_imports)]
 use log::trace;
 
-use std::{
-    convert::{TryFrom, TryInto},
-    fmt, io, mem, result,
-};
+use std::{convert::TryInto, fmt, io, mem, result};
 
 use crate::{
     buffer::{self, Buffer},
@@ -15,7 +12,7 @@ use crate::{
     keymap::Keymap,
     location::Location,
     term::Spanline,
-    window::{Coord, Cursor, Render, WinBuffer, Window},
+    window::{Coord, Cursor, Render, WinBuffer, Window, WindowSuggest},
     Error, Result,
 };
 
@@ -26,6 +23,7 @@ pub struct WindowCmd {
     buf: Buffer,
     scheme: ColorScheme,
     keymap: Keymap,
+    wsugg: WindowSuggest,
 }
 
 impl fmt::Display for WindowCmd {
@@ -38,10 +36,8 @@ impl fmt::Display for WindowCmd {
     }
 }
 
-impl<'a> TryFrom<(&'a code::Code, Coord)> for WindowCmd {
-    type Error = Error;
-
-    fn try_from((app, coord): (&'a code::Code, Coord)) -> Result<WindowCmd> {
+impl WindowCmd {
+    pub fn new(coord: Coord, app: &code::Code) -> Result<WindowCmd> {
         use crate::view::NoWrap;
 
         let mut buf = {
@@ -61,6 +57,7 @@ impl<'a> TryFrom<(&'a code::Code, Coord)> for WindowCmd {
             buf,
             scheme: app.to_color_scheme(None),
             keymap: Keymap::new_cmd(),
+            wsugg: app.to_wsugg(),
         })
     }
 }
@@ -104,9 +101,7 @@ impl Window for WindowCmd {
             }
             Event::Enter(_) => {
                 let mut val: cmd::Cmd = {
-                    // first character is ':'
-                    let bytes = buf.to_string().as_bytes()[1..].to_vec();
-                    let content = unsafe { String::from_utf8_unchecked(bytes) };
+                    let content = buf.to_string();
                     (content, self.scheme.clone()).try_into()?
                 };
                 let mut evnt = val.on_command(app)?;

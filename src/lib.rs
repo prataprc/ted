@@ -17,6 +17,7 @@ pub mod term;
 pub mod window;
 mod window_less;
 mod window_prompt;
+mod window_suggt;
 
 pub mod state;
 

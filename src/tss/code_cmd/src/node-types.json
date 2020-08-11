@@ -1,5 +1,15 @@
 [
   {
+    "type": "buffer",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "buffers",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "cmd",
     "named": true,
     "fields": {},
@@ -7,6 +17,14 @@
       "multiple": false,
       "required": true,
       "types": [
+        {
+          "type": "buffer",
+          "named": true
+        },
+        {
+          "type": "buffers",
+          "named": true
+        },
         {
           "type": "edit",
           "named": true
@@ -83,6 +101,18 @@
   },
   {
     "type": ",",
+    "named": false
+  },
+  {
+    "type": ":",
+    "named": false
+  },
+  {
+    "type": "buffer",
+    "named": false
+  },
+  {
+    "type": "buffers",
     "named": false
   },
   {

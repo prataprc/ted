@@ -87,16 +87,6 @@ impl WindowLess {
         None
     }
 
-    #[inline]
-    pub fn config_line_number(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    pub fn config_scroll_offset(&self) -> u16 {
-        0
-    }
-
     pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
         match evnt {
             evnt @ Event::Esc => Ok(evnt),
