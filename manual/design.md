@@ -27,8 +27,22 @@ What to expect from a `Buffer` ?
 * Move the cursor around the buffer.
 * Insert, Append, Replace and Delete parts of text.
 
-View
+Window
 
 Unlike vim/emacs, rendering text is entirely separated from buffer
 mechanics. Rendering text is tightly coupled with one of the many
 Window type, which defines all screen related behaviour.
+
+Text-format
+
+Text-format defines how end-of-line is interpreted in the text. Following
+text formats are supported,
+
+* `dos`, a sequence of <CR><NL> or <NL> is considered new-line
+* `unix`, <NL> is considered new-line.
+* `mac`, <CR> is considered new-line.
+
+In reality, all new-line related behaviour is transparently handled
+without user intervention. While the issue of handling mixed representation,
+like having a <CR> in other-wise `unix` like new-line, is still open. Is
+is possible to have such scenario ?
