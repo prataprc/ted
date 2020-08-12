@@ -9,7 +9,7 @@ use crate::{
     code::{self},
     col_nu::ColNu,
     colors::ColorScheme,
-    event::{self, Event, DP},
+    event::{self, Event, Scroll, DP},
     keymap::Keymap,
     syntax::{self, Syntax},
     term::Spanline,
@@ -358,6 +358,29 @@ impl WindowEdit {
         };
         Ok(bc)
     }
+
+    //fn mto_win_scroll(
+    //    &self,
+    //    app: &mut code::Code,
+    //    buf: &Buffer,
+    //    n: usize,
+    //    scroll: Scroll,
+    //    dp: DP,
+    //) -> Result<usize> {
+    //    let max_row = self.coord.hgt
+    //    match (scroll, dp) {
+    //        (Scroll::Once, DP::Left) => {
+    //            self.cursor = match self.cursor + 1 {
+    //                cursor if cursor >
+    //            }
+    //        }
+    //        (Scroll::Once, DP::Right) =>
+    //        (Scroll::Lines, DP::Left) =>
+    //        (Scroll::Lines, DP::Right) =>
+    //        (Scroll::Pages, DP::Left) =>
+    //        (Scroll::Pages, DP::Right) =>
+    //    }
+    //}
 }
 
 impl Window for WindowEdit {
@@ -439,6 +462,11 @@ impl Window for WindowEdit {
                     buf.set_cursor(cursor).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
+                //Event::Mt(Mto::WinScroll(n, scroll, dp)) => {
+                //    let cursor = self.mto_win_scroll(app, &buf, n, scroll, dp)?;
+                //    buf.set_cursor(cursor).clear_sticky_col();
+                //    (Event::Noop, Some(buf))
+                //}
                 Event::Appn(event::Appn::StatusCursor) => {
                     let msg = vec![self.syn.to_status_cursor()?];
                     app.notify("code", Notify::Status(msg))?;

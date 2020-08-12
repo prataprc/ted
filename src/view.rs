@@ -311,26 +311,22 @@ impl NoWrap {
         use std::iter::repeat;
 
         let nbc_xy = buf.to_xy_cursor(None);
-        let r_min = cmp::max(0, self.scroll_off) as isize;
-        let r_max = {
-            let r_max = self.coord.hgt.saturating_sub(1);
-            cmp::min(r_max, r_max.saturating_sub(self.scroll_off)) as isize
-        };
+        let cursor_range = self.coord.cursor_range(self.scroll_off);
 
         let coord = {
             let Cursor { row, col: _ } = self.cursor;
             let (_, diff_row) = self.obc_xy.diff(&nbc_xy);
 
-            let row = (row as isize) + diff_row;
-            if row < r_min || row > r_max {
+            let row = (row as isize).saturating_add(diff_row);
+            if cursor_range.contains(&(row as u16)) {
+                self.coord
+            } else {
                 let nu = ColNu::new(nbc_xy.row, self.line_number);
                 let coord = self.coord.resize_to(
                     self.coord.hgt,
                     self.coord.wth + self.nu.to_width() - nu.to_width(),
                 );
                 coord
-            } else {
-                self.coord
             }
         };
 
@@ -339,7 +335,7 @@ impl NoWrap {
         } else {
             let Cursor { row, col } = self.cursor;
             let (diff_col, diff_row) = self.obc_xy.diff(&nbc_xy);
-            let row = limit!((row as isize) + diff_row, r_min, r_max);
+            let row = self.cursor.add_row(diff_row, self.coord, self.scroll_off);
             let col = limite!((col as isize) + diff_col, 0, coord.wth as isize);
             Cursor {
                 col: col as u16,
@@ -514,13 +510,8 @@ impl WrapView {
         let cursor = if scroll {
             self.cursor
         } else {
-            let arow = self.scroll_off;
-            let zrow = self.coord.hgt.saturating_sub(self.scroll_off + 1);
-            match self.to_cursor(buf, screen_lines.clone()) {
-                Cursor { col, row } if row < arow => Cursor { col, row: arow },
-                Cursor { col, row } if row > zrow => Cursor { col, row: zrow },
-                cursor => cursor,
-            }
+            self.to_cursor(buf, screen_lines.clone())
+                .saturate_row(self.coord, self.scroll_off)
         };
 
         let pivot = {

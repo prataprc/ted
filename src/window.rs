@@ -1,6 +1,6 @@
 use crossterm;
 
-use std::{cmp, fmt, ops::Add, ops::RangeBounds, result};
+use std::{cmp, fmt, ops, ops::Add, result};
 
 pub use crate::window_less::WindowLess;
 pub use crate::window_prompt::WindowPrompt;
@@ -81,7 +81,7 @@ pub trait WinBuffer {
 
     fn slice<R>(&self, char_range: R) -> String
     where
-        R: RangeBounds<usize>;
+        R: ops::RangeBounds<usize>;
 
     /// Return the character offset of first character for the requested
     /// `line_idx`. Note that, `0 <= line_idx < last_line_idx`.
@@ -134,6 +134,16 @@ impl Default for Coord {
     }
 }
 
+impl fmt::Display for Coord {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(
+            f,
+            "Coord<{},{},{},{}>",
+            self.col, self.row, self.hgt, self.wth
+        )
+    }
+}
+
 impl Coord {
     /// Create a new viewport for window.
     pub fn new(col: u16, row: u16, hgt: u16, wth: u16) -> Coord {
@@ -183,15 +193,14 @@ impl Coord {
     pub fn to_size(&self) -> (u16, u16) {
         (self.hgt, self.wth)
     }
-}
 
-impl fmt::Display for Coord {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(
-            f,
-            "Coord<{},{},{},{}>",
-            self.col, self.row, self.hgt, self.wth
-        )
+    pub fn cursor_range(&self, scroll_off: u16) -> ops::Range<u16> {
+        if self.hgt < (2 * scroll_off) {
+            0..self.hgt
+        } else {
+            let till = self.hgt.saturating_sub(scroll_off);
+            scroll_off..till
+        }
     }
 }
 
@@ -247,6 +256,43 @@ impl Cursor {
 
     pub fn account_nu(mut self, nu_wth: u16) -> Self {
         self.col += nu_wth;
+        self
+    }
+
+    pub fn add_row(mut self, n: isize, coord: Coord, scroll_off: u16) -> u16 {
+        if coord.hgt < (2 * scroll_off) {
+            match (self.row as isize).saturating_add(n) {
+                row if row < 0 => 0_u16,
+                row if row >= (coord.hgt as isize) => row.saturating_sub(1) as u16,
+                row => row as u16,
+            }
+        } else {
+            let max_row = coord.hgt.saturating_sub(scroll_off + 1);
+            match (self.row as isize).saturating_add(n) {
+                row if row < (scroll_off as isize) => scroll_off,
+                row if row > (max_row as isize) => max_row,
+                row => row as u16,
+            }
+        }
+    }
+
+    pub fn saturate_row(mut self, coord: Coord, scroll_off: u16) -> Cursor {
+        self.row = if coord.hgt < (2 * scroll_off) {
+            if self.row >= coord.hgt {
+                coord.hgt.saturating_sub(1)
+            } else {
+                self.row
+            }
+        } else {
+            let max_row = coord.hgt.saturating_sub(scroll_off + 1);
+            if self.row < scroll_off {
+                scroll_off
+            } else if self.row > max_row {
+                max_row
+            } else {
+                self.row
+            }
+        };
         self
     }
 }
