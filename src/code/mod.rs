@@ -8,7 +8,6 @@ mod config;
 mod window_cmd;
 mod window_edit;
 mod window_file;
-mod window_status;
 
 #[allow(unused_imports)]
 use log::{debug, error, trace};
@@ -22,14 +21,13 @@ use crate::{
     code::config::Config,
     code::window_cmd::WindowCmd,
     code::window_file::WindowFile,
-    code::window_status::WindowStatus,
     colors::ColorScheme,
     event::{self, Event},
     location::Location,
     mark,
     pubsub::{self, PubSub},
     state::{self, State},
-    window::{Coord, Cursor, Window, WindowLess, WindowPrompt, WindowSuggest},
+    window::{Coord, Cursor, Window, WindowLess, WindowPrompt, WindowStatus, WindowSuggest},
     Result,
 };
 
@@ -413,7 +411,7 @@ impl Application for Code {
         match &mut inner {
             Inner::Edit(edit) => {
                 edit.wfile.on_refresh(self)?;
-                edit.wstat.on_refresh(self)?;
+                edit.wstat.on_refresh()?;
                 // TODO: edit.tbcline.on_refresh(self)?;
             }
             Inner::Prompt(prompt) => match prompt.prompts.first_mut() {

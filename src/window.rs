@@ -4,7 +4,9 @@ use std::{cmp, fmt, ops::Add, ops::RangeBounds, result};
 
 pub use crate::window_less::WindowLess;
 pub use crate::window_prompt::WindowPrompt;
+pub use crate::window_status::WindowStatus;
 pub use crate::window_suggt::WindowSuggest;
+
 use crate::{
     buffer::{self, Buffer},
     colors::ColorScheme,

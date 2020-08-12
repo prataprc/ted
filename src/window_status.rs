@@ -4,10 +4,9 @@ use log::trace;
 use std::{fmt, iter::FromIterator, result};
 
 use crate::{
-    code,
     event::Event,
     term::{Span, Spanline},
-    window::{Coord, Cursor, Window},
+    window::{Coord, Cursor},
     Error, Result,
 };
 
@@ -31,39 +30,27 @@ impl WindowStatus {
     }
 }
 
-impl Window for WindowStatus {
-    type App = code::Code;
-
+impl WindowStatus {
     #[inline]
-    fn to_name(&self) -> String {
+    pub fn to_name(&self) -> String {
         "window-status".to_string()
     }
 
     #[inline]
-    fn to_coord(&self) -> Coord {
+    pub fn to_coord(&self) -> Coord {
         self.coord
     }
 
     #[inline]
-    fn to_cursor(&self) -> Option<Cursor> {
+    pub fn to_cursor(&self) -> Option<Cursor> {
         None
     }
 
-    #[inline]
-    fn config_line_number(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn config_scroll_offset(&self) -> u16 {
-        0
-    }
-
-    fn on_event(&mut self, _app: &mut code::Code, evnt: Event) -> Result<Event> {
+    pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
         Ok(evnt)
     }
 
-    fn on_refresh(&mut self, _app: &mut code::Code) -> Result<()> {
+    pub fn on_refresh(&mut self) -> Result<()> {
         let mut line = Spanline::from_iter(self.spans.drain(..));
         let padding = self.coord.wth.saturating_sub(line.to_width() as u16);
 
