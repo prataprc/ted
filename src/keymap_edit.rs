@@ -5,7 +5,7 @@ use std::mem;
 
 use crate::{
     buffer::Buffer,
-    event::{self, Event, Mod, Mto, DP},
+    event::{self, Event, Mod, Mto, Scroll, DP},
     Error, Result,
 };
 
@@ -98,29 +98,18 @@ impl KeyEdit {
                 Char('H', _) => (noop, Mt(Mto::WinH(1))),
                 Char('M', _) => (noop, Mt(Mto::WinM)),
                 Char('L', _) => (noop, Mt(Mto::WinL(1))),
-                // motion command - mark and jumps
+                // motion command - mark, jumps and searches
                 Char('m', _) => (M, noop),
                 Char('\'', _) => (J('\''), noop),
                 Char('`', _) => (J('`'), noop),
-
                 Char('n', _) => (noop, Mt(Mto::PatternR(1, DP::Right))),
                 Char('N', _) => (noop, Mt(Mto::PatternR(1, DP::Left))),
-                //
-                Char('I', _) => (noop, Md(Mod::Insert(1, DP::TextCol))),
-                Char('i', _) => (noop, Md(Mod::Insert(1, DP::None))),
-                Char('a', _) => (noop, Md(Mod::Append(1, DP::Right))),
-                Char('A', _) => (noop, Md(Mod::Append(1, DP::End))),
-                Char('O', _) => (noop, Md(Mod::Open(1, DP::Left))),
-                Char('o', _) => (noop, Md(Mod::Open(1, DP::Right))),
-                Md(Mod::Insert(n, p)) => (noop, Md(Mod::Insert(n, p))),
-                //
+                // prefix commands
+                Char(ch @ '0'..='9', _) => (N(parse_n!(0, ch)), noop),
                 Char('[', _) => (B(1, DP::Left), noop),
                 Char(']', _) => (B(1, DP::Right), noop),
-                Char('g', _) if ctrl => {
-                    let evnt = Event::Appn(event::Appn::StatusFile);
-                    (noop, evnt)
-                }
                 Char('g', _) => (G(1), noop),
+                Char('z', _) => (Z(1), noop),
                 // operation prefix
                 Char('c', _) => (Op(event::Opr::Change(1, Mto::None)), noop),
                 Char('d', _) => (Op(event::Opr::Delete(1, Mto::None)), noop),
@@ -130,8 +119,46 @@ impl KeyEdit {
                 Char('=', _) => (Op(event::Opr::Equal(1, Mto::None)), noop),
                 Char('<', _) => (Op(event::Opr::RShift(1, Mto::None)), noop),
                 Char('>', _) => (Op(event::Opr::LShift(1, Mto::None)), noop),
-                // numeric prefix
-                Char(ch @ '0'..='9', _) => (N(parse_n!(0, ch)), noop),
+                //
+                Char('I', _) => (noop, Md(Mod::Insert(1, DP::TextCol))),
+                Char('i', _) => (noop, Md(Mod::Insert(1, DP::None))),
+                Char('a', _) => (noop, Md(Mod::Append(1, DP::Right))),
+                Char('A', _) => (noop, Md(Mod::Append(1, DP::End))),
+                Char('O', _) => (noop, Md(Mod::Open(1, DP::Left))),
+                Char('o', _) => (noop, Md(Mod::Open(1, DP::Right))),
+                Md(Mod::Insert(n, p)) => (noop, Md(Mod::Insert(n, p))),
+                evnt => (noop, evnt),
+            },
+            Event::Noop if ctrl => match evnt {
+                // motion commands, window scroll.
+                Char('g', _) => {
+                    let evnt = Event::Appn(event::Appn::StatusFile);
+                    (noop, evnt)
+                }
+                Char('e', _) => {
+                    let evnt = Mt(Mto::WinScroll(1, Scroll::Once, DP::Right));
+                    (noop, evnt)
+                }
+                Char('d', _) => {
+                    let evnt = Mt(Mto::WinScroll(1, Scroll::Lines, DP::Right));
+                    (noop, evnt)
+                }
+                Char('f', _) | PageDown(_) => {
+                    let evnt = Mt(Mto::WinScroll(1, Scroll::Pages, DP::Right));
+                    (noop, evnt)
+                }
+                Char('y', _) => {
+                    let evnt = Mt(Mto::WinScroll(1, Scroll::Once, DP::Left));
+                    (noop, evnt)
+                }
+                Char('u', _) => {
+                    let evnt = Mt(Mto::WinScroll(1, Scroll::Lines, DP::Left));
+                    (noop, evnt)
+                }
+                Char('b', _) | PageUp(_) => {
+                    let evnt = Mt(Mto::WinScroll(1, Scroll::Pages, DP::Left));
+                    (noop, evnt)
+                }
                 evnt => (noop, evnt),
             },
             N(n) if m_empty | shift => match evnt {
@@ -178,29 +205,18 @@ impl KeyEdit {
                 Char('H', _) => (noop, Mt(Mto::WinH(n))),
                 Char('M', _) => (noop, Mt(Mto::WinM)),
                 Char('L', _) => (noop, Mt(Mto::WinL(n))),
-                // motion command - mark and jumps
+                // motion command - mark, jumps and searches
                 Char('m', _) => (M, noop),
                 Char('\'', _) => (J('\''), noop),
                 Char('`', _) => (J('`'), noop),
-
                 Char('n', _) => (noop, Mt(Mto::PatternR(n, DP::Right))),
                 Char('N', _) => (noop, Mt(Mto::PatternR(n, DP::Left))),
-                //
-                Char('I', _) => (noop, Md(Mod::Insert(n, DP::TextCol))),
-                Char('i', _) => (noop, Md(Mod::Insert(n, DP::None))),
-                Char('a', _) => (noop, Md(Mod::Append(n, DP::Right))),
-                Char('A', _) => (noop, Md(Mod::Append(n, DP::End))),
-                Char('O', _) => (noop, Md(Mod::Open(n, DP::Left))),
-                Char('o', _) => (noop, Md(Mod::Open(n, DP::Right))),
-                Md(Mod::Insert(m, p)) => (noop, Md(Mod::Insert(n * m, p))),
-                //
+                // prefix commands
+                Char(ch @ '0'..='9', _) => (N(parse_n!(n, ch)), noop),
                 Char('[', _) => (B(n, DP::Left), noop),
                 Char(']', _) => (B(n, DP::Right), noop),
-                Char('g', _) if ctrl => {
-                    let evnt = Event::Appn(event::Appn::StatusFile);
-                    (noop, evnt)
-                }
                 Char('g', _) => (G(n), noop),
+                Char('z', _) => (Z(n), noop),
                 // operation prefix
                 Char('c', _) => (Op(event::Opr::Change(n, Mto::None)), noop),
                 Char('d', _) => (Op(event::Opr::Delete(n, Mto::None)), noop),
@@ -210,15 +226,49 @@ impl KeyEdit {
                 Char('=', _) => (Op(event::Opr::Equal(n, Mto::None)), noop),
                 Char('<', _) => (Op(event::Opr::RShift(n, Mto::None)), noop),
                 Char('>', _) => (Op(event::Opr::LShift(n, Mto::None)), noop),
-                // continue with numberic prefix
-                Char(ch @ '0'..='9', _) => (N(parse_n!(n, ch)), noop),
+                //
+                Char('I', _) => (noop, Md(Mod::Insert(n, DP::TextCol))),
+                Char('i', _) => (noop, Md(Mod::Insert(n, DP::None))),
+                Char('a', _) => (noop, Md(Mod::Append(n, DP::Right))),
+                Char('A', _) => (noop, Md(Mod::Append(n, DP::End))),
+                Char('O', _) => (noop, Md(Mod::Open(n, DP::Left))),
+                Char('o', _) => (noop, Md(Mod::Open(n, DP::Right))),
+                Md(Mod::Insert(m, p)) => (noop, Md(Mod::Insert(n * m, p))),
+                evnt => (noop, evnt),
+            },
+            N(n) if ctrl => match evnt {
+                // motion commands, window scroll.
+                Char('g', _) => {
+                    let evnt = Event::Appn(event::Appn::StatusFile);
+                    (noop, evnt)
+                }
+                Char('e', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Once, DP::Right));
+                    (noop, evnt)
+                }
+                Char('d', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Lines, DP::Right));
+                    (noop, evnt)
+                }
+                Char('f', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Pages, DP::Right));
+                    (noop, evnt)
+                }
+                Char('y', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Once, DP::Left));
+                    (noop, evnt)
+                }
+                Char('u', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Lines, DP::Left));
+                    (noop, evnt)
+                }
+                Char('b', _) | PageUp(_) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Pages, DP::Left));
+                    (noop, evnt)
+                }
                 evnt => (noop, evnt),
             },
             G(n) if m_empty | shift => match evnt {
-                Char('g', _) if ctrl => {
-                    let evnt = Event::Appn(event::Appn::StatusCursor);
-                    (noop, evnt)
-                }
                 // motion command - characterwise
                 Home(_) => (noop, Mt(Mto::ScreenHome(DP::None))),
                 End(_) => (noop, Mt(Mto::ScreenEnd(n, DP::None))),
@@ -249,6 +299,13 @@ impl KeyEdit {
                 Char('@', _) => (Op(event::Opr::Func(n, Mto::None)), noop),
                 evnt => (noop, evnt),
             },
+            G(_) if ctrl => match evnt {
+                Char('g', _) => {
+                    let evnt = Event::Appn(event::Appn::StatusCursor);
+                    (noop, evnt)
+                }
+                evnt => (noop, evnt),
+            },
             B(n, d) if m_empty => match evnt {
                 Char('(', _) => (noop, Mt(Mto::UnmatchPair(n, '(', d))),
                 Char(')', _) => (noop, Mt(Mto::UnmatchPair(n, ')', d))),
@@ -262,6 +319,67 @@ impl KeyEdit {
             },
             T(n, d) if m_empty => match evnt {
                 Char(ch, _) => (noop, Mt(Mto::CharT(n, Some(ch), d))),
+                evnt => (noop, evnt),
+            },
+            Z(n) if m_empty => match evnt {
+                // motion commands, window scroll - vertical
+                Char('+', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Cursor, DP::Right));
+                    (noop, evnt)
+                }
+                Char('^', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Cursor, DP::Left));
+                    (noop, evnt)
+                }
+                Enter(_) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::TextUp, DP::TextCol));
+                    (noop, evnt)
+                }
+                Char('t', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::TextUp, DP::None));
+                    (noop, evnt)
+                }
+                Char('.', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::TextCenter, DP::TextCol));
+                    (noop, evnt)
+                }
+                Char('z', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::TextCenter, DP::None));
+                    (noop, evnt)
+                }
+                Char('-', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::TextBottom, DP::TextCol));
+                    (noop, evnt)
+                }
+                Char('b', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::TextBottom, DP::None));
+                    (noop, evnt)
+                }
+                // motion commands, window scroll - horizontal
+                Char('l', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Chars, DP::Right));
+                    (noop, evnt)
+                }
+                Char('h', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Chars, DP::Left));
+                    (noop, evnt)
+                }
+                Char('L', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Slide, DP::Right));
+                    (noop, evnt)
+                }
+                Char('H', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Slide, DP::Left));
+                    (noop, evnt)
+                }
+                Char('s', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Align, DP::Left));
+                    (noop, evnt)
+                }
+                Char('e', _) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Align, DP::Right));
+                    (noop, evnt)
+                }
                 evnt => (noop, evnt),
             },
             M if m_empty => match evnt {

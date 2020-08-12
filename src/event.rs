@@ -45,6 +45,7 @@ pub enum Event {
     F(usize, DP), // Find-char  (n, Left/Right)
     T(usize, DP), // Till-char  (n, Left/Right)
     J(char),      // jump prefix (['`],)
+    Z(usize),     // scroll prefix (n,)
     M,            // mark prefix
     Op(Opr),      // Operation  (op-event)
     // folded events for buffer management.
@@ -80,7 +81,7 @@ impl Event {
             BackTab | Esc => empty,
             // prefix events
             N(_) | G(_) | B(_, _) | F(_, _) | T(_, _) => empty,
-            M | J(_) | Op(_) => empty,
+            M | J(_) | Z(_) | Op(_) => empty,
             // folded events for buffer management.
             Mark(_) | Md(_) | Mt(_) | TabInsert(_) | TabClear => empty,
             // other events
@@ -246,6 +247,7 @@ impl fmt::Display for Event {
             T(n, dp) => write!(f, "t({},{})", n, dp),
             M => write!(f, "m"),
             J(ch) => write!(f, "j({})", ch),
+            Z(n) => write!(f, "z({})", n),
             Op(opr) => write!(f, "op({})", opr),
             // folded events for buffer management.
             Mark(mark) => write!(f, "mark({})", mark),
@@ -488,6 +490,40 @@ impl fmt::Display for Mod {
     }
 }
 
+/// Scroll sub-commands for Mto motion command.
+#[derive(Clone, Eq, PartialEq)]
+pub enum Scroll {
+    // vertical scrolls
+    Once,
+    Lines,
+    Pages,
+    Cursor,
+    TextUp,
+    TextCenter,
+    TextBottom,
+    // horizontal scrolls
+    Chars,
+    Slide,
+    Align,
+}
+
+impl fmt::Display for Scroll {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Scroll::Once => write!(f, "once"),
+            Scroll::Lines => write!(f, "lines"),
+            Scroll::Pages => write!(f, "pages"),
+            Scroll::Cursor => write!(f, "cursor"),
+            Scroll::TextUp => write!(f, "text-up"),
+            Scroll::TextCenter => write!(f, "text-center"),
+            Scroll::TextBottom => write!(f, "text-bottom"),
+            Scroll::Chars => write!(f, "chars"),
+            Scroll::Slide => write!(f, "slide"),
+            Scroll::Align => write!(f, "align"),
+        }
+    }
+}
+
 /// Event argument specify the cursor motion.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Mto {
@@ -518,9 +554,10 @@ pub enum Mto {
     Sentence(usize, DP),  // (n, Left/Right)
     Para(usize, DP),      // (n, Left/Right)
     // window motion
-    WinH(usize), // (n,)
-    WinM,        // (n,)
-    WinL(usize), // (n,)
+    WinH(usize),                  // (n,)
+    WinM,                         // (n,)
+    WinL(usize),                  // (n,)
+    WinScroll(usize, Scroll, DP), // (n, Scroll, Left/Right/TextCol/None)
     // other motions
     MatchPair,
     UnmatchPair(usize, char, DP), // (n, marker, Left/Right)
@@ -568,8 +605,13 @@ impl fmt::Display for Mto {
             Mto::WinH(n) => write!(f, "winh({})", n),
             Mto::WinM => write!(f, "winm"),
             Mto::WinL(n) => write!(f, "winl({})", n),
+            Mto::WinScroll(n, scroll, dp) => {
+                write!(f, "win-scroll({},{},{})", n, scroll, dp /*text-col*/)
+            }
             Mto::MatchPair => write!(f, "match-pair"),
-            Mto::UnmatchPair(n, ch, dir) => write!(f, "unmatch-pair({},{},{})", n, ch, dir),
+            Mto::UnmatchPair(n, ch, dir) => {
+                write!(f, "unmatch-pair({},{},{})", n, ch, dir /* for exprs */)
+            }
             Mto::Jump(typ, ch) => write!(f, "mark-jump({},{})", typ, ch),
 
             Mto::Bracket(n, ch1, ch2, dp) => {
