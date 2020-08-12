@@ -521,6 +521,9 @@ pub enum Mto {
     WinH(usize), // (n,)
     WinM,        // (n,)
     WinL(usize), // (n,)
+    // other motions
+    MatchPair,
+    UnmatchPair(usize, char, DP), // (n, marker, Left/Right)
     // jumps and marks
     Jump(char, char), // (['`], [a-zA-Z0-9])
 
@@ -565,6 +568,8 @@ impl fmt::Display for Mto {
             Mto::WinH(n) => write!(f, "winh({})", n),
             Mto::WinM => write!(f, "winm"),
             Mto::WinL(n) => write!(f, "winl({})", n),
+            Mto::MatchPair => write!(f, "match-pair"),
+            Mto::UnmatchPair(n, ch, dir) => write!(f, "unmatch-pair({},{},{})", n, ch, dir),
             Mto::Jump(typ, ch) => write!(f, "mark-jump({},{})", typ, ch),
 
             Mto::Bracket(n, ch1, ch2, dp) => {

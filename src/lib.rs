@@ -27,6 +27,7 @@ pub mod colors;
 pub mod event;
 pub mod location;
 mod mark;
+mod match_pair;
 pub mod pubsub;
 pub mod tabc;
 pub mod tss;

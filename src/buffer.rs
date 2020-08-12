@@ -494,21 +494,6 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn skip_whitespace(&mut self, dp: DP) -> Result<usize> {
-        self.to_mut_change().skip_whitespace(dp)
-    }
-
-    #[inline]
-    pub fn skip_alphanumeric(&mut self, dp: DP) -> usize {
-        self.to_mut_change().skip_alphanumeric(dp)
-    }
-
-    #[inline]
-    pub fn skip_non_whitespace(&mut self, dp: DP) -> usize {
-        self.to_mut_change().skip_non_whitespace(dp)
-    }
-
-    #[inline]
     pub fn cmd_insert_char(&mut self, ch: char) -> Result<()> {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
@@ -688,6 +673,17 @@ impl Buffer {
             }
             Event::Mt(Mto::Para(n, DP::Right)) => {
                 let cursor = mto_paras_right(self, n)?;
+                self.set_cursor(cursor).clear_sticky_col();
+                Event::Noop
+            }
+            // motion command, other motions.
+            Event::Mt(Mto::MatchPair) => {
+                let cursor = mto_match_pair(self)?;
+                self.set_cursor(cursor).clear_sticky_col();
+                Event::Noop
+            }
+            Event::Mt(Mto::UnmatchPair(n, ch, dir)) => {
+                let cursor = mto_unmatch_pair(self, ch, n, dir)?;
                 self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
             }
@@ -1150,66 +1146,6 @@ impl Change {
 }
 
 impl Change {
-    fn skip_whitespace(&mut self, dp: DP) -> Result<usize> {
-        let mut n = 0;
-        let item = {
-            let mut iter = self.iter(dp).enumerate().skip_while(|(_, ch)| {
-                n += 1;
-                ch.is_whitespace()
-            });
-            iter.next().clone()
-        };
-        let cursor = match (item, dp) {
-            (Some((i, _)), DP::Right) => self.cursor + i,
-            (Some((i, _)), DP::Left) => self.cursor - i,
-            (None, DP::Left) => 0,
-            (None, DP::Right) => self.rope.len_chars().saturating_sub(1),
-            (_, dp) => err_at!(Fatal, msg: format!("unexpected: {}", dp))?,
-        };
-        self.cursor = cursor;
-        Ok(n)
-    }
-
-    fn skip_non_whitespace(&mut self, dp: DP) -> usize {
-        let mut n = 0;
-        let n = {
-            let mut iter = self.iter(dp);
-            loop {
-                match iter.next() {
-                    Some(ch) if ch.is_whitespace() => n += 1,
-                    Some(_) => break n,
-                    None => break n,
-                }
-            }
-        };
-        self.cursor = match dp {
-            DP::Left => self.cursor - n,
-            DP::Right => self.cursor + n,
-            _ => self.cursor,
-        };
-        n
-    }
-
-    fn skip_alphanumeric(&mut self, dp: DP) -> usize {
-        let mut n = 0;
-        let n = {
-            let mut iter = self.iter(dp);
-            loop {
-                match iter.next() {
-                    Some(ch) if ch.is_alphanumeric() => n += 1,
-                    Some(_) => break n,
-                    None => break n,
-                }
-            }
-        };
-        self.cursor = match dp {
-            DP::Left => self.cursor - n,
-            DP::Right => self.cursor + n,
-            _ => self.cursor,
-        };
-        n
-    }
-
     //fn fwd_match_group(&mut self) {
     //    self.cursor = {
     //        let mut iter = self.iter(true /*fwd*/).enumerate();
@@ -1248,9 +1184,7 @@ impl Change {
     //        }
     //    };
     //}
-}
 
-impl Change {
     fn iter<'a>(&'a self, dp: DP) -> Box<dyn Iterator<Item = char> + 'a> {
         let chars = self.rope.chars_at(self.cursor);
         match dp {
@@ -1616,23 +1550,23 @@ macro_rules! mto_text_right {
     }};
 }
 
-pub fn mto_words_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+pub fn mto_words_left(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
     mto_text_left!(buf, n, pos, MtoWord::St(n), MtoWord)
 }
 
-pub fn mto_words_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+pub fn mto_words_right(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
     mto_text_right!(buf, n, pos, MtoWord::St(n), MtoWord)
 }
 
-pub fn mto_wwords_left(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+pub fn mto_wwords_left(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
     mto_text_left!(buf, n, pos, MtoWWord::St(n), MtoWWord)
 }
 
-pub fn mto_wwords_right(buf: &mut Buffer, n: usize, pos: DP) -> Result<usize> {
+pub fn mto_wwords_right(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
     mto_text_right!(buf, n, pos, MtoWWord::St(n), MtoWWord)
 }
 
-pub fn mto_sentence_left(buf: &mut Buffer, n: usize) -> Result<usize> {
+pub fn mto_sentence_left(buf: &Buffer, n: usize) -> Result<usize> {
     let pos = DP::None;
     let start = MtoSentence::St(n);
     let cursor = mto_text_left!(buf, n, pos, start, MtoSentence)?;
@@ -1657,7 +1591,7 @@ pub fn mto_sentence_left(buf: &mut Buffer, n: usize) -> Result<usize> {
     Ok(cursor + if_else!(buf.to_char_cursor() <= cursor + i, 0, i))
 }
 
-pub fn mto_sentence_right(buf: &mut Buffer, n: usize) -> Result<usize> {
+pub fn mto_sentence_right(buf: &Buffer, n: usize) -> Result<usize> {
     let pos = DP::None;
     let start = {
         let ln = {
@@ -1669,7 +1603,7 @@ pub fn mto_sentence_right(buf: &mut Buffer, n: usize) -> Result<usize> {
     mto_text_right!(buf, n, pos, start, MtoSentence)
 }
 
-pub fn mto_paras_left(buf: &mut Buffer, mut n: usize) -> Result<usize> {
+pub fn mto_paras_left(buf: &Buffer, mut n: usize) -> Result<usize> {
     let row = buf.to_xy_cursor(None).row;
     let mut iter = buf.lines_at(row, DP::Left)?.enumerate();
     let row = loop {
@@ -1685,7 +1619,7 @@ pub fn mto_paras_left(buf: &mut Buffer, mut n: usize) -> Result<usize> {
     Ok(saturate_cursor(buf, buf.line_to_char(row)))
 }
 
-pub fn mto_paras_right(buf: &mut Buffer, mut n: usize) -> Result<usize> {
+pub fn mto_paras_right(buf: &Buffer, mut n: usize) -> Result<usize> {
     let row = buf.to_xy_cursor(None).row;
     let mut iter = buf.lines_at(row, DP::Right)?.enumerate();
     iter.next();
@@ -1700,6 +1634,25 @@ pub fn mto_paras_right(buf: &mut Buffer, mut n: usize) -> Result<usize> {
         }
     };
     Ok(saturate_cursor(buf, buf.line_to_char(row)))
+}
+
+pub fn mto_match_pair(buf: &Buffer) -> Result<usize> {
+    use crate::match_pair;
+
+    let cursor = buf.to_char_cursor();
+    Ok(match_pair::match_under_cursor(buf).unwrap_or(cursor))
+}
+
+pub fn mto_unmatch_pair(buf: &Buffer, ch: char, n: usize, dir: DP) -> Result<usize> {
+    use crate::match_pair;
+
+    let cursor = buf.to_char_cursor();
+    let cursor = match dir {
+        DP::Left => match_pair::unmatch_before(buf, ch, n).unwrap_or(cursor),
+        DP::Right => match_pair::unmatch_after(buf, ch, n).unwrap_or(cursor),
+        _ => cursor,
+    };
+    Ok(cursor)
 }
 
 pub fn mto_bracket(buf: &mut Buffer, e: Mto) -> Result<Event> {
@@ -1815,27 +1768,6 @@ pub fn to_span_line(buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
     Ok(span.into())
 }
 
-#[inline]
-fn saturate_cursor(buf: &Buffer, cursor: usize) -> usize {
-    if_else!(cursor >= buf.n_chars(), last_char_idx(buf), cursor)
-}
-
-fn last_char_idx(buf: &Buffer) -> usize {
-    let row = buf.to_last_line_idx();
-    let col = text::visual_line_n(&buf.line(row));
-    xy_to_cursor(buf, (row, col.saturating_sub(1)))
-}
-
-#[inline]
-fn xy_to_cursor(buf: &Buffer, (row, col): (usize, usize)) -> usize {
-    buf.line_to_char(row) + col
-}
-
-#[inline]
-fn line_chars(buf: &Buffer, row: usize) -> usize {
-    text::visual_line_n(&buf.line(row))
-}
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
 enum MtoWord {
     St(usize), // start - (n,) number of words to move.
@@ -1856,7 +1788,7 @@ impl MtoWord {
         }
     }
 
-    // (row, rem_chars, Option<(col_off, char)>
+    // (row, rem_chars, Option<(col_off, char)>)
     fn match_char(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
         use MtoWord::{An, Ch, Fin, St, Ws};
 
@@ -1953,7 +1885,7 @@ impl fmt::Display for MtoWord {
 }
 
 impl MtoWord {
-    // (row, rem_chars, Option<(col_off, char)>
+    // (row, rem_chars, Option<(col_off, char)>)
     fn push(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
         use MtoWord::{An, Ch, Fin, St, Ws};
 
@@ -2012,7 +1944,7 @@ impl MtoWWord {
         }
     }
 
-    // (row, rem_chars, Option<(col_off, char)>
+    // (row, rem_chars, Option<(col_off, char)>)
     fn match_char(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
         use MtoWWord::{Ch, Fin, St, Ws};
 
@@ -2091,7 +2023,7 @@ impl fmt::Display for MtoWWord {
 }
 
 impl MtoWWord {
-    // (row, rem_chars, Option<(col_off, char)>
+    // (row, rem_chars, Option<(col_off, char)>)
     fn push(self, dir: DP, pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
         use MtoWWord::{Ch, Fin, St, Ws};
 
@@ -2141,7 +2073,7 @@ enum MtoSentence {
 }
 
 impl MtoSentence {
-    // (row, rem_chars, Option<(col_off, char)>
+    // (row, rem_chars, Option<(col_off, char)>)
     fn match_char(self, dir: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
         use MtoSentence::{Ch, Fin, St, Ws};
 
@@ -2208,7 +2140,7 @@ impl fmt::Display for MtoSentence {
 }
 
 impl MtoSentence {
-    // (row, rem_chars, Option<(col_off, char)>
+    // (row, rem_chars, Option<(col_off, char)>)
     fn push(self, dir: DP, _pos: DP, item: (usize, usize, Option<(usize, char)>)) -> Self {
         use MtoSentence::{Ch, Fin, St, Ws};
 
@@ -2290,7 +2222,7 @@ impl<I> Iterator for WIterChar<I>
 where
     I: Iterator<Item = Vec<char>>,
 {
-    // (row, rem_chars, Option<(col_off, char)>
+    // (row, rem_chars, Option<(col_off, char)>)
     type Item = (usize, usize, Option<(usize, char)>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -2399,23 +2331,25 @@ impl Search {
     }
 }
 
-pub fn visual_lines(content: &str, wth: Option<usize>) -> Result<usize> {
-    let loc = {
-        let read_only = true;
-        Location::new_ted("", io::empty(), read_only)?
-    };
-    let buf = Buffer::from_reader(content.as_bytes(), loc)?;
-    let mut m = 0_usize;
-    for line in buf.lines_at(0, DP::Right)? {
-        m += match wth {
-            Some(wth) => {
-                let n = text::visual_line_n(&line);
-                (n / wth) + if_else!((n % wth) > 0, 1, 0)
-            }
-            None => 1,
-        };
-    }
-    Ok(m)
+#[inline]
+fn saturate_cursor(buf: &Buffer, cursor: usize) -> usize {
+    if_else!(cursor >= buf.n_chars(), last_char_idx(buf), cursor)
+}
+
+fn last_char_idx(buf: &Buffer) -> usize {
+    let row = buf.to_last_line_idx();
+    let col = text::visual_line_n(&buf.line(row));
+    xy_to_cursor(buf, (row, col.saturating_sub(1)))
+}
+
+#[inline]
+fn xy_to_cursor(buf: &Buffer, (row, col): (usize, usize)) -> usize {
+    buf.line_to_char(row) + col
+}
+
+#[inline]
+fn line_chars(buf: &Buffer, row: usize) -> usize {
+    text::visual_line_n(&buf.line(row))
 }
 
 #[cfg(test)]

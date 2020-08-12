@@ -82,7 +82,7 @@ impl KeyEdit {
                 Enter(_) => (noop, Mt(Mto::Down(1, DP::TextCol))),
                 Char('+', _) => (noop, Mt(Mto::Down(1, DP::TextCol))),
                 Char('G', _) => (noop, Mt(Mto::Row(std::usize::MAX, DP::TextCol))),
-                Char('%', _) => (noop, Mt(Mto::Percent(1, DP::TextCol))),
+                Char('%', _) => (noop, Mt(Mto::MatchPair)),
                 // motion command - word/sentence/para
                 Char('w', _) => (noop, Mt(Mto::Word(1, DP::Right, DP::Start))),
                 Char('W', _) => (noop, Mt(Mto::WWord(1, DP::Right, DP::Start))),
@@ -250,10 +250,10 @@ impl KeyEdit {
                 evnt => (noop, evnt),
             },
             B(n, d) if m_empty => match evnt {
-                Char('(', _) => (noop, Mt(Mto::Bracket(n, '(', ')', d))),
-                Char(')', _) => (noop, Mt(Mto::Bracket(n, ')', '(', d))),
-                Char('{', _) => (noop, Mt(Mto::Bracket(n, '{', '}', d))),
-                Char('}', _) => (noop, Mt(Mto::Bracket(n, '}', '{', d))),
+                Char('(', _) => (noop, Mt(Mto::UnmatchPair(n, '(', d))),
+                Char(')', _) => (noop, Mt(Mto::UnmatchPair(n, ')', d))),
+                Char('{', _) => (noop, Mt(Mto::UnmatchPair(n, '{', d))),
+                Char('}', _) => (noop, Mt(Mto::UnmatchPair(n, '}', d))),
                 evnt => (noop, evnt),
             },
             F(n, d) if m_empty => match evnt {

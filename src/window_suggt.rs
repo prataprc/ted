@@ -183,7 +183,7 @@ impl WindowSuggest {
                         };
                         line2.set_cursor(coord.to_origin_cursor().into());
 
-                        err_at!(Fatal, termqu!(line1, line2));
+                        err_at!(Fatal, termqu!(line1, line2))?;
                     }
                     None => (),
                 }
