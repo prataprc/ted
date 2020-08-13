@@ -360,12 +360,14 @@ impl WinBuffer for Buffer {
             let change = &self.to_change();
             change.rope.len_lines()
         };
+        let n_chars = self.n_chars();
         for line_idx in (0..n_lines).rev() {
             let home = self.line_to_char(line_idx);
-            match self.n_chars() {
-                ln if ln == home => continue,
-                _ => return line_idx,
+            if n_chars != home {
+                return line_idx;
             }
+            // n_chars == home, the last line is just `new-line`.
+            // and the next iteration will break.
         }
         0
     }
@@ -1405,14 +1407,10 @@ pub fn mto_down(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
 }
 
 pub fn mto_row(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
-    let last_line = buf.to_last_line_idx();
-    let cursor = match n {
-        std::usize::MAX => buf.line_to_char(last_line),
-        n => buf.line_to_char(cmp::min(last_line, n)),
-    };
+    let cursor = buf.line_to_char(cmp::min(n, buf.to_last_line_idx()));
     let cursor = match dp {
         DP::TextCol => {
-            let xy = buf.to_change().to_xy_cursor(Some(cursor));
+            let xy = buf.to_xy_cursor(Some(cursor));
             cursor + skip_whitespace(&buf.line(xy.row), xy.col, DP::Right)?
         }
         _ => cursor,

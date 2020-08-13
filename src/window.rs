@@ -92,7 +92,7 @@ pub trait WinBuffer {
     /// Return the number of characters in the buffer.
     fn n_chars(&self) -> usize;
 
-    /// Return the number of lines in the buffer.
+    /// Return the index number of last line in the buffer, starts from 0.
     fn to_last_line_idx(&self) -> usize;
 
     /// Return the number of characters in line `line_idx`, starts from ZERO.
@@ -262,7 +262,7 @@ impl Cursor {
         }
     }
 
-    pub fn saturate_row(mut self, coord: Coord, scroll_off: u16) -> Cursor {
+    fn saturate_row(mut self, coord: Coord, scroll_off: u16, bc_xy: buffer::Cursor) -> Cursor {
         self.row = if coord.hgt < (2 * scroll_off) {
             if self.row >= coord.hgt {
                 coord.hgt.saturating_sub(1)

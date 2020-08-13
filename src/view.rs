@@ -414,15 +414,13 @@ impl WrapView {
                 (nbc_xy.row.saturating_sub(hgt), self.obc_xy.row)
             };
             let to = cmp::min(buf.to_last_line_idx(), to.saturating_add(hgt));
-            (from..to).collect()
+            (from..=to).collect()
         };
 
         let screen_lines = wrap_lines(buf, lines, wth);
         let pivot = cursor_line(&screen_lines, buf.to_char_cursor());
 
-        let cursor = self
-            .to_cursor(buf, &screen_lines)
-            .saturate_row(self.coord, self.scroll_off);
+        let cursor = self.to_cursor(buf, &screen_lines, wth);
 
         debug!(
             "pivot:{} cursor:{} nbc:{}",
@@ -441,7 +439,7 @@ impl WrapView {
     }
 
     // viewport is editable window,
-    fn to_cursor<B>(&self, buf: &B, screen_lines: &[ScrLine]) -> Cursor
+    fn to_cursor<B>(&self, buf: &B, screen_lines: &[ScrLine], wth: u16) -> Cursor
     where
         B: WinBuffer,
     {
@@ -452,21 +450,35 @@ impl WrapView {
 
         let row = self.cursor.row as usize;
         let row = if obc_xy <= nbc_xy {
+            let row_max = self
+                .coord
+                .hgt
+                .saturating_sub(1)
+                .saturating_sub(self.scroll_off) as usize;
             let rows: Vec<&ScrLine> = screen_lines
                 .iter()
                 .skip_while(|sline| sline.bc <= obc)
                 .take_while(|sline| sline.bc <= nbc)
                 .collect();
-            row.saturating_add(rows.len())
+            cmp::min(row.saturating_add(rows.len()), row_max) as u16
         } else {
             let rows: Vec<&ScrLine> = screen_lines
                 .iter()
                 .skip_while(|sline| sline.bc <= nbc)
                 .take_while(|sline| sline.bc <= obc)
                 .collect();
-            row.saturating_sub(rows.len())
+            let row = row.saturating_sub(rows.len());
+            let scroll_off = self.scroll_off as usize;
+            let item = wrap_lines(buf, (0..scroll_off).collect(), wth)
+                .into_iter()
+                .take(scroll_off)
+                .collect::<Vec<ScrLine>>()
+                .pop();
+            match item.map(|sline| sline.bc + (sline.n as usize)) {
+                Some(bc) if bc < nbc => cmp::max(row, scroll_off) as u16,
+                _ => row as u16,
+            }
         };
-        let row = cmp::min(row, self.coord.hgt.saturating_sub(1) as usize) as u16;
 
         // debug!("<< rows:{:?} row:{} col:{}", rows, row, col);
         let col = {
