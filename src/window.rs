@@ -193,15 +193,6 @@ impl Coord {
     pub fn to_size(&self) -> (u16, u16) {
         (self.hgt, self.wth)
     }
-
-    pub fn cursor_range(&self, scroll_off: u16) -> ops::Range<u16> {
-        if self.hgt < (2 * scroll_off) {
-            0..self.hgt
-        } else {
-            let till = self.hgt.saturating_sub(scroll_off);
-            scroll_off..till
-        }
-    }
 }
 
 // Cursor within the Window object, starts from (0, 0)
@@ -254,12 +245,7 @@ impl Cursor {
         self
     }
 
-    pub fn account_nu(mut self, nu_wth: u16) -> Self {
-        self.col += nu_wth;
-        self
-    }
-
-    pub fn add_row(mut self, n: isize, coord: Coord, scroll_off: u16) -> u16 {
+    pub fn add_row(self, n: isize, coord: Coord, scroll_off: u16) -> u16 {
         if coord.hgt < (2 * scroll_off) {
             match (self.row as isize).saturating_add(n) {
                 row if row < 0 => 0_u16,

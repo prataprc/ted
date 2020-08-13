@@ -29,7 +29,6 @@ pub struct Wrap {
     coord: Coord,
     cursor: Cursor,
     obc_xy: buffer::Cursor,
-    nu: ColNu,
     scroll_off: u16,
     line_number: bool,
     screen_lines: Vec<ScrLine>,
@@ -39,9 +38,8 @@ impl fmt::Display for Wrap {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         write!(
             f,
-            "Wrap<{:?} {} {} {}@{} {}>",
+            "Wrap<{:?} {} {}@{} {}>",
             self.name,
-            self.nu,
             self.obc_xy,
             self.cursor,
             self.coord,
@@ -63,18 +61,15 @@ where
         };
         let scroll_off = w.config_scroll_offset();
         let line_number = w.config_line_number();
-        let mut value = Wrap {
+        Ok(Wrap {
             name: w.to_name(),
             coord: w.to_coord(),
             cursor,
             obc_xy,
-            nu: ColNu::new(obc_xy.row, line_number),
             scroll_off,
             line_number,
             screen_lines: Vec::default(),
-        };
-        value.discount_nu(ColNu::new(obc_xy.row, line_number).to_width());
-        Ok(value)
+        })
     }
 }
 
@@ -87,6 +82,8 @@ impl Wrap {
         Cursor { row: 0, col }
     }
 
+    /// return the pre-computed screen-lines that exactly matches the window
+    /// coordinates and fetch with text content, from `buf`, for each line.
     #[inline]
     pub fn to_screen_lines<B>(&self, buf: &B) -> Vec<ScrLine>
     where
@@ -102,59 +99,40 @@ impl Wrap {
         screen_lines
     }
 
-    // scroll is true, on screen cursor position remains the same, buffer
-    // is aligned with the screen/window.
-    pub fn shift_cursor<B>(&mut self, buf: &B, scroll: bool)
+    /// Update cursor and screen-lines for this wrap-view instance.
+    /// If `scroll` is true, on screen cursor position remains
+    /// the same, buffer is aligned with the screen/window.
+    pub fn shift_cursor<B>(&mut self, buf: &B)
     where
         B: WinBuffer,
     {
         let (cursor, screen_lines) = {
             let view: WrapView = self.clone().into();
-            view.to_screen_lines(buf, scroll)
+            view.to_screen_lines(buf)
         };
         let nbc_xy = buf.to_xy_cursor(None);
-        let coord = {
-            let old_nu = ColNu::new(self.obc_xy.row, self.line_number);
-            let nu = ColNu::new(nbc_xy.row, self.line_number);
-            self.coord.resize_to(
-                self.coord.hgt,
-                self.coord.wth + old_nu.to_width() - nu.to_width(),
-            )
-        };
 
         debug!(
             "SHIFT {}->{} {}@{} screen_lines:{}",
             self.obc_xy,
             nbc_xy,
             cursor,
-            coord,
+            self.coord,
             screen_lines.len()
         );
 
         // update this wrap-view.
-        self.coord = coord;
         self.cursor = cursor;
         self.screen_lines = screen_lines;
     }
 
-    pub fn render<R>(
-        mut self,
-        buf: &R::Buf,
-        r: &R,
-        old_screen: Option<Vec<ScrLine>>,
-    ) -> Result<Cursor>
+    /// consume this wrap-view and render the screen content.
+    pub fn render<R>(self, buf: &R::Buf, r: &R, old_screen: Option<Vec<ScrLine>>) -> Result<Cursor>
     where
         R: Render,
         <R as Render>::Buf: WinBuffer,
     {
-        self.nu = ColNu::new(buf.to_xy_cursor(None).row, self.line_number);
-        self.nu.set_color_scheme(r.as_color_scheme());
-        let cursor = {
-            let (obc_xy, line_number) = (self.obc_xy, self.line_number);
-            let cursor = self.refresh(buf, r, old_screen)?;
-            cursor.account_nu(ColNu::new(obc_xy.row, line_number).to_width())
-        };
-        Ok(cursor)
+        self.refresh(buf, r, old_screen)
     }
 
     fn refresh<R>(self, buf: &R::Buf, r: &R, old_screen: Option<Vec<ScrLine>>) -> Result<Cursor>
@@ -164,14 +142,16 @@ impl Wrap {
     {
         debug!("WRAP-REFRESH {}", self);
 
+        let nbc_xy = buf.to_xy_cursor(None);
         let canvas = {
             let scheme = r.as_color_scheme();
             scheme.to_style(Highlight::Canvas)
         };
-        let full_coord = self.outer_coord();
-        let (col, row) = full_coord.to_origin_cursor();
+        let (col, row) = self.coord.to_origin_cursor();
+        let mut nu = ColNu::new(nbc_xy.row, self.line_number);
+        nu.set_color_scheme(r.as_color_scheme());
 
-        let rows = row..(row + full_coord.hgt);
+        let rows = row..(row + self.coord.hgt);
         let iter = self.to_screen_lines(buf).into_iter().enumerate();
         for (row, (i, sline)) in rows.zip(iter) {
             match old_screen.as_ref() {
@@ -180,9 +160,9 @@ impl Wrap {
             }
 
             let nu_span = {
-                let mut nu_span = self.nu.to_span(sline.colk);
-                nu_span.set_cursor(Cursor { col, row });
-                nu_span
+                let mut span = nu.to_span(sline.colk);
+                span.set_cursor(Cursor { col, row });
+                span
             };
             let mut line_span = {
                 let (a, z) = (sline.bc, sline.bc + (sline.n as usize));
@@ -190,7 +170,7 @@ impl Wrap {
             };
             let padding = {
                 let n = sline.n.saturating_sub(line_span.trim_newline() as u16);
-                self.coord.wth.saturating_sub(n)
+                self.coord.wth.saturating_sub(nu.to_width() + n)
             };
             line_span.right_padding(padding);
             line_span.optimize_spans(canvas.clone());
@@ -212,20 +192,6 @@ impl Wrap {
 
         Ok(self.cursor)
     }
-
-    fn discount_nu(&mut self, nu_wth: u16) {
-        if self.line_number {
-            self.coord = self
-                .coord
-                .resize_to(self.coord.hgt, self.coord.wth - nu_wth);
-            self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
-        }
-    }
-
-    fn outer_coord(&self) -> Coord {
-        self.coord
-            .resize_to(self.coord.hgt, self.coord.wth + self.nu.to_width())
-    }
 }
 
 #[derive(Clone)]
@@ -234,7 +200,6 @@ pub struct NoWrap {
     coord: Coord,   // full coordinate
     cursor: Cursor, // within full coordinate
     obc_xy: buffer::Cursor,
-    nu: ColNu,
     scroll_off: u16,
     line_number: bool,
     screen_lines: Vec<ScrLine>,
@@ -244,8 +209,8 @@ impl fmt::Display for NoWrap {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         write!(
             f,
-            "NoWrap<{:?} {} {} {}@{}>",
-            self.name, self.nu, self.obc_xy, self.cursor, self.coord,
+            "NoWrap<{:?} {} {}@{}>",
+            self.name, self.obc_xy, self.cursor, self.coord,
         )
     }
 }
@@ -263,18 +228,15 @@ where
         };
         let line_number = w.config_line_number();
         let scroll_off = w.config_scroll_offset();
-        let mut value = NoWrap {
+        Ok(NoWrap {
             name: w.to_name(),
             coord: w.to_coord(),
             cursor,
             obc_xy,
-            nu: ColNu::new(obc_xy.row, line_number),
             scroll_off,
             line_number,
             screen_lines: Vec::default(),
-        };
-        value.discount_nu(ColNu::new(obc_xy.row, line_number).to_width());
-        Ok(value)
+        })
     }
 }
 
@@ -302,64 +264,42 @@ impl NoWrap {
         screen_lines
     }
 
-    // scroll is true, on screen cursor position remains the same, buffer
-    // is aligned with the screen/window.
-    pub fn shift_cursor<B>(&mut self, buf: &B, scroll: bool)
+    /// Update cursor, coordinate and screen-lines for this wrap-view
+    /// instance. if `scroll` is true, on screen cursor position remains
+    /// the same, buffer is aligned with the screen/window.
+    pub fn shift_cursor<B>(&mut self, buf: &B)
     where
         B: WinBuffer,
     {
-        use std::iter::repeat;
-
         let nbc_xy = buf.to_xy_cursor(None);
-        let cursor_range = self.coord.cursor_range(self.scroll_off);
+        let nu = ColNu::new(nbc_xy.row, self.line_number);
+        let (diff_col, diff_row) = self.obc_xy.diff(&nbc_xy);
 
-        let coord = {
-            let Cursor { row, col: _ } = self.cursor;
-            let (_, diff_row) = self.obc_xy.diff(&nbc_xy);
-
-            let row = (row as isize).saturating_add(diff_row);
-            if cursor_range.contains(&(row as u16)) {
-                self.coord
-            } else {
-                let nu = ColNu::new(nbc_xy.row, self.line_number);
-                let coord = self.coord.resize_to(
-                    self.coord.hgt,
-                    self.coord.wth + self.nu.to_width() - nu.to_width(),
-                );
-                coord
-            }
+        let cursor = Cursor {
+            row: self.cursor.add_row(diff_row, self.coord, self.scroll_off),
+            col: {
+                let Cursor { col, .. } = self.cursor;
+                let (min, max) = (nu.to_width() as isize, self.coord.wth as isize);
+                limit!((col as isize) + diff_col, min, max) as u16
+            },
         };
 
-        let cursor = if scroll {
-            self.cursor
-        } else {
-            let Cursor { row, col } = self.cursor;
-            let (diff_col, diff_row) = self.obc_xy.diff(&nbc_xy);
-            let row = self.cursor.add_row(diff_row, self.coord, self.scroll_off);
-            let col = limite!((col as isize) + diff_col, 0, coord.wth as isize);
-            Cursor {
-                col: col as u16,
-                row: row as u16,
-            }
+        let col = {
+            let col = cursor.col.saturating_sub(nu.to_width());
+            nbc_xy.col.saturating_sub(col as usize)
         };
-
+        let wth = self.coord.wth.saturating_sub(nu.to_width());
         let screen_lines = {
-            let col = nbc_xy.col.saturating_sub(cursor.col as usize);
-            let wth = coord.wth;
             let lines: Vec<usize> = {
                 let from = nbc_xy.row.saturating_sub(cursor.row as usize);
                 let to = {
-                    let n_lines = buf.to_last_line_idx();
-                    cmp::max(n_lines, from + (coord.hgt as usize))
+                    let to = from + (self.coord.hgt as usize);
+                    cmp::max(buf.to_last_line_idx(), to)
                 };
                 (from..=to).collect()
             };
-            let mut screen_lines = nowrap_lines(buf, lines, col, wth);
-            let empty_lines: Vec<ScrLine> = repeat(ScrLine::new_empty())
-                .take((coord.hgt as usize).saturating_sub(screen_lines.len()))
-                .collect();
-            screen_lines.extend(empty_lines);
-            screen_lines
+            let screen_lines = nowrap_lines(buf, lines, col, wth);
+            padd_lines(screen_lines, self.coord)
         };
 
         debug!(
@@ -367,34 +307,21 @@ impl NoWrap {
             self.obc_xy,
             nbc_xy,
             cursor,
-            coord,
+            self.coord,
             screen_lines.len()
         );
 
         // update this wrap-view.
-        self.coord = coord;
         self.cursor = cursor;
         self.screen_lines = screen_lines;
     }
 
-    pub fn render<R>(
-        mut self,
-        buf: &R::Buf,
-        r: &R,
-        old_screen: Option<Vec<ScrLine>>,
-    ) -> Result<Cursor>
+    pub fn render<R>(self, buf: &R::Buf, r: &R, old_screen: Option<Vec<ScrLine>>) -> Result<Cursor>
     where
         R: Render,
         <R as Render>::Buf: WinBuffer,
     {
-        self.nu = ColNu::new(buf.to_xy_cursor(None).row, self.line_number);
-        self.nu.set_color_scheme(r.as_color_scheme());
-        let cursor = {
-            let (obc_xy, line_number) = (self.obc_xy, self.line_number);
-            let cursor = self.refresh(buf, r, old_screen)?;
-            cursor.account_nu(ColNu::new(obc_xy.row, line_number).to_width())
-        };
-        Ok(cursor)
+        self.refresh(buf, r, old_screen)
     }
 
     fn refresh<R>(self, buf: &R::Buf, r: &R, old_screen: Option<Vec<ScrLine>>) -> Result<Cursor>
@@ -404,14 +331,16 @@ impl NoWrap {
     {
         debug!("NOWRAP-REFRESH {}", self);
 
+        let nbc_xy = buf.to_xy_cursor(None);
         let canvas = {
             let scheme = r.as_color_scheme();
             scheme.to_style(Highlight::Canvas)
         };
-        let full_coord = self.outer_coord();
-        let (col, row) = full_coord.to_origin_cursor();
+        let (col, row) = self.coord.to_origin_cursor();
+        let mut nu = ColNu::new(nbc_xy.row, self.line_number);
+        nu.set_color_scheme(r.as_color_scheme());
 
-        let rows = row..(row + full_coord.hgt);
+        let rows = row..(row + self.coord.hgt);
         let iter = self.to_screen_lines(buf).into_iter().enumerate();
         for (row, (i, sline)) in rows.zip(iter) {
             match old_screen.as_ref() {
@@ -420,7 +349,7 @@ impl NoWrap {
             }
 
             let nu_span = {
-                let mut span = self.nu.to_span(sline.colk);
+                let mut span = nu.to_span(sline.colk);
                 span.set_cursor(Cursor { col, row });
                 span
             };
@@ -430,7 +359,7 @@ impl NoWrap {
             };
             let padding = {
                 let n = sline.n.saturating_sub(line_span.trim_newline() as u16);
-                self.coord.wth.saturating_sub(n)
+                self.coord.wth.saturating_sub(nu.to_width() + n)
             };
             line_span.right_padding(padding);
             line_span.optimize_spans(canvas.clone());
@@ -443,20 +372,6 @@ impl NoWrap {
 
         Ok(self.cursor)
     }
-
-    fn discount_nu(&mut self, nu_wth: u16) {
-        if self.line_number {
-            self.coord = self
-                .coord
-                .resize_to(self.coord.hgt, self.coord.wth - nu_wth);
-            self.cursor = self.cursor.move_by(-(nu_wth as i16), 0);
-        }
-    }
-
-    fn outer_coord(&self) -> Coord {
-        self.coord
-            .resize_to(self.coord.hgt, self.coord.wth + self.nu.to_width())
-    }
 }
 
 struct WrapView {
@@ -464,6 +379,7 @@ struct WrapView {
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     scroll_off: u16,
+    line_number: bool,
 }
 
 impl From<Wrap> for WrapView {
@@ -473,76 +389,59 @@ impl From<Wrap> for WrapView {
             cursor: w.cursor,
             obc_xy: w.obc_xy,
             scroll_off: w.scroll_off,
+            line_number: w.line_number,
         }
     }
 }
 
 impl WrapView {
-    pub fn to_screen_lines<B>(&self, buf: &B, scroll: bool) -> (Cursor, Vec<ScrLine>)
+    fn to_screen_lines<B>(&self, buf: &B) -> (Cursor, Vec<ScrLine>)
     where
         B: WinBuffer,
     {
-        use std::iter::repeat;
-
-        let obc_xy = self.obc_xy;
         let nbc_xy = buf.to_xy_cursor(None);
         let hgt = self.coord.hgt as usize;
-        let nbc = buf.line_to_char(nbc_xy.row) + nbc_xy.col;
-
-        let lines: Vec<usize> = if obc_xy <= nbc_xy {
-            let from = obc_xy.row.saturating_sub(hgt);
-            let to = {
-                let n_lines = buf.to_last_line_idx();
-                cmp::min(n_lines, nbc_xy.row + hgt)
-            };
-            (from..=to).collect()
-        } else {
-            let from = nbc_xy.row.saturating_sub(hgt);
-            let to = {
-                let n_lines = buf.to_last_line_idx();
-                cmp::min(n_lines, obc_xy.row + hgt)
-            };
-            (from..=to).collect()
+        let wth = {
+            let nu = ColNu::new(nbc_xy.row, self.line_number);
+            self.coord.wth.saturating_sub(nu.to_width())
         };
 
-        let screen_lines = wrap_lines(buf, lines, self.coord.wth);
-
-        let cursor = if scroll {
-            self.cursor
-        } else {
-            self.to_cursor(buf, screen_lines.clone())
-                .saturate_row(self.coord, self.scroll_off)
-        };
-
-        let pivot = {
-            let item = {
-                let iter = screen_lines.iter().enumerate();
-                iter.take_while(|(_, sline)| sline.bc <= nbc).last().clone()
+        // compute the approximate range of lines top-to-bottom.
+        let lines: Vec<usize> = {
+            let (from, to) = if self.obc_xy <= nbc_xy {
+                (self.obc_xy.row.saturating_sub(hgt), nbc_xy.row)
+            } else {
+                (nbc_xy.row.saturating_sub(hgt), self.obc_xy.row)
             };
-            item.map(|(i, _)| i).unwrap_or(0)
+            let to = cmp::min(buf.to_last_line_idx(), to.saturating_add(hgt));
+            (from..to).collect()
         };
-        debug!("pivot:{} cursor:{} nbc:{}", pivot, cursor, nbc);
+
+        let screen_lines = wrap_lines(buf, lines, wth);
+        let pivot = cursor_line(&screen_lines, buf.to_char_cursor());
+
+        let cursor = self
+            .to_cursor(buf, &screen_lines)
+            .saturate_row(self.coord, self.scroll_off);
+
+        debug!(
+            "pivot:{} cursor:{} nbc:{}",
+            pivot,
+            cursor,
+            buf.to_char_cursor()
+        );
         // debug!("screen_lines: {:?}", screen_lines);
-        let mut screen_lines = match screen_lines.len() {
-            0 => vec![],
-            n => {
-                let from = pivot.saturating_sub(cursor.row as usize);
-                let to = cmp::min(from + hgt, n);
-                screen_lines[from..to].to_vec()
-            }
+        let screen_lines = {
+            let ls = crop_lines(&screen_lines, pivot, self.coord, cursor);
+            padd_lines(ls, self.coord)
         };
-        let empty_lines: Vec<ScrLine> = repeat(ScrLine::new_empty())
-            .take(hgt.saturating_sub(screen_lines.len()))
-            .collect();
-        screen_lines.extend(empty_lines);
-
         assert_eq!(screen_lines.len(), hgt as usize);
 
         (cursor, screen_lines)
     }
 
     // viewport is editable window,
-    fn to_cursor<B>(&self, buf: &B, screen_lines: Vec<ScrLine>) -> Cursor
+    fn to_cursor<B>(&self, buf: &B, screen_lines: &[ScrLine]) -> Cursor
     where
         B: WinBuffer,
     {
@@ -551,36 +450,67 @@ impl WrapView {
         let obc = buf.line_to_char(obc_xy.row) + obc_xy.col;
         let nbc = buf.line_to_char(nbc_xy.row) + nbc_xy.col;
 
-        if obc_xy <= nbc_xy {
-            let rows: Vec<ScrLine> = screen_lines
-                .into_iter()
+        let row = self.cursor.row as usize;
+        let row = if obc_xy <= nbc_xy {
+            let rows: Vec<&ScrLine> = screen_lines
+                .iter()
                 .skip_while(|sline| sline.bc <= obc)
                 .take_while(|sline| sline.bc <= nbc)
                 .collect();
-            let row = {
-                let mut row = self.cursor.row as usize;
-                row = row.saturating_add(rows.len());
-                cmp::min(self.coord.hgt.saturating_sub(1) as usize, row) as u16
-            };
-            let col = (nbc_xy.col % (self.coord.wth as usize)) as u16;
-            // debug!("<< rows:{:?} row:{} col:{}", rows, row, col);
-            Cursor { col, row }
+            row.saturating_add(rows.len())
         } else {
-            let rows: Vec<ScrLine> = screen_lines
-                .into_iter()
+            let rows: Vec<&ScrLine> = screen_lines
+                .iter()
                 .skip_while(|sline| sline.bc <= nbc)
                 .take_while(|sline| sline.bc <= obc)
                 .collect();
-            let row = {
-                let mut row = self.cursor.row as usize;
-                row = row.saturating_sub(rows.len());
-                cmp::min(self.coord.hgt.saturating_sub(1) as usize, row) as u16
-            };
-            let col = (nbc_xy.col % (self.coord.wth as usize)) as u16;
-            // debug!(">> rows:{:?} row:{} col:{}", rows, row, col);
-            Cursor { col, row }
+            row.saturating_sub(rows.len())
+        };
+        let row = cmp::min(row, self.coord.hgt.saturating_sub(1) as usize) as u16;
+
+        // debug!("<< rows:{:?} row:{} col:{}", rows, row, col);
+        let col = {
+            let nu = ColNu::new(nbc_xy.row, self.line_number);
+            let wth = self.coord.wth.saturating_sub(nu.to_width());
+            let col = nbc_xy.col % (wth as usize);
+            col.saturating_add(nu.to_width() as usize) as u16
+        };
+        Cursor { col, row }
+    }
+}
+
+pub fn cursor_line(screen_lines: &[ScrLine], bc: usize) -> usize {
+    let item = {
+        let iter = screen_lines.iter().enumerate();
+        iter.take_while(|(_, sline)| sline.bc <= bc).last().clone()
+    };
+    item.map(|(i, _)| i).unwrap_or(0)
+}
+
+pub fn crop_lines(
+    screen_lines: &[ScrLine],
+    pivot: usize,
+    coord: Coord,
+    cursor: Cursor,
+) -> Vec<ScrLine> {
+    match screen_lines.len() {
+        0 => vec![],
+        n => {
+            let from = pivot.saturating_sub(cursor.row as usize);
+            let to = cmp::min(from + (coord.hgt as usize), n);
+            screen_lines[from..to].to_vec()
         }
     }
+}
+
+pub fn padd_lines(mut screen_lines: Vec<ScrLine>, coord: Coord) -> Vec<ScrLine> {
+    use std::iter::repeat;
+
+    let empty_line = ScrLine::new_empty();
+    let n = (coord.hgt as usize).saturating_sub(screen_lines.len());
+    let empty_lines: Vec<ScrLine> = repeat(empty_line).take(n).collect();
+    screen_lines.extend(empty_lines);
+    screen_lines
 }
 
 fn nowrap_lines<B>(buf: &B, lines: Vec<usize>, col: usize, wth: u16) -> Vec<ScrLine>

@@ -1146,6 +1146,7 @@ impl Change {
 }
 
 impl Change {
+    //TODO
     //fn fwd_match_group(&mut self) {
     //    self.cursor = {
     //        let mut iter = self.iter(true /*fwd*/).enumerate();
@@ -1185,18 +1186,19 @@ impl Change {
     //    };
     //}
 
-    fn iter<'a>(&'a self, dp: DP) -> Box<dyn Iterator<Item = char> + 'a> {
-        let chars = self.rope.chars_at(self.cursor);
-        match dp {
-            DP::Left => Box::new(IterChar {
-                _change: None,
-                iter: chars,
-                reverse: true,
-            }),
-            DP::Right => Box::new(chars),
-            _ => unreachable!(),
-        }
-    }
+    //TODO
+    //fn iter<'a>(&'a self, dp: DP) -> Box<dyn Iterator<Item = char> + 'a> {
+    //    let chars = self.rope.chars_at(self.cursor);
+    //    match dp {
+    //        DP::Left => Box::new(IterChar {
+    //            _change: None,
+    //            iter: chars,
+    //            reverse: true,
+    //        }),
+    //        DP::Right => Box::new(chars),
+    //        _ => unreachable!(),
+    //    }
+    //}
 }
 
 pub fn mto_left(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {

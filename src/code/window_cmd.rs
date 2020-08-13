@@ -12,6 +12,7 @@ use crate::{
     keymap::Keymap,
     location::Location,
     term::Spanline,
+    view,
     window::{Coord, Cursor, Render, WinBuffer, Window, WindowSuggest},
     Error, Result,
 };
@@ -38,8 +39,6 @@ impl fmt::Display for WindowCmd {
 
 impl WindowCmd {
     pub fn new(coord: Coord, app: &code::Code) -> Result<WindowCmd> {
-        use crate::view::NoWrap;
-
         let mut buf = {
             let read_only = false;
             let loc = Location::new_ted("code-cmd", io::empty(), read_only)?;
@@ -48,7 +47,7 @@ impl WindowCmd {
         buf.mode_insert();
         buf.cmd_insert_char(':').unwrap();
 
-        let cursor = NoWrap::initial_cursor(false /*line_number*/);
+        let cursor = view::NoWrap::initial_cursor(false /*line_number*/);
         let obc_xy = (0, 0).into();
         Ok(WindowCmd {
             coord,
@@ -115,13 +114,11 @@ impl Window for WindowCmd {
     }
 
     fn on_refresh(&mut self, _app: &mut code::Code) -> Result<()> {
-        use crate::view::NoWrap;
-
         let (col, row) = self.coord.to_origin_cursor();
         err_at!(Fatal, termqu!(term_cursor::MoveTo(col, row)))?;
 
-        let mut v: NoWrap = (&*self, self.obc_xy).try_into()?;
-        v.shift_cursor(&self.buf, false /*scroll*/);
+        let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
+        v.shift_cursor(&self.buf);
         self.cursor = v.render(&self.buf, self, None)?;
         self.obc_xy = self.buf.to_xy_cursor(None);
 

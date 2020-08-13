@@ -45,12 +45,10 @@ impl fmt::Display for WindowEdit {
 
 impl<'a, 'b> From<(&'a code::Code, &'b Buffer, Coord)> for WindowEdit {
     fn from((app, buf, coord): (&'a code::Code, &'b Buffer, Coord)) -> Self {
-        use crate::view::{NoWrap, Wrap};
-
         let cursor = if app.config.wrap {
-            Wrap::initial_cursor(app.config.line_number)
+            view::Wrap::initial_cursor(app.config.line_number)
         } else {
-            NoWrap::initial_cursor(app.config.line_number)
+            view::NoWrap::initial_cursor(app.config.line_number)
         };
 
         let scheme = app.to_color_scheme(None);
@@ -254,21 +252,18 @@ impl WindowEdit {
     }
 
     fn mto_win_high(&self, app: &mut code::Code, buf: &Buffer, n: usize) -> Result<usize> {
-        use crate::{
-            text,
-            view::{NoWrap, ScrLine, Wrap},
-        };
+        use crate::text;
 
         let screen_lines = if app.as_ref().wrap {
-            let mut v: Wrap = (&*self, self.obc_xy).try_into()?;
-            v.shift_cursor(buf, false /*scroll*/);
+            let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
+            v.shift_cursor(buf);
             v.to_screen_lines(buf)
         } else {
-            let mut v: NoWrap = (&*self, self.obc_xy).try_into()?;
-            v.shift_cursor(buf, false /*scroll*/);
+            let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
+            v.shift_cursor(buf);
             v.to_screen_lines(buf)
         };
-        let screen_lines: Vec<ScrLine> = {
+        let screen_lines: Vec<view::ScrLine> = {
             let iter = screen_lines.into_iter();
             iter.take_while(|sl| !sl.colk.is_empty()).collect()
         };
@@ -291,21 +286,18 @@ impl WindowEdit {
     }
 
     fn mto_win_middle(&self, app: &mut code::Code, buf: &Buffer) -> Result<usize> {
-        use crate::{
-            text,
-            view::{NoWrap, ScrLine, Wrap},
-        };
+        use crate::text;
 
         let screen_lines = if app.as_ref().wrap {
-            let mut v: Wrap = (&*self, self.obc_xy).try_into()?;
-            v.shift_cursor(buf, false /*scroll*/);
+            let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
+            v.shift_cursor(buf);
             v.to_screen_lines(buf)
         } else {
-            let mut v: NoWrap = (&*self, self.obc_xy).try_into()?;
-            v.shift_cursor(buf, false /*scroll*/);
+            let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
+            v.shift_cursor(buf);
             v.to_screen_lines(buf)
         };
-        let screen_lines: Vec<ScrLine> = {
+        let screen_lines: Vec<view::ScrLine> = {
             let iter = screen_lines.into_iter();
             iter.take_while(|sl| !sl.colk.is_empty()).collect()
         };
@@ -323,21 +315,18 @@ impl WindowEdit {
     }
 
     fn mto_win_low(&self, app: &mut code::Code, buf: &Buffer, n: usize) -> Result<usize> {
-        use crate::{
-            text,
-            view::{NoWrap, ScrLine, Wrap},
-        };
+        use crate::text;
 
         let screen_lines = if app.as_ref().wrap {
-            let mut v: Wrap = (&*self, self.obc_xy).try_into()?;
-            v.shift_cursor(buf, false /*scroll*/);
+            let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
+            v.shift_cursor(buf);
             v.to_screen_lines(buf)
         } else {
-            let mut v: NoWrap = (&*self, self.obc_xy).try_into()?;
-            v.shift_cursor(buf, false /*scroll*/);
+            let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
+            v.shift_cursor(buf);
             v.to_screen_lines(buf)
         };
-        let screen_lines: Vec<ScrLine> = {
+        let screen_lines: Vec<view::ScrLine> = {
             let iter = screen_lines.into_iter();
             iter.take_while(|sl| !sl.colk.is_empty()).collect()
         };
@@ -486,22 +475,20 @@ impl Window for WindowEdit {
     }
 
     fn on_refresh(&mut self, app: &mut code::Code) -> Result<()> {
-        use crate::view::{NoWrap, Wrap};
-
         let err = {
             let s = format!("buffer {}", self.curr_buf_id);
             Error::Invalid(String::new(), s)
         };
         self.cursor = if app.as_ref().wrap {
-            let mut v: Wrap = (&*self, self.obc_xy).try_into()?;
+            let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
-            v.shift_cursor(buf, false /*scroll*/);
+            v.shift_cursor(buf);
             let old_screen = self.old_screen.replace(v.to_screen_lines(buf));
             v.render(buf, self, old_screen)?
         } else {
-            let mut v: NoWrap = (&*self, self.obc_xy).try_into()?;
+            let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
-            v.shift_cursor(buf, false /*scroll*/);
+            v.shift_cursor(buf);
             let old_screen = self.old_screen.replace(v.to_screen_lines(buf));
             v.render(buf, self, old_screen)?
         };
