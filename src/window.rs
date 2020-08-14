@@ -242,11 +242,6 @@ impl Cursor {
         self
     }
 
-    pub fn discount_nu(mut self, nu_wth: u16) -> Self {
-        self.col -= nu_wth;
-        self
-    }
-
     pub fn add_row(self, n: isize, coord: Coord, scroll_off: u16) -> u16 {
         if coord.hgt < (2 * scroll_off) {
             match (self.row as isize).saturating_add(n) {

@@ -109,6 +109,19 @@ impl WindowEdit {
     }
 
     // return the width of editable screen's width.
+    fn to_edit_lines(&self, buf: &Buffer) -> Result<Vec<view::ScrLine>> {
+        if self.wrap {
+            let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
+            v.shift_cursor(buf);
+            Ok(v.to_edit_lines(buf))
+        } else {
+            let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
+            v.shift_cursor(buf);
+            Ok(v.to_edit_lines(buf))
+        }
+    }
+
+    // return the width of editable screen's width.
     fn to_edit_width(&self) -> (u16, u16) {
         let nu_wth = ColNu::new(self.obc_xy.row, self.line_number).to_width();
         (nu_wth, self.coord.wth.saturating_sub(nu_wth))
@@ -121,19 +134,38 @@ impl WindowEdit {
     }
 
     fn mto_screen_home(&self, buf: &Buffer, dp: DP) -> Result<usize> {
-        use crate::buffer::mto_left;
-
-        let cursor = {
-            let c = self.to_cursor_col() as usize;
-            mto_left(buf, c, DP::None)?
+        let lines = self.to_edit_lines(buf)?;
+        let (_, nu_wth) = view::to_nu_width(&lines, self.line_number);
+        let cursor = match view::cursor_line(&lines, buf.to_char_cursor()) {
+            Some(off) => lines[off].bc,
+            None => buf.to_char_cursor(),
         };
+
         let cursor = match dp {
             DP::TextCol => {
                 let xy = buf.to_xy_cursor(Some(cursor));
                 let line = buf.line(xy.row);
                 cursor + buffer::skip_whitespace(&line, xy.col, DP::Right)?
             }
+            DP::None => cursor,
             dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
+        };
+        Ok(cursor)
+    }
+
+    fn mto_screen_middle(&self, buf: &Buffer) -> Result<usize> {
+        use crate::buffer::{mto_left, mto_right};
+
+        let edit_wth = self.to_edit_width().1 / 2;
+        let cursor = match self.to_cursor_col() {
+            c if edit_wth < c => {
+                let n = c.saturating_sub(edit_wth) as usize;
+                mto_left(buf, n, DP::LineBound)?
+            }
+            c => {
+                let n = edit_wth.saturating_sub(c) as usize;
+                mto_right(buf, n, DP::LineBound)?
+            }
         };
         Ok(cursor)
     }
@@ -178,23 +210,6 @@ impl WindowEdit {
             }
             DP::None => to_cursor()?,
             dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
-        };
-        Ok(cursor)
-    }
-
-    fn mto_screen_middle(&self, buf: &Buffer) -> Result<usize> {
-        use crate::buffer::{mto_left, mto_right};
-
-        let edit_wth = self.to_edit_width().1 / 2;
-        let cursor = match self.to_cursor_col() {
-            c if edit_wth < c => {
-                let n = c.saturating_sub(edit_wth) as usize;
-                mto_left(buf, n, DP::LineBound)?
-            }
-            c => {
-                let n = edit_wth.saturating_sub(c) as usize;
-                mto_right(buf, n, DP::LineBound)?
-            }
         };
         Ok(cursor)
     }

@@ -150,12 +150,8 @@ impl Wrap {
         let (col, row) = self.coord.to_origin_cursor();
         let edit_lines = self.to_edit_lines(buf);
 
-        let mut nu = {
-            let iter = self.edit_lines.iter().map(|x| x.line_idx);
-            ColNu::new(iter.max().unwrap_or(0), self.line_number)
-        };
+        let (mut nu, nu_wth) = to_nu_width(&self.edit_lines, self.line_number);
         nu.set_color_scheme(r.as_color_scheme());
-        let nu_wth = nu.to_width();
 
         let rows = row..(row + self.coord.hgt);
         let iter = rows.zip(edit_lines.into_iter().enumerate());
@@ -344,12 +340,8 @@ impl NoWrap {
         let (col, row) = self.coord.to_origin_cursor();
         let edit_lines = self.to_edit_lines(buf);
 
-        let mut nu = {
-            let iter = self.edit_lines.iter().map(|x| x.line_idx);
-            ColNu::new(iter.max().unwrap_or(0), self.line_number)
-        };
+        let (mut nu, nu_wth) = to_nu_width(&self.edit_lines, self.line_number);
         nu.set_color_scheme(r.as_color_scheme());
-        let nu_wth = nu.to_width();
 
         let rows = row..(row + self.coord.hgt);
         let iter = rows.zip(edit_lines.into_iter().enumerate());
@@ -435,7 +427,7 @@ impl WrapView {
         let lines = padd_lines(edit_lines, self.coord, nu_wth);
 
         assert_eq!(lines.len(), hgt as usize);
-        let max_wth = lines.iter().map(to_nu_width).max().unwrap_or(nu_wth);
+        let (_, max_wth) = to_nu_width(&lines, self.line_number);
         debug!(
             "pivot:{} cursor:{} nbc:{} {} {}",
             pivot, cursor, nbc, nu_wth, max_wth
@@ -671,7 +663,11 @@ impl ScrLine {
     }
 }
 
-#[inline]
-fn to_nu_width(line: &ScrLine) -> u16 {
-    ColNu::new(line.line_idx, true).to_width()
+pub fn to_nu_width(lines: &[ScrLine], line_number: bool) -> (ColNu, u16) {
+    let nu = match lines.iter().map(|x| x.line_idx).max() {
+        Some(line_idx) => ColNu::new(line_idx, line_number),
+        None => ColNu::new(0, line_number),
+    };
+    let nu_wth = nu.to_width();
+    (nu, nu_wth)
 }

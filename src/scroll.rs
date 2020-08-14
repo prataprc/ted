@@ -1,4 +1,4 @@
-use std::{convert::TryInto, fmt, result};
+use std::{cmp, convert::TryInto, fmt, result};
 
 use crate::{
     col_nu::ColNu,
@@ -8,31 +8,41 @@ use crate::{
     Result,
 };
 
-pub fn scroll_down<W, B>(name: &str, w: &W, buf: &B, dir: DP, n: usize) -> Result<(Cursor, usize)>
+pub fn scroll_down<W, B>(name: &str, w: &W, buf: &B, n: usize) -> Result<(Cursor, usize)>
 where
     W: Window,
     B: WinBuffer,
 {
     let coord = w.to_coord();
     let nbc_xy = buf.to_xy_cursor(None);
+    let scroll_off = w.config_scroll_offset();
+    let line_number = w.config_line_number();
 
-    let mut lines = if w.config_wrap() {
-        let mut v: view::Wrap = (w, nbc_xy).try_into()?;
-        v.shift_cursor(buf);
-        v.to_edit_lines(buf)
-    } else {
-        todo!()
+    let (mut lines, iter, nu_wth) = match w.config_wrap() {
+        true => {
+            let lines = {
+                let mut v: view::Wrap = (w, nbc_xy).try_into()?;
+                v.shift_cursor(buf);
+                v.to_edit_lines(buf)
+            };
+            let iter = WrapIter::new_scroll_down(name, w, buf)?;
+            let (_, nu_wth) = view::to_nu_width(&lines, line_number);
+            (lines, iter, nu_wth)
+        }
+        false => todo!(),
     };
 
-    let iter = match (w.config_wrap(), dir) {
-        (true, DP::Right) => WrapIter::new_scroll_down(name, w, buf)?,
-        (true, DP::Left) => WrapIter::new_scroll_up(name, w, buf)?,
-        (false, DP::Right) => todo!(),
-        (false, DP::Left) => todo!(),
-        _ => unreachable!(),
-    };
+    let Cursor { mut row, mut col } = w.to_cursor().unwrap_or(Cursor::default());
+    let ocol = col.saturating_sub(nu_wth);
+    let max_wth = coord.wth.saturating_sub(nu_wth);
 
+    let mut nbc = buf.to_char_cursor();
+    let mut col = ocol;
     for line in iter.take(n) {
+        row = row.saturating_sub(1);
+        col = cmp::min(cmp::min(ocol, line.n), max_wth);
+        nbc = line.bc + (col as usize);
+
         match coord.hgt as usize {
             n if n > lines.len() => lines.push(line),
             _ => {
@@ -41,11 +51,61 @@ where
             }
         }
     }
+    // adjust for new nu_wth
+    let (_, nu_wth) = view::to_nu_width(&lines, line_number);
+    col = cmp::min(col.saturating_add(nu_wth), coord.wth);
 
-    let cursor = w.to_cursor().unwrap_or(Cursor::default());
-    let bc = buf.to_char_cursor();
+    Ok((Cursor { col, row }, nbc))
+}
 
-    Ok((cursor, bc))
+pub fn scroll_up<W, B>(name: &str, w: &W, buf: &B, n: usize) -> Result<(Cursor, usize)>
+where
+    W: Window,
+    B: WinBuffer,
+{
+    let coord = w.to_coord();
+    let nbc_xy = buf.to_xy_cursor(None);
+    let scroll_off = w.config_scroll_offset();
+    let line_number = w.config_line_number();
+
+    let (mut lines, iter, nu_wth) = match w.config_wrap() {
+        true => {
+            let lines = {
+                let mut v: view::Wrap = (w, nbc_xy).try_into()?;
+                v.shift_cursor(buf);
+                v.to_edit_lines(buf)
+            };
+            let iter = WrapIter::new_scroll_up(name, w, buf)?;
+            let (_, nu_wth) = view::to_nu_width(&lines, line_number);
+            (lines, iter, nu_wth)
+        }
+        false => todo!(),
+    };
+
+    let Cursor { mut row, mut col } = w.to_cursor().unwrap_or(Cursor::default());
+    let ocol = col.saturating_sub(nu_wth);
+    let max_wth = coord.wth.saturating_sub(nu_wth);
+
+    let mut nbc = buf.to_char_cursor();
+    let mut col = ocol;
+    for line in iter.take(n) {
+        row = row.saturating_sub(1);
+        col = cmp::min(cmp::min(ocol, line.n), max_wth);
+        nbc = line.bc + (col as usize);
+
+        match coord.hgt as usize {
+            n if n > lines.len() => lines.insert(0, line),
+            _ => {
+                lines.pop();
+                lines.insert(0, line)
+            }
+        }
+    }
+    // adjust for new nu_wth
+    let (_, nu_wth) = view::to_nu_width(&lines, line_number);
+    col = cmp::min(col.saturating_add(nu_wth), coord.wth);
+
+    Ok((Cursor { col, row }, nbc))
 }
 
 struct WrapIter<'a, B>
