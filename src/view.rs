@@ -572,7 +572,7 @@ where
         .collect()
 }
 
-fn wrap_line<B>(buf: &B, line_idx: usize, nu_wth: u16, wth: u16) -> Vec<ScrLine>
+pub fn wrap_line<B>(buf: &B, line_idx: usize, nu_wth: u16, wth: u16) -> Vec<ScrLine>
 where
     B: WinBuffer,
 {
