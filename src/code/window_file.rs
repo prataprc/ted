@@ -158,6 +158,11 @@ impl Window for WindowFile {
     }
 
     #[inline]
+    fn config_wrap(&self) -> bool {
+        self.we.config_wrap()
+    }
+
+    #[inline]
     fn config_line_number(&self) -> bool {
         self.we.config_line_number()
     }

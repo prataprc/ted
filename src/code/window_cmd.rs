@@ -80,6 +80,11 @@ impl Window for WindowCmd {
     }
 
     #[inline]
+    fn config_wrap(&self) -> bool {
+        false
+    }
+
+    #[inline]
     fn config_line_number(&self) -> bool {
         false
     }

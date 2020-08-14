@@ -35,6 +35,8 @@ pub trait Window {
 
     fn to_cursor(&self) -> Option<Cursor>;
 
+    fn config_wrap(&self) -> bool;
+
     fn config_line_number(&self) -> bool;
 
     fn config_scroll_offset(&self) -> u16;

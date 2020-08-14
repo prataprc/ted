@@ -30,7 +30,7 @@ pub mod location;
 mod mark;
 mod match_pair;
 pub mod pubsub;
-// mod scroll;
+mod scroll;
 pub mod tabc;
 pub mod tss;
 mod view;

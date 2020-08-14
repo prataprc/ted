@@ -29,6 +29,7 @@ pub struct WindowEdit {
     keymap: Keymap,
     old_screen: Option<Vec<view::ScrLine>>,
     // configuration.
+    wrap: bool,
     scroll_off: u16,
     line_number: bool,
 }
@@ -63,6 +64,7 @@ impl<'a, 'b> From<(&'a code::Code, &'b Buffer, Coord)> for WindowEdit {
             keymap: Keymap::new_edit(),
             old_screen: None,
             // configuration
+            wrap: app.as_ref().wrap,
             scroll_off: app.as_ref().scroll_off,
             line_number: app.as_ref().line_number,
         };
@@ -197,8 +199,8 @@ impl WindowEdit {
         Ok(cursor)
     }
 
-    fn mto_screen_up(&self, app: &mut code::Code, buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
-        let cursor = if app.as_ref().wrap {
+    fn mto_screen_up(&self, buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
+        let cursor = if self.wrap {
             let (nu_wth, edit_wth) = self.to_edit_width();
             let edit_col = self.to_cursor_col() as usize;
             let cursor = buf.to_char_cursor();
@@ -221,14 +223,8 @@ impl WindowEdit {
         Ok(cursor)
     }
 
-    fn mto_screen_down(
-        &self,
-        app: &mut code::Code,
-        buf: &Buffer,
-        n: usize,
-        dp: DP,
-    ) -> Result<usize> {
-        let cursor = if app.as_ref().wrap {
+    fn mto_screen_down(&self, buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
+        let cursor = if self.wrap {
             let (nu_wth, edit_wth) = self.to_edit_width();
             let scr_col = self.to_cursor_col() as usize;
             let cursor = buf.to_char_cursor();
@@ -251,10 +247,10 @@ impl WindowEdit {
         Ok(cursor)
     }
 
-    fn mto_win_high(&self, app: &mut code::Code, buf: &Buffer, n: usize) -> Result<usize> {
+    fn mto_win_high(&self, buf: &Buffer, n: usize) -> Result<usize> {
         use crate::text;
 
-        let screen_lines = if app.as_ref().wrap {
+        let screen_lines = if self.wrap {
             let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf);
             v.to_edit_lines(buf)
@@ -285,10 +281,10 @@ impl WindowEdit {
         Ok(bc)
     }
 
-    fn mto_win_middle(&self, app: &mut code::Code, buf: &Buffer) -> Result<usize> {
+    fn mto_win_middle(&self, buf: &Buffer) -> Result<usize> {
         use crate::text;
 
-        let screen_lines = if app.as_ref().wrap {
+        let screen_lines = if self.wrap {
             let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf);
             v.to_edit_lines(buf)
@@ -314,10 +310,10 @@ impl WindowEdit {
         Ok(bc)
     }
 
-    fn mto_win_low(&self, app: &mut code::Code, buf: &Buffer, n: usize) -> Result<usize> {
+    fn mto_win_low(&self, buf: &Buffer, n: usize) -> Result<usize> {
         use crate::text;
 
-        let screen_lines = if app.as_ref().wrap {
+        let screen_lines = if self.wrap {
             let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf);
             v.to_edit_lines(buf)
@@ -391,6 +387,11 @@ impl Window for WindowEdit {
     }
 
     #[inline]
+    fn config_wrap(&self) -> bool {
+        self.wrap
+    }
+
+    #[inline]
     fn config_line_number(&self) -> bool {
         self.line_number
     }
@@ -421,32 +422,32 @@ impl Window for WindowEdit {
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::ScreenUp(n, dp)) => {
-                    let cursor = self.mto_screen_up(app, &buf, n, dp)?;
+                    let cursor = self.mto_screen_up(&buf, n, dp)?;
                     buf.set_cursor(cursor).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::ScreenDown(n, dp)) => {
-                    let cursor = self.mto_screen_down(app, &buf, n, dp)?;
+                    let cursor = self.mto_screen_down(&buf, n, dp)?;
                     buf.set_cursor(cursor).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::WinH(n)) => {
                     let cursor = {
                         let n = n.saturating_sub(1);
-                        self.mto_win_high(app, &buf, n)?
+                        self.mto_win_high(&buf, n)?
                     };
                     buf.set_cursor(cursor).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::WinM) => {
-                    let cursor = self.mto_win_middle(app, &buf)?;
+                    let cursor = self.mto_win_middle(&buf)?;
                     buf.set_cursor(cursor).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::WinL(n)) => {
                     let cursor = {
                         let n = n.saturating_sub(1);
-                        self.mto_win_low(app, &buf, n)?
+                        self.mto_win_low(&buf, n)?
                     };
                     buf.set_cursor(cursor).clear_sticky_col();
                     (Event::Noop, Some(buf))
@@ -479,7 +480,7 @@ impl Window for WindowEdit {
             let s = format!("buffer {}", self.curr_buf_id);
             Error::Invalid(String::new(), s)
         };
-        self.cursor = if app.as_ref().wrap {
+        self.cursor = if self.wrap {
             let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.shift_cursor(buf);
