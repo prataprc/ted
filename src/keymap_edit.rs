@@ -136,7 +136,7 @@ impl KeyEdit {
                     (noop, evnt)
                 }
                 Char('e', _) => {
-                    let evnt = Mt(Mto::WinScroll(1, Scroll::Once, DP::Right));
+                    let evnt = Mt(Mto::WinScroll(1, Scroll::Ones, DP::Right));
                     (noop, evnt)
                 }
                 Char('d', _) => {
@@ -148,7 +148,7 @@ impl KeyEdit {
                     (noop, evnt)
                 }
                 Char('y', _) => {
-                    let evnt = Mt(Mto::WinScroll(1, Scroll::Once, DP::Left));
+                    let evnt = Mt(Mto::WinScroll(1, Scroll::Ones, DP::Left));
                     (noop, evnt)
                 }
                 Char('u', _) => {
@@ -243,7 +243,7 @@ impl KeyEdit {
                     (noop, evnt)
                 }
                 Char('e', _) => {
-                    let evnt = Mt(Mto::WinScroll(n, Scroll::Once, DP::Right));
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Ones, DP::Right));
                     (noop, evnt)
                 }
                 Char('d', _) => {
@@ -255,7 +255,7 @@ impl KeyEdit {
                     (noop, evnt)
                 }
                 Char('y', _) => {
-                    let evnt = Mt(Mto::WinScroll(n, Scroll::Once, DP::Left));
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Ones, DP::Left));
                     (noop, evnt)
                 }
                 Char('u', _) => {

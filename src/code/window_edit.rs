@@ -107,9 +107,9 @@ impl WindowEdit {
     }
 
     // return the width of editable screen's width.
-    fn to_screen_width(&self) -> u16 {
+    fn to_edit_width(&self) -> (u16, u16) {
         let nu_wth = ColNu::new(self.obc_xy.row, self.line_number).to_width();
-        self.coord.wth - nu_wth
+        (nu_wth, self.coord.wth.saturating_sub(nu_wth))
     }
 
     // return the number of characters to move left ro reach screen-home.
@@ -139,15 +139,15 @@ impl WindowEdit {
     fn mto_screen_end(&self, buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
         use crate::text;
 
-        let w = self.to_screen_width() as usize;
-        let mut col = (self.obc_xy.col / w) * w;
+        let edit_wth = self.to_edit_width().1 as usize;
+        let mut col = (self.obc_xy.col / edit_wth) * edit_wth;
         let mut row = self.obc_xy.row;
 
         let mut to_cursor = || -> Result<usize> {
             for line in buf.lines_at(self.obc_xy.row, DP::Right)? {
                 let m = text::visual_line_n(&line.to_string());
                 let ends: Vec<usize> = {
-                    let iter = (0..).map(|i| i * w).skip_while(|c| c < &col);
+                    let iter = (0..).map(|i| i * edit_wth).skip_while(|c| c < &col);
                     iter.take_while(|c| c <= &m).collect()
                 };
                 if ends.len() < n {
@@ -183,14 +183,14 @@ impl WindowEdit {
     fn mto_screen_middle(&self, buf: &Buffer) -> Result<usize> {
         use crate::buffer::{mto_left, mto_right};
 
-        let m = self.to_screen_width() / 2;
+        let edit_wth = self.to_edit_width().1 / 2;
         let cursor = match self.to_cursor_col() {
-            c if m < c => {
-                let n = c.saturating_sub(m) as usize;
+            c if edit_wth < c => {
+                let n = c.saturating_sub(edit_wth) as usize;
                 mto_left(buf, n, DP::LineBound)?
             }
             c => {
-                let n = m.saturating_sub(c) as usize;
+                let n = edit_wth.saturating_sub(c) as usize;
                 mto_right(buf, n, DP::LineBound)?
             }
         };
@@ -199,14 +199,14 @@ impl WindowEdit {
 
     fn mto_screen_up(&self, app: &mut code::Code, buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
         let cursor = if app.as_ref().wrap {
-            let scr_wth = self.to_screen_width();
-            let scr_col = self.to_cursor_col() as usize;
+            let (nu_wth, edit_wth) = self.to_edit_width();
+            let edit_col = self.to_cursor_col() as usize;
             let cursor = buf.to_char_cursor();
 
             let mut slines = {
                 let bc_xy = buf.to_xy_cursor(None);
                 let (from, to) = (bc_xy.row.saturating_sub(n), bc_xy.row);
-                view::wrap_lines(buf, (from..=to).collect(), scr_wth)
+                view::wrap_lines(buf, (from..=to).collect(), nu_wth, edit_wth)
             };
             slines.reverse();
             let item = {
@@ -214,7 +214,7 @@ impl WindowEdit {
                 iter.next();
                 iter.skip(n.saturating_sub(1)).next().clone()
             };
-            item.map(|sl| sl.bc + scr_col).unwrap_or(scr_col)
+            item.map(|sl| sl.bc + edit_col).unwrap_or(edit_col)
         } else {
             buffer::mto_up(buf, n, dp)?
         };
@@ -229,7 +229,7 @@ impl WindowEdit {
         dp: DP,
     ) -> Result<usize> {
         let cursor = if app.as_ref().wrap {
-            let scr_wth = self.to_screen_width();
+            let (nu_wth, edit_wth) = self.to_edit_width();
             let scr_col = self.to_cursor_col() as usize;
             let cursor = buf.to_char_cursor();
 
@@ -238,7 +238,7 @@ impl WindowEdit {
                 let last_line = buf.to_last_line_idx();
                 let from = bc_xy.row;
                 let to = cmp::min(last_line, bc_xy.row + n);
-                view::wrap_lines(buf, (from..=to).collect(), scr_wth)
+                view::wrap_lines(buf, (from..=to).collect(), nu_wth, edit_wth)
             };
             let item = {
                 let iter = slines.into_iter().skip_while(|sl| sl.bc <= cursor);
@@ -257,11 +257,11 @@ impl WindowEdit {
         let screen_lines = if app.as_ref().wrap {
             let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf);
-            v.to_screen_lines(buf)
+            v.to_edit_lines(buf)
         } else {
             let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf);
-            v.to_screen_lines(buf)
+            v.to_edit_lines(buf)
         };
         let screen_lines: Vec<view::ScrLine> = {
             let iter = screen_lines.into_iter();
@@ -291,11 +291,11 @@ impl WindowEdit {
         let screen_lines = if app.as_ref().wrap {
             let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf);
-            v.to_screen_lines(buf)
+            v.to_edit_lines(buf)
         } else {
             let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf);
-            v.to_screen_lines(buf)
+            v.to_edit_lines(buf)
         };
         let screen_lines: Vec<view::ScrLine> = {
             let iter = screen_lines.into_iter();
@@ -320,11 +320,11 @@ impl WindowEdit {
         let screen_lines = if app.as_ref().wrap {
             let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf);
-            v.to_screen_lines(buf)
+            v.to_edit_lines(buf)
         } else {
             let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
             v.shift_cursor(buf);
-            v.to_screen_lines(buf)
+            v.to_edit_lines(buf)
         };
         let screen_lines: Vec<view::ScrLine> = {
             let iter = screen_lines.into_iter();
@@ -358,12 +358,12 @@ impl WindowEdit {
     //) -> Result<usize> {
     //    let max_row = self.coord.hgt
     //    match (scroll, dp) {
-    //        (Scroll::Once, DP::Left) => {
+    //        (Scroll::Ones, DP::Left) => {
     //            self.cursor = match self.cursor + 1 {
     //                cursor if cursor >
     //            }
     //        }
-    //        (Scroll::Once, DP::Right) =>
+    //        (Scroll::Ones, DP::Right) =>
     //        (Scroll::Lines, DP::Left) =>
     //        (Scroll::Lines, DP::Right) =>
     //        (Scroll::Pages, DP::Left) =>
@@ -483,13 +483,13 @@ impl Window for WindowEdit {
             let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.shift_cursor(buf);
-            let old_screen = self.old_screen.replace(v.to_screen_lines(buf));
+            let old_screen = self.old_screen.replace(v.to_edit_lines(buf));
             v.render(buf, self, old_screen)?
         } else {
             let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
             let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
             v.shift_cursor(buf);
-            let old_screen = self.old_screen.replace(v.to_screen_lines(buf));
+            let old_screen = self.old_screen.replace(v.to_edit_lines(buf));
             v.render(buf, self, old_screen)?
         };
         self.obc_xy = {

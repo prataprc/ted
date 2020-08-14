@@ -261,26 +261,6 @@ impl Cursor {
             }
         }
     }
-
-    fn saturate_row(mut self, coord: Coord, scroll_off: u16, bc_xy: buffer::Cursor) -> Cursor {
-        self.row = if coord.hgt < (2 * scroll_off) {
-            if self.row >= coord.hgt {
-                coord.hgt.saturating_sub(1)
-            } else {
-                self.row
-            }
-        } else {
-            let max_row = coord.hgt.saturating_sub(scroll_off + 1);
-            if self.row < scroll_off {
-                scroll_off
-            } else if self.row > max_row {
-                max_row
-            } else {
-                self.row
-            }
-        };
-        self
-    }
 }
 
 pub struct JumpList {

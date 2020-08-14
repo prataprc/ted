@@ -1,4 +1,7 @@
-use std::{cmp, fmt, result};
+#[allow(unused_imports)]
+use log::debug;
+
+use std::{fmt, result};
 
 use crate::{
     colors::{ColorScheme, Highlight},
@@ -59,18 +62,20 @@ impl fmt::Display for ColNu {
 }
 
 impl ColNu {
-    pub fn new(mut line_idx: usize, line_number: bool) -> Self {
+    pub fn new(line_idx: usize, line_number: bool) -> Self {
         let width = {
             use crate::buffer::MAX_LINES;
 
             assert!(line_idx < MAX_LINES, "assert {}", line_idx);
             // line number rendering starts from 1..
-            line_idx += 1;
-            cmp::max(line_idx.to_string().len(), 4) as u16
+            match (line_idx + 1).to_string().len() {
+                0 | 1 | 2 => 3 + 1,
+                n => n + 1,
+            }
         };
 
         ColNu {
-            width,
+            width: width as u16,
             line_number,
             style_line_nr: Style::default(),
             style_empty: Style::default(),
@@ -85,18 +90,15 @@ impl ColNu {
         self
     }
 
+    #[inline]
     pub fn to_width(&self) -> u16 {
-        if self.line_number {
-            self.width
-        } else {
-            0
-        }
+        if_else!(self.line_number, self.width, 0)
     }
 
     pub fn to_span(&self, nu: ColKind) -> Span {
         use ColKind::{Empty, Nu, Wrap};
 
-        let width = (self.width as usize) - 1;
+        let width = (self.width as usize).saturating_sub(1);
 
         match nu {
             Nu(nu) if self.line_number => {

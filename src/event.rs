@@ -494,7 +494,7 @@ impl fmt::Display for Mod {
 #[derive(Clone, Eq, PartialEq)]
 pub enum Scroll {
     // vertical scrolls
-    Once,
+    Ones,
     Lines,
     Pages,
     Cursor,
@@ -510,7 +510,7 @@ pub enum Scroll {
 impl fmt::Display for Scroll {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
-            Scroll::Once => write!(f, "once"),
+            Scroll::Ones => write!(f, "once"),
             Scroll::Lines => write!(f, "lines"),
             Scroll::Pages => write!(f, "pages"),
             Scroll::Cursor => write!(f, "cursor"),
