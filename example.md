@@ -7,7 +7,7 @@ Rust was originally designed by Graydon Hoare at Mozilla Research, with contribu
   === ===   
    == how
 world
-Rust is a multi-paradigm programming language focused on performance and safety, especially safe concurrency.
+Rust is a multi-paradigm programming language focused on performance and safety, especially safe concurren  cy.
 Rust is syntactically similar to C++,[17] but provides memory
 safety without using garbage collection.
 hellow.
