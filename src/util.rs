@@ -1,6 +1,6 @@
 use std::{
     cmp,
-    time::{Duration, SystemTime},
+    time::{self, Duration},
 };
 
 #[macro_export]
@@ -88,9 +88,9 @@ pub fn time_it<F, R>(stats: &mut Latency, callb: F) -> R
 where
     F: FnOnce() -> R,
 {
-    let start = SystemTime::now();
+    let start = time::Instant::now();
     let res = callb();
-    stats.sample(start.elapsed().unwrap());
+    stats.sample(start.elapsed());
     res
 }
 

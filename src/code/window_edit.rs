@@ -127,7 +127,7 @@ impl WindowEdit {
         (nu_wth, self.coord.wth.saturating_sub(nu_wth))
     }
 
-    // return the number of characters to move left ro reach screen-home.
+    // return the number of characters to move left to reach screen-home.
     fn to_cursor_col(&self) -> u16 {
         let nu_wth = ColNu::new(self.obc_xy.row, self.line_number).to_width();
         self.cursor.col - nu_wth
@@ -154,18 +154,16 @@ impl WindowEdit {
     }
 
     fn mto_screen_middle(&self, buf: &Buffer) -> Result<usize> {
-        use crate::buffer::{mto_left, mto_right};
-
-        let edit_wth = self.to_edit_width().1 / 2;
-        let cursor = match self.to_cursor_col() {
-            c if edit_wth < c => {
-                let n = c.saturating_sub(edit_wth) as usize;
-                mto_left(buf, n, DP::LineBound)?
+        let lines = self.to_edit_lines(buf)?;
+        let (_, nu_wth) = view::to_nu_width(&lines, self.line_number);
+        let middle = self.coord.wth.saturating_sub(nu_wth) / 2;
+        let cursor = match view::cursor_line(&lines, buf.to_char_cursor()) {
+            Some(off) if lines[off].n <= middle => {
+                let eol = lines[off].n.saturating_sub(1) as usize;
+                lines[off].bc + eol
             }
-            c => {
-                let n = edit_wth.saturating_sub(c) as usize;
-                mto_right(buf, n, DP::LineBound)?
-            }
+            Some(off) => lines[off].bc + (middle as usize),
+            None => buf.to_char_cursor(),
         };
         Ok(cursor)
     }

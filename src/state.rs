@@ -15,7 +15,7 @@ use std::{
     iter::FromIterator,
     mem, path,
     sync::mpsc,
-    time::SystemTime,
+    time,
 };
 
 use crate::{
@@ -310,9 +310,9 @@ impl State {
             evnts.drain();
             // new event
             {
-                let start = SystemTime::now();
+                let start = time::Instant::now();
                 let evnt: Event = err_at!(Fatal, read())?.into();
-                r_stats.sample(start.elapsed().unwrap());
+                r_stats.sample(start.elapsed());
                 evnts.push(evnt);
             }
 
@@ -320,7 +320,7 @@ impl State {
                 break;
             }
 
-            let start = SystemTime::now();
+            let start = time::Instant::now();
             loop {
                 hidecr!()?;
                 let evnt = evnts.pop();
@@ -338,7 +338,7 @@ impl State {
             if let Some(cursor) = inner.to_cursor() {
                 err_at!(Fatal, termex!(cursor))?;
             }
-            stats.sample(start.elapsed().unwrap());
+            stats.sample(start.elapsed());
         }
 
         let mut s = format!("{}\n", r_stats.pretty_print());

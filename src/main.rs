@@ -59,9 +59,9 @@ fn term_loop() -> String {
 
     let tm = term::Terminal::init();
     loop {
-        let start = std::time::SystemTime::now();
+        let start = std::time::Instant::now();
         let evnt = read().unwrap();
-        r_stats.sample(start.elapsed().unwrap());
+        r_stats.sample(start.elapsed());
 
         match evnt {
             Event::Key(KeyEvent { code, modifiers }) => match code {
