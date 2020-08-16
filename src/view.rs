@@ -277,15 +277,18 @@ impl NoWrap {
         let (diff_col, diff_row) = self.obc_xy.diff(&nbc_xy);
         let nc_row = self.cursor.add_row(diff_row, self.coord, self.scroll_off);
 
-        let (lines, to): (Vec<usize>, usize) = {
+        let lines: Vec<usize> = {
             let from = nbc_xy.row.saturating_sub(nc_row as usize);
             let to = {
                 let to = from + (self.coord.hgt as usize);
                 cmp::max(buf.to_last_line_idx(), to)
             };
-            ((from..=to).collect(), to)
+            (from..=to).collect()
         };
-        let nu_wth = ColNu::new(to, self.line_number).to_width();
+        let nu_wth = {
+            let row = lines.clone().into_iter().max().unwrap_or(0);
+            ColNu::new(row, self.line_number).to_width()
+        };
         let wth = self.coord.wth.saturating_sub(nu_wth);
 
         let cursor = Cursor {
@@ -537,7 +540,7 @@ where
         .collect()
 }
 
-fn nowrap_line<B>(buf: &B, line_idx: usize, col: usize, nu_wth: u16, wth: u16) -> ScrLine
+pub fn nowrap_line<B>(buf: &B, line_idx: usize, col: usize, nu_wth: u16, wth: u16) -> ScrLine
 where
     B: WinBuffer,
 {

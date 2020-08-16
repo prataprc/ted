@@ -14,48 +14,80 @@ where
     B: WinBuffer,
 {
     let coord = w.to_coord();
+    let mut cursor = w.to_cursor().unwrap_or(Cursor::default());
+
     let nbc_xy = buf.to_xy_cursor(None);
+    let mut nbc = buf.to_char_cursor();
+
     let scroll_off = w.config_scroll_offset();
     let line_number = w.config_line_number();
 
     let (mut lines, iter, nu_wth) = match w.config_wrap() {
         true => {
-            let lines = {
+            let mut lines = {
                 let mut v: view::Wrap = (w, nbc_xy).try_into()?;
                 v.shift_cursor(buf);
-                v.to_edit_lines(buf)
+                let lines = v.to_edit_lines(buf);
+                let off = {
+                    let row: usize = cursor.row.into();
+                    view::cursor_line(&lines, nbc).unwrap_or(row)
+                };
+                lines[..=off].to_vec()
             };
-            let iter = WrapIter::new_scroll_down(name, w, buf)?;
+
+            let mut iter = WrapIter::new_scroll_down(name, w, buf)?;
+            // fill lines from next to cursor till end of screen.
+            let m = (coord.hgt as usize).saturating_sub(lines.len());
+            lines.extend(iter.take_lines(m));
+
             let (_, nu_wth) = view::to_nu_width(&lines, line_number);
+
+            let iter: Box<dyn Iterator<Item = view::ScrLine>> = Box::new(iter);
             (lines, iter, nu_wth)
         }
-        false => todo!(),
+        false => {
+            let mut lines = {
+                let mut v: view::NoWrap = (w, nbc_xy).try_into()?;
+                v.shift_cursor(buf);
+                let lines = v.to_edit_lines(buf);
+                let off = {
+                    let row: usize = cursor.row.into();
+                    view::cursor_line(&lines, nbc).unwrap_or(row)
+                };
+                lines[..=off].to_vec()
+            };
+
+            let mut iter = NowrapIter::new_scroll_down(name, w, buf)?;
+            // fill lines from next to cursor till end of screen.
+            let m = (coord.hgt as usize).saturating_sub(lines.len());
+            lines.extend(iter.take_lines(m));
+
+            let (_, nu_wth) = view::to_nu_width(&lines, line_number);
+
+            let iter: Box<dyn Iterator<Item = view::ScrLine>> = Box::new(iter);
+            (lines, iter, nu_wth)
+        }
     };
 
-    let Cursor { mut row, mut col } = w.to_cursor().unwrap_or(Cursor::default());
-    let ocol = col.saturating_sub(nu_wth);
+    let ocol = cursor.col.saturating_sub(nu_wth);
     let max_wth = coord.wth.saturating_sub(nu_wth);
 
-    let mut nbc = buf.to_char_cursor();
-    let mut col = ocol;
     for line in iter.take(n) {
-        row = row.saturating_sub(1);
-        col = cmp::min(cmp::min(ocol, line.n), max_wth);
-        nbc = line.bc + (col as usize);
-
-        match coord.hgt as usize {
-            n if n > lines.len() => lines.push(line),
-            _ => {
-                lines.remove(0);
-                lines.push(line)
-            }
+        if cursor.row.saturating_sub(1) >= scroll_off {
+            cursor.row = cursor.row.saturating_sub(1);
+        } else {
+            cursor.row = scroll_off;
+            cursor.col = cmp::min(cmp::min(ocol, line.n), max_wth);
+            nbc = line.bc + (cursor.col as usize);
         }
+        lines.push(line);
+        lines.remove(0);
     }
     // adjust for new nu_wth
     let (_, nu_wth) = view::to_nu_width(&lines, line_number);
-    col = cmp::min(col.saturating_add(nu_wth), coord.wth);
+    cursor.col = cmp::min(cursor.col.saturating_add(nu_wth), coord.wth);
 
-    Ok((Cursor { col, row }, nbc))
+    Ok((cursor, nbc))
 }
 
 pub fn scroll_up<W, B>(name: &str, w: &W, buf: &B, n: usize) -> Result<(Cursor, usize)>
@@ -64,48 +96,82 @@ where
     B: WinBuffer,
 {
     let coord = w.to_coord();
+    let mut cursor = w.to_cursor().unwrap_or(Cursor::default());
+
     let nbc_xy = buf.to_xy_cursor(None);
+    let mut nbc = buf.to_char_cursor();
+
     let scroll_off = w.config_scroll_offset();
     let line_number = w.config_line_number();
 
     let (mut lines, iter, nu_wth) = match w.config_wrap() {
         true => {
-            let lines = {
+            let mut lines = {
                 let mut v: view::Wrap = (w, nbc_xy).try_into()?;
                 v.shift_cursor(buf);
-                v.to_edit_lines(buf)
+                let lines = v.to_edit_lines(buf);
+                let off = {
+                    let row: usize = cursor.row.into();
+                    view::cursor_line(&lines, nbc).unwrap_or(row)
+                };
+                lines[off..].to_vec()
             };
-            let iter = WrapIter::new_scroll_up(name, w, buf)?;
+
+            let mut iter = WrapIter::new_scroll_up(name, w, buf)?;
+            // fill lines from next to cursor till end of screen.
+            let m = (coord.hgt as usize).saturating_sub(lines.len());
+            lines.extend(iter.take_lines(m));
+
             let (_, nu_wth) = view::to_nu_width(&lines, line_number);
+
+            let iter: Box<dyn Iterator<Item = view::ScrLine>> = Box::new(iter);
             (lines, iter, nu_wth)
         }
-        false => todo!(),
+        false => {
+            let mut lines = {
+                let mut v: view::NoWrap = (w, nbc_xy).try_into()?;
+                v.shift_cursor(buf);
+                let lines = v.to_edit_lines(buf);
+                let off = {
+                    let row: usize = cursor.row.into();
+                    view::cursor_line(&lines, nbc).unwrap_or(row)
+                };
+                lines[off..].to_vec()
+            };
+
+            let mut iter = NowrapIter::new_scroll_up(name, w, buf)?;
+            // fill lines from next to cursor till end of screen.
+            let m = (coord.hgt as usize).saturating_sub(lines.len());
+            lines.extend(iter.take_lines(m));
+
+            let (_, nu_wth) = view::to_nu_width(&lines, line_number);
+
+            let iter: Box<dyn Iterator<Item = view::ScrLine>> = Box::new(iter);
+            (lines, iter, nu_wth)
+        }
     };
 
-    let Cursor { mut row, mut col } = w.to_cursor().unwrap_or(Cursor::default());
-    let ocol = col.saturating_sub(nu_wth);
+    let ocol = cursor.col.saturating_sub(nu_wth);
     let max_wth = coord.wth.saturating_sub(nu_wth);
 
-    let mut nbc = buf.to_char_cursor();
-    let mut col = ocol;
+    let max_row = coord.hgt.saturating_sub(scroll_off + 1);
     for line in iter.take(n) {
-        row = row.saturating_sub(1);
-        col = cmp::min(cmp::min(ocol, line.n), max_wth);
-        nbc = line.bc + (col as usize);
-
-        match coord.hgt as usize {
-            n if n > lines.len() => lines.insert(0, line),
-            _ => {
-                lines.pop();
-                lines.insert(0, line)
-            }
+        if cursor.row.saturating_add(1) <= max_row {
+            cursor.row = cursor.row.saturating_add(1);
+        } else {
+            cursor.row = max_row;
+            cursor.col = cmp::min(cmp::min(ocol, line.n), max_wth);
+            nbc = line.bc + (cursor.col as usize);
         }
+
+        lines.insert(0, line);
+        lines.pop();
     }
     // adjust for new nu_wth
     let (_, nu_wth) = view::to_nu_width(&lines, line_number);
-    col = cmp::min(col.saturating_add(nu_wth), coord.wth);
+    cursor.col = cmp::min(cursor.col.saturating_add(nu_wth), coord.wth);
 
-    Ok((Cursor { col, row }, nbc))
+    Ok((cursor, nbc))
 }
 
 struct WrapIter<'a, B>
@@ -184,7 +250,7 @@ where
         let mut lines: Vec<view::ScrLine> = {
             let nu_wth = ColNu::new(line_idx, line_number).to_width();
             let wth = coord.wth.saturating_sub(nu_wth);
-            let iter = view::wrap_line(buf, nbc_xy.row, nu_wth, wth).into_iter();
+            let iter = view::wrap_line(buf, line_idx, nu_wth, wth).into_iter();
             iter.take_while(|x| x.bc <= nbc).collect()
         };
         lines.pop();
@@ -202,6 +268,7 @@ where
     }
 
     fn next_down(&mut self) -> Option<view::ScrLine> {
+        let last_line_idx = self.buf.to_last_line_idx();
         match self.lines.pop() {
             Some(line) => Some(line),
             None => match self.line_idx {
@@ -213,7 +280,14 @@ where
                     };
                     self.lines.reverse();
                     match self.lines.pop() {
-                        Some(line) => Some(line),
+                        Some(line) if line_idx >= last_line_idx => {
+                            self.line_idx = None;
+                            Some(line)
+                        }
+                        Some(line) => {
+                            self.line_idx = Some(line_idx.saturating_add(1));
+                            Some(line)
+                        }
                         None => {
                             self.line_idx = None;
                             None
@@ -236,7 +310,14 @@ where
                         view::wrap_line(self.buf, line_idx, nu.to_width(), wth)
                     };
                     match self.lines.pop() {
-                        Some(line) => Some(line),
+                        Some(line) if line_idx == 0 => {
+                            self.line_idx = None;
+                            Some(line)
+                        }
+                        Some(line) => {
+                            self.line_idx = Some(line_idx.saturating_sub(1));
+                            Some(line)
+                        }
                         None => {
                             self.line_idx = None;
                             None
@@ -246,6 +327,18 @@ where
                 None => None,
             },
         }
+    }
+
+    fn take_lines(&mut self, mut n: usize) -> Vec<view::ScrLine> {
+        let mut lines = vec![];
+        while n > 0 {
+            match self.next() {
+                Some(line) => lines.push(line),
+                None => n = 0,
+            }
+            n.saturating_sub(1);
+        }
+        lines
     }
 }
 
@@ -257,8 +350,144 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.dir {
-            DP::Right => self.next_down(),
             DP::Left => self.next_up(),
+            DP::Right => self.next_down(),
+            _ => unreachable!(),
+        }
+    }
+}
+
+struct NowrapIter<'a, B>
+where
+    B: WinBuffer,
+{
+    name: String,
+    coord: Coord,
+    cursor: Cursor,
+    buf: &'a B,
+    dir: DP,
+    line_number: bool,
+
+    line_idx: Option<usize>,
+}
+
+impl<'a, B> fmt::Display for NowrapIter<'a, B>
+where
+    B: WinBuffer,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        write!(
+            f,
+            "NowrapIter<{:?} {} {} {:?}>",
+            self.name, self.coord, self.dir, self.line_idx,
+        )
+    }
+}
+
+impl<'a, B> NowrapIter<'a, B>
+where
+    B: WinBuffer,
+{
+    fn new_scroll_down<W>(name: &str, w: &W, buf: &'a B) -> Result<Self>
+    where
+        W: Window,
+    {
+        Ok(NowrapIter {
+            name: name.to_string(),
+            coord: w.to_coord(),
+            cursor: w.to_cursor().unwrap_or(Cursor::default()),
+            buf,
+            dir: DP::Right,
+            line_number: w.config_line_number(),
+
+            line_idx: Some(buf.to_xy_cursor(None).row),
+        })
+    }
+
+    fn new_scroll_up<W>(name: &str, w: &W, buf: &'a B) -> Result<Self>
+    where
+        W: Window,
+    {
+        Ok(NowrapIter {
+            name: name.to_string(),
+            coord: w.to_coord(),
+            cursor: w.to_cursor().unwrap_or(Cursor::default()),
+            buf,
+            dir: DP::Left,
+            line_number: w.config_line_number(),
+
+            line_idx: Some(buf.to_xy_cursor(None).row),
+        })
+    }
+
+    fn next_down(&mut self) -> Option<view::ScrLine> {
+        let last_line_idx = self.buf.to_last_line_idx();
+        match self.line_idx {
+            Some(line_idx) if line_idx > last_line_idx => {
+                self.line_idx = None;
+                None
+            }
+            Some(line_idx) => {
+                let nu_wth = ColNu::new(line_idx, self.line_number).to_width();
+                let col = {
+                    let col = self.cursor.col.saturating_sub(nu_wth) as usize;
+                    self.buf.to_xy_cursor(None).col.saturating_sub(col)
+                };
+                let line = {
+                    let wth = self.coord.wth.saturating_sub(nu_wth);
+                    view::nowrap_line(self.buf, line_idx, col, nu_wth, wth)
+                };
+                self.line_idx = Some(line_idx.saturating_add(1));
+                Some(line)
+            }
+            None => None,
+        }
+    }
+
+    fn next_up(&mut self) -> Option<view::ScrLine> {
+        match self.line_idx {
+            Some(0) => None,
+            Some(line_idx) => {
+                let nu_wth = ColNu::new(line_idx, self.line_number).to_width();
+                let col = {
+                    let col = self.cursor.col.saturating_sub(nu_wth) as usize;
+                    self.buf.to_xy_cursor(None).col.saturating_sub(col)
+                };
+                let line = {
+                    let nu = ColNu::new(line_idx, self.line_number);
+                    let wth = self.coord.wth.saturating_sub(nu.to_width());
+                    view::nowrap_line(self.buf, line_idx, col, nu_wth, wth)
+                };
+                self.line_idx = Some(line_idx.saturating_sub(1));
+                Some(line)
+            }
+            None => None,
+        }
+    }
+
+    fn take_lines(&mut self, mut n: usize) -> Vec<view::ScrLine> {
+        let mut lines = vec![];
+        while n > 0 {
+            match self.next() {
+                Some(line) => lines.push(line),
+                None => n = 0,
+            }
+            n.saturating_sub(1);
+        }
+        lines
+    }
+}
+
+impl<'a, B> Iterator for NowrapIter<'a, B>
+where
+    B: WinBuffer,
+{
+    type Item = view::ScrLine;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.dir {
+            DP::Left => self.next_up(),
+            DP::Right => self.next_down(),
             _ => unreachable!(),
         }
     }

@@ -135,7 +135,6 @@ impl WindowEdit {
 
     fn mto_screen_home(&self, buf: &Buffer, dp: DP) -> Result<usize> {
         let lines = self.to_edit_lines(buf)?;
-        let (_, nu_wth) = view::to_nu_width(&lines, self.line_number);
         let cursor = match view::cursor_line(&lines, buf.to_char_cursor()) {
             Some(off) => lines[off].bc,
             None => buf.to_char_cursor(),
@@ -157,6 +156,7 @@ impl WindowEdit {
         let lines = self.to_edit_lines(buf)?;
         let (_, nu_wth) = view::to_nu_width(&lines, self.line_number);
         let middle = self.coord.wth.saturating_sub(nu_wth) / 2;
+
         let cursor = match view::cursor_line(&lines, buf.to_char_cursor()) {
             Some(off) if lines[off].n <= middle => {
                 let eol = lines[off].n.saturating_sub(1) as usize;

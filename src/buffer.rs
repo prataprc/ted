@@ -577,7 +577,7 @@ impl Buffer {
                 self.set_cursor(cursor).set_sticky_col(dp, "end");
                 Event::Noop
             }
-            Event::Mt(Mto::LineMiddle(p, _)) if p <= 1 => {
+            Event::Mt(Mto::LineMiddle(p, _)) if p < 1 => {
                 let cursor = mto_line_middle(self, 50)?;
                 self.set_cursor(cursor).clear_sticky_col();
                 Event::Noop
