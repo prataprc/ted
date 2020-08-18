@@ -24,6 +24,7 @@ where
 
     let (mut lines, iter, nu_wth) = match w.config_wrap() {
         true => {
+            // lines till cursor-line (exclusive).
             let mut lines = {
                 let mut v: view::Wrap = (w, nbc_xy).try_into()?;
                 v.shift_cursor(buf);
@@ -32,11 +33,10 @@ where
                     let row: usize = cursor.row.into();
                     view::cursor_line(&lines, nbc).unwrap_or(row)
                 };
-                lines[..=off].to_vec()
+                lines[..off].to_vec()
             };
-
+            // lines from cursor-line (inclusive), till screen-end.
             let mut iter = WrapIter::new_scroll_down(name, w, buf)?;
-            // fill lines from next to cursor till end of screen.
             let m = (coord.hgt as usize).saturating_sub(lines.len());
             lines.extend(iter.take_lines(m));
 
@@ -46,6 +46,7 @@ where
             (lines, iter, nu_wth)
         }
         false => {
+            // lines till cursor-line (exclusive).
             let mut lines = {
                 let mut v: view::NoWrap = (w, nbc_xy).try_into()?;
                 v.shift_cursor(buf);
@@ -54,11 +55,10 @@ where
                     let row: usize = cursor.row.into();
                     view::cursor_line(&lines, nbc).unwrap_or(row)
                 };
-                lines[..=off].to_vec()
+                lines[..off].to_vec()
             };
-
+            // lines from cursor-line (inclusive), till screen-end.
             let mut iter = NowrapIter::new_scroll_down(name, w, buf)?;
-            // fill lines from next to cursor till end of screen.
             let m = (coord.hgt as usize).saturating_sub(lines.len());
             lines.extend(iter.take_lines(m));
 
@@ -106,6 +106,7 @@ where
 
     let (mut lines, iter, nu_wth) = match w.config_wrap() {
         true => {
+            // lines till cursor-line (exclusive).
             let mut lines = {
                 let mut v: view::Wrap = (w, nbc_xy).try_into()?;
                 v.shift_cursor(buf);
@@ -116,9 +117,8 @@ where
                 };
                 lines[off..].to_vec()
             };
-
+            // lines from cursor-line (inclusive), till screen-end.
             let mut iter = WrapIter::new_scroll_up(name, w, buf)?;
-            // fill lines from next to cursor till end of screen.
             let m = (coord.hgt as usize).saturating_sub(lines.len());
             lines.extend(iter.take_lines(m));
 
@@ -128,6 +128,7 @@ where
             (lines, iter, nu_wth)
         }
         false => {
+            // lines till cursor-line (exclusive).
             let mut lines = {
                 let mut v: view::NoWrap = (w, nbc_xy).try_into()?;
                 v.shift_cursor(buf);
@@ -138,9 +139,8 @@ where
                 };
                 lines[off..].to_vec()
             };
-
+            // lines from cursor-line (inclusive), till screen-end.
             let mut iter = NowrapIter::new_scroll_up(name, w, buf)?;
-            // fill lines from next to cursor till end of screen.
             let m = (coord.hgt as usize).saturating_sub(lines.len());
             lines.extend(iter.take_lines(m));
 
@@ -220,7 +220,7 @@ where
             let nu_wth = ColNu::new(line_idx, line_number).to_width();
             let wth = coord.wth.saturating_sub(nu_wth);
             let iter = view::wrap_line(buf, line_idx, nu_wth, wth).into_iter();
-            iter.skip_while(|x| x.bc <= nbc).collect()
+            iter.skip_while(|x| (x.bc + (x.n as usize)) < nbc).collect()
         };
         lines.reverse();
 
@@ -231,7 +231,7 @@ where
             line_number,
             dir: DP::Right,
 
-            line_idx: Some(line_idx),
+            line_idx: incr_line_idx(buf, Some(line_idx)),
             lines,
         })
     }
@@ -247,13 +247,12 @@ where
         let nbc_xy = buf.to_xy_cursor(None);
 
         let line_idx = nbc_xy.row;
-        let mut lines: Vec<view::ScrLine> = {
+        let lines: Vec<view::ScrLine> = {
             let nu_wth = ColNu::new(line_idx, line_number).to_width();
             let wth = coord.wth.saturating_sub(nu_wth);
             let iter = view::wrap_line(buf, line_idx, nu_wth, wth).into_iter();
-            iter.take_while(|x| x.bc <= nbc).collect()
+            iter.take_while(|x| (x.bc + (x.n as usize)) < nbc).collect()
         };
-        lines.pop();
 
         Ok(WrapIter {
             name: name.to_string(),
@@ -262,13 +261,12 @@ where
             line_number,
             dir: DP::Left,
 
-            line_idx: Some(line_idx),
+            line_idx: decr_line_idx(Some(line_idx)),
             lines,
         })
     }
 
     fn next_down(&mut self) -> Option<view::ScrLine> {
-        let last_line_idx = self.buf.to_last_line_idx();
         match self.lines.pop() {
             Some(line) => Some(line),
             None => match self.line_idx {
@@ -279,20 +277,8 @@ where
                         view::wrap_line(self.buf, line_idx, nu.to_width(), wth)
                     };
                     self.lines.reverse();
-                    match self.lines.pop() {
-                        Some(line) if line_idx >= last_line_idx => {
-                            self.line_idx = None;
-                            Some(line)
-                        }
-                        Some(line) => {
-                            self.line_idx = Some(line_idx.saturating_add(1));
-                            Some(line)
-                        }
-                        None => {
-                            self.line_idx = None;
-                            None
-                        }
-                    }
+                    self.line_idx = incr_line_idx(self.buf, self.line_idx);
+                    self.lines.pop()
                 }
                 None => None,
             },
@@ -309,20 +295,8 @@ where
                         let wth = self.coord.wth.saturating_sub(nu.to_width());
                         view::wrap_line(self.buf, line_idx, nu.to_width(), wth)
                     };
-                    match self.lines.pop() {
-                        Some(line) if line_idx == 0 => {
-                            self.line_idx = None;
-                            Some(line)
-                        }
-                        Some(line) => {
-                            self.line_idx = Some(line_idx.saturating_sub(1));
-                            Some(line)
-                        }
-                        None => {
-                            self.line_idx = None;
-                            None
-                        }
-                    }
+                    self.line_idx = decr_line_idx(self.line_idx);
+                    self.lines.pop()
                 }
                 None => None,
             },
@@ -336,7 +310,7 @@ where
                 Some(line) => lines.push(line),
                 None => n = 0,
             }
-            n.saturating_sub(1);
+            n = n.saturating_sub(1);
         }
         lines
     }
@@ -392,6 +366,7 @@ where
     where
         W: Window,
     {
+        let line_idx = buf.to_xy_cursor(None).row;
         Ok(NowrapIter {
             name: name.to_string(),
             coord: w.to_coord(),
@@ -400,7 +375,7 @@ where
             dir: DP::Right,
             line_number: w.config_line_number(),
 
-            line_idx: Some(buf.to_xy_cursor(None).row),
+            line_idx: Some(line_idx),
         })
     }
 
@@ -408,6 +383,7 @@ where
     where
         W: Window,
     {
+        let line_idx = buf.to_xy_cursor(None).row;
         Ok(NowrapIter {
             name: name.to_string(),
             coord: w.to_coord(),
@@ -416,17 +392,12 @@ where
             dir: DP::Left,
             line_number: w.config_line_number(),
 
-            line_idx: Some(buf.to_xy_cursor(None).row),
+            line_idx: decr_line_idx(Some(line_idx)),
         })
     }
 
     fn next_down(&mut self) -> Option<view::ScrLine> {
-        let last_line_idx = self.buf.to_last_line_idx();
         match self.line_idx {
-            Some(line_idx) if line_idx > last_line_idx => {
-                self.line_idx = None;
-                None
-            }
             Some(line_idx) => {
                 let nu_wth = ColNu::new(line_idx, self.line_number).to_width();
                 let col = {
@@ -437,7 +408,7 @@ where
                     let wth = self.coord.wth.saturating_sub(nu_wth);
                     view::nowrap_line(self.buf, line_idx, col, nu_wth, wth)
                 };
-                self.line_idx = Some(line_idx.saturating_add(1));
+                self.line_idx = incr_line_idx(self.buf, Some(line_idx));
                 Some(line)
             }
             None => None,
@@ -446,7 +417,6 @@ where
 
     fn next_up(&mut self) -> Option<view::ScrLine> {
         match self.line_idx {
-            Some(0) => None,
             Some(line_idx) => {
                 let nu_wth = ColNu::new(line_idx, self.line_number).to_width();
                 let col = {
@@ -458,7 +428,7 @@ where
                     let wth = self.coord.wth.saturating_sub(nu.to_width());
                     view::nowrap_line(self.buf, line_idx, col, nu_wth, wth)
                 };
-                self.line_idx = Some(line_idx.saturating_sub(1));
+                self.line_idx = decr_line_idx(Some(line_idx));
                 Some(line)
             }
             None => None,
@@ -472,7 +442,7 @@ where
                 Some(line) => lines.push(line),
                 None => n = 0,
             }
-            n.saturating_sub(1);
+            n = n.saturating_sub(1);
         }
         lines
     }
@@ -490,5 +460,25 @@ where
             DP::Right => self.next_down(),
             _ => unreachable!(),
         }
+    }
+}
+
+fn incr_line_idx<B>(buf: &B, line_idx: Option<usize>) -> Option<usize>
+where
+    B: WinBuffer,
+{
+    let last_line_idx = buf.to_last_line_idx();
+    match line_idx {
+        Some(line_idx) if line_idx >= last_line_idx => None,
+        Some(line_idx) => Some(line_idx.saturating_add(1)),
+        None => None,
+    }
+}
+
+fn decr_line_idx(line_idx: Option<usize>) -> Option<usize> {
+    match line_idx {
+        Some(0) => None,
+        Some(line_idx) => Some(line_idx.saturating_sub(1)),
+        None => None,
     }
 }

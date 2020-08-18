@@ -171,6 +171,10 @@ impl WindowEdit {
     fn mto_screen_end(&self, buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
         use crate::text;
 
+        //let name = "mto_screen_end";
+        //let iter = scroll::WrapIter::new_scroll_down(name, self, buf);
+        //iter.skip(
+
         let edit_wth = self.to_edit_width().1 as usize;
         let mut col = (self.obc_xy.col / edit_wth) * edit_wth;
         let mut row = self.obc_xy.row;
