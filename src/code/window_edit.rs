@@ -32,6 +32,7 @@ pub struct WindowEdit {
     wrap: bool,
     scroll_off: u16,
     line_number: bool,
+    scroll: Option<usize>,
 }
 
 impl fmt::Display for WindowEdit {
@@ -67,6 +68,7 @@ impl<'a, 'b> From<(&'a code::Code, &'b Buffer, Coord)> for WindowEdit {
             wrap: app.as_ref().wrap,
             scroll_off: app.as_ref().scroll_off,
             line_number: app.as_ref().line_number,
+            scroll: None,
         };
         debug!("{} {} {}", w, w.scroll_off, w.line_number);
         w
@@ -284,28 +286,53 @@ impl WindowEdit {
         Ok(cursor)
     }
 
-    //fn mto_win_scroll(
-    //    &self,
-    //    app: &mut code::Code,
-    //    buf: &Buffer,
-    //    n: usize,
-    //    scroll: Scroll,
-    //    dp: DP,
-    //) -> Result<usize> {
-    //    let max_row = self.coord.hgt
-    //    match (scroll, dp) {
-    //        (Scroll::Ones, DP::Left) => {
-    //            self.cursor = match self.cursor + 1 {
-    //                cursor if cursor >
-    //            }
-    //        }
-    //        (Scroll::Ones, DP::Right) =>
-    //        (Scroll::Lines, DP::Left) =>
-    //        (Scroll::Lines, DP::Right) =>
-    //        (Scroll::Pages, DP::Left) =>
-    //        (Scroll::Pages, DP::Right) =>
-    //    }
-    //}
+    fn mto_win_scroll(&self, buf: &Buffer, mto: event::Mto) -> Result<(Cursor, usize)> {
+        use scroll::{scroll_down, scroll_up};
+
+        let name = format!("mto_win_scroll-{}", mto);
+        let (n, scrll, dp) = match mto {
+            event::Mto::WinScroll(n, scrll, dp) => (n, scrll, dp),
+            mto => err_at!(Fatal, msg: format!("{}", mto))?,
+        };
+
+        match (scrll, dp) {
+            (Scroll::Ones, DP::Left) => scroll_up(&name, self, buf, n),
+            (Scroll::Ones, DP::Right) => scroll_down(&name, self, buf, n),
+            (Scroll::Lines, DP::Left) if n == 1 => {
+                let n = self.scroll.unwrap_or((self.coord.hgt / 2) as usize);
+                scroll_up(&name, self, buf, n)
+            }
+            (Scroll::Lines, DP::Left) => scroll_up(&name, self, buf, n),
+            (Scroll::Lines, DP::Right) if n == 1 => {
+                let n = self.scroll.unwrap_or((self.coord.hgt / 2) as usize);
+                scroll_down(&name, self, buf, n)
+            }
+            (Scroll::Lines, DP::Right) => scroll_down(&name, self, buf, n),
+            (Scroll::Pages, DP::Left) => {
+                let n_page = self.coord.hgt.saturating_sub(2) as usize;
+                scroll_up(&name, self, buf, n_page * n)
+            }
+            (Scroll::Pages, DP::Right) => {
+                let n_page = self.coord.hgt.saturating_sub(2) as usize;
+                scroll_down(&name, self, buf, n_page * n)
+            }
+            (Scroll::Cursor, DP::Left) => todo!(),
+            (Scroll::Cursor, DP::Right) => todo!(),
+            (Scroll::TextUp, DP::TextCol) => todo!(),
+            (Scroll::TextUp, DP::None) => todo!(),
+            (Scroll::TextCenter, DP::TextCol) => todo!(),
+            (Scroll::TextCenter, DP::None) => todo!(),
+            (Scroll::TextBottom, DP::TextCol) => todo!(),
+            (Scroll::TextBottom, DP::None) => todo!(),
+            (Scroll::Chars, DP::Left) => todo!(),
+            (Scroll::Chars, DP::Right) => todo!(),
+            (Scroll::Slide, DP::Left) => todo!(),
+            (Scroll::Slide, DP::Right) => todo!(),
+            (Scroll::Align, DP::Left) => todo!(),
+            (Scroll::Align, DP::Right) => todo!(),
+            (scrll, dp) => err_at!(Fatal, msg: format!("{} {}", scrll, dp))?,
+        }
+    }
 }
 
 impl Window for WindowEdit {
@@ -392,11 +419,12 @@ impl Window for WindowEdit {
                     buf.set_cursor(cursor).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
-                //Event::Mt(Mto::WinScroll(n, scroll, dp)) => {
-                //    let cursor = self.mto_win_scroll(app, &buf, n, scroll, dp)?;
-                //    buf.set_cursor(cursor).clear_sticky_col();
-                //    (Event::Noop, Some(buf))
-                //}
+                Event::Mt(mto @ Mto::WinScroll(_, _, _)) => {
+                    let (wcursor, cursor) = self.mto_win_scroll(&buf, mto)?;
+                    self.cursor = wcursor;
+                    buf.set_cursor(cursor).clear_sticky_col();
+                    (Event::Noop, Some(buf))
+                }
                 Event::Appn(event::Appn::StatusCursor) => {
                     let msg = vec![self.syn.to_status_cursor()?];
                     app.notify("code", Notify::Status(msg))?;
