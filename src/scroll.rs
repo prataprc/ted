@@ -174,7 +174,7 @@ where
     Ok((cursor, nbc))
 }
 
-struct WrapIter<'a, B>
+pub struct WrapIter<'a, B>
 where
     B: WinBuffer,
 {
@@ -205,7 +205,7 @@ impl<'a, B> WrapIter<'a, B>
 where
     B: WinBuffer,
 {
-    fn new_scroll_down<W>(name: &str, w: &W, buf: &'a B) -> Result<Self>
+    pub fn new_scroll_down<W>(name: &str, w: &W, buf: &'a B) -> Result<Self>
     where
         W: Window,
     {
@@ -236,7 +236,7 @@ where
         })
     }
 
-    fn new_scroll_up<W>(name: &str, w: &W, buf: &'a B) -> Result<Self>
+    pub fn new_scroll_up<W>(name: &str, w: &W, buf: &'a B) -> Result<Self>
     where
         W: Window,
     {
@@ -331,7 +331,7 @@ where
     }
 }
 
-struct NowrapIter<'a, B>
+pub struct NowrapIter<'a, B>
 where
     B: WinBuffer,
 {
@@ -362,7 +362,7 @@ impl<'a, B> NowrapIter<'a, B>
 where
     B: WinBuffer,
 {
-    fn new_scroll_down<W>(name: &str, w: &W, buf: &'a B) -> Result<Self>
+    pub fn new_scroll_down<W>(name: &str, w: &W, buf: &'a B) -> Result<Self>
     where
         W: Window,
     {
@@ -379,7 +379,7 @@ where
         })
     }
 
-    fn new_scroll_up<W>(name: &str, w: &W, buf: &'a B) -> Result<Self>
+    pub fn new_scroll_up<W>(name: &str, w: &W, buf: &'a B) -> Result<Self>
     where
         W: Window,
     {

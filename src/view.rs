@@ -418,8 +418,8 @@ impl WrapView {
                 (nbc_xy.row, self.obc_xy.row)
             };
             let (from, to) = (from.saturating_sub(hgt), to.saturating_add(hgt));
-            let to = cmp::min(buf.to_last_line_idx(), to.saturating_add(hgt));
-            (from..to).collect()
+            let to = cmp::min(buf.to_last_line_idx(), to);
+            (from..=to).collect()
         };
 
         // screen-lines around/between obc and nbc, crop and padd.

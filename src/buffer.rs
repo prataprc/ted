@@ -2336,7 +2336,7 @@ fn saturate_cursor(buf: &Buffer, cursor: usize) -> usize {
     if_else!(cursor >= buf.n_chars(), last_char_idx(buf), cursor)
 }
 
-fn last_char_idx(buf: &Buffer) -> usize {
+pub fn last_char_idx(buf: &Buffer) -> usize {
     let row = buf.to_last_line_idx();
     let col = text::visual_line_n(&buf.line(row));
     xy_to_cursor(buf, (row, col.saturating_sub(1)))
