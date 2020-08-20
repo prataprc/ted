@@ -123,7 +123,7 @@ impl Window for WindowCmd {
         err_at!(Fatal, termqu!(term_cursor::MoveTo(col, row)))?;
 
         let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
-        v.shift_cursor(&self.buf);
+        v.shift_cursor(&self.buf)?;
         self.cursor = v.render(&self.buf, self, None)?;
         self.obc_xy = self.buf.to_xy_cursor(None);
 

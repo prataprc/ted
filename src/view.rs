@@ -102,7 +102,7 @@ impl Wrap {
     /// Update cursor and screen-lines for this wrap-view instance.
     /// If `scroll` is true, on screen cursor position remains
     /// the same, buffer is aligned with the screen/window.
-    pub fn shift_cursor<B>(&mut self, buf: &B)
+    pub fn shift_cursor<B>(&mut self, buf: &B) -> Result<Cursor>
     where
         B: WinBuffer,
     {
@@ -125,6 +125,8 @@ impl Wrap {
         // update this wrap-view.
         self.cursor = cursor;
         self.edit_lines = edit_lines;
+
+        Ok(self.cursor)
     }
 
     /// consume this wrap-view and render the screen content.
@@ -269,7 +271,7 @@ impl NoWrap {
     /// Update cursor, coordinate and screen-lines for this wrap-view
     /// instance. if `scroll` is true, on screen cursor position remains
     /// the same, buffer is aligned with the screen/window.
-    pub fn shift_cursor<B>(&mut self, buf: &B)
+    pub fn shift_cursor<B>(&mut self, buf: &B) -> Result<Cursor>
     where
         B: WinBuffer,
     {
@@ -319,6 +321,8 @@ impl NoWrap {
         // update this wrap-view.
         self.cursor = cursor;
         self.edit_lines = lines;
+
+        Ok(self.cursor)
     }
 
     pub fn render<R>(self, buf: &R::Buf, r: &R, old_screen: Option<Vec<ScrLine>>) -> Result<Cursor>

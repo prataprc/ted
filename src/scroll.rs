@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use log::{debug, trace};
+
 use std::{cmp, convert::TryInto, fmt, result};
 
 use crate::{
@@ -22,70 +25,58 @@ where
     let scroll_off = w.config_scroll_offset();
     let line_number = w.config_line_number();
 
-    let (mut lines, iter, nu_wth) = match w.config_wrap() {
+    let lines = match w.config_wrap() {
         true => {
-            // lines till cursor-line (exclusive).
-            let mut lines = {
-                let mut v: view::Wrap = (w, nbc_xy).try_into()?;
-                v.shift_cursor(buf);
-                let lines = v.to_edit_lines(buf);
-                let off = {
-                    let row: usize = cursor.row.into();
-                    view::cursor_line(&lines, nbc).unwrap_or(row)
-                };
-                lines[..off].to_vec()
-            };
-            // lines from cursor-line (inclusive), till screen-end.
-            let mut iter = WrapIter::new_scroll_down(name, w, buf)?;
-            let m = (coord.hgt as usize).saturating_sub(lines.len());
-            lines.extend(iter.take_lines(m));
-
-            let (_, nu_wth) = view::to_nu_width(&lines, line_number);
-
-            let iter: Box<dyn Iterator<Item = view::ScrLine>> = Box::new(iter);
-            (lines, iter, nu_wth)
+            let mut v: view::Wrap = (w, nbc_xy).try_into()?;
+            v.shift_cursor(buf)?;
+            v.to_edit_lines(buf)
         }
         false => {
-            // lines till cursor-line (exclusive).
-            let mut lines = {
-                let mut v: view::NoWrap = (w, nbc_xy).try_into()?;
-                v.shift_cursor(buf);
-                let lines = v.to_edit_lines(buf);
-                let off = {
-                    let row: usize = cursor.row.into();
-                    view::cursor_line(&lines, nbc).unwrap_or(row)
-                };
-                lines[..off].to_vec()
-            };
-            // lines from cursor-line (inclusive), till screen-end.
-            let mut iter = NowrapIter::new_scroll_down(name, w, buf)?;
-            let m = (coord.hgt as usize).saturating_sub(lines.len());
-            lines.extend(iter.take_lines(m));
-
-            let (_, nu_wth) = view::to_nu_width(&lines, line_number);
-
-            let iter: Box<dyn Iterator<Item = view::ScrLine>> = Box::new(iter);
-            (lines, iter, nu_wth)
+            let mut v: view::NoWrap = (w, nbc_xy).try_into()?;
+            v.shift_cursor(buf)?;
+            v.to_edit_lines(buf)
         }
     };
+
+    // lines till cursor-line (exclusive).
+    let mut lines = {
+        let off = view::cursor_line(&lines, nbc).unwrap_or(cursor.row.into());
+        lines[..off].to_vec()
+    };
+
+    // lines from cursor-line (inclusive), till screen-end.
+    let m = (coord.hgt as usize).saturating_sub(lines.len());
+    let iter: Box<dyn Iterator<Item = view::ScrLine>> = match w.config_wrap() {
+        true => {
+            let mut iter = WrapIter::new_scroll_down(name, w, buf)?;
+            lines.extend(iter.take_lines(m));
+            Box::new(iter)
+        }
+        false => {
+            let mut iter = NowrapIter::new_scroll_down(name, w, buf)?;
+            lines.extend(iter.take_lines(m));
+            Box::new(iter)
+        }
+    };
+    let (_, nu_wth) = view::to_nu_width(&lines, line_number);
 
     let ocol = cursor.col.saturating_sub(nu_wth);
     let max_wth = coord.wth.saturating_sub(nu_wth);
 
     for line in iter.take(n) {
-        if cursor.row.saturating_sub(1) >= scroll_off {
-            cursor.row = cursor.row.saturating_sub(1);
-        } else {
-            cursor.row = scroll_off;
-            cursor.col = cmp::min(cmp::min(ocol, line.n), max_wth);
-            nbc = line.bc + (cursor.col as usize);
-        }
-        lines.push(line);
+        lines.push(line.clone());
         lines.remove(0);
+
+        let row = cursor.row.saturating_sub(1);
+        cursor.row = if_else!(row >= scroll_off, row, scroll_off);
+        cursor.col = cmp::min(cmp::min(ocol, line.n), max_wth);
+        nbc = lines[cursor.row as usize].bc + (cursor.col as usize);
     }
     // adjust for new nu_wth
-    let (_, nu_wth) = view::to_nu_width(&lines, line_number);
-    cursor.col = cmp::min(cursor.col.saturating_add(nu_wth), coord.wth);
+    cursor.col = {
+        let (_, nu_wth) = view::to_nu_width(&lines, line_number);
+        cmp::min(cursor.col.saturating_add(nu_wth), coord.wth)
+    };
 
     Ok((cursor, nbc))
 }
@@ -104,68 +95,53 @@ where
     let scroll_off = w.config_scroll_offset();
     let line_number = w.config_line_number();
 
-    let (mut lines, iter, nu_wth) = match w.config_wrap() {
+    let lines = match w.config_wrap() {
         true => {
-            // lines till cursor-line (exclusive).
-            let mut lines = {
-                let mut v: view::Wrap = (w, nbc_xy).try_into()?;
-                v.shift_cursor(buf);
-                let lines = v.to_edit_lines(buf);
-                let off = {
-                    let row: usize = cursor.row.into();
-                    view::cursor_line(&lines, nbc).unwrap_or(row)
-                };
-                lines[off..].to_vec()
-            };
-            // lines from cursor-line (inclusive), till screen-end.
-            let mut iter = WrapIter::new_scroll_up(name, w, buf)?;
-            let m = (coord.hgt as usize).saturating_sub(lines.len());
-            lines.extend(iter.take_lines(m));
-
-            let (_, nu_wth) = view::to_nu_width(&lines, line_number);
-
-            let iter: Box<dyn Iterator<Item = view::ScrLine>> = Box::new(iter);
-            (lines, iter, nu_wth)
+            let mut v: view::Wrap = (w, nbc_xy).try_into()?;
+            v.shift_cursor(buf)?;
+            v.to_edit_lines(buf)
         }
         false => {
-            // lines till cursor-line (exclusive).
-            let mut lines = {
-                let mut v: view::NoWrap = (w, nbc_xy).try_into()?;
-                v.shift_cursor(buf);
-                let lines = v.to_edit_lines(buf);
-                let off = {
-                    let row: usize = cursor.row.into();
-                    view::cursor_line(&lines, nbc).unwrap_or(row)
-                };
-                lines[off..].to_vec()
-            };
-            // lines from cursor-line (inclusive), till screen-end.
-            let mut iter = NowrapIter::new_scroll_up(name, w, buf)?;
-            let m = (coord.hgt as usize).saturating_sub(lines.len());
-            lines.extend(iter.take_lines(m));
-
-            let (_, nu_wth) = view::to_nu_width(&lines, line_number);
-
-            let iter: Box<dyn Iterator<Item = view::ScrLine>> = Box::new(iter);
-            (lines, iter, nu_wth)
+            let mut v: view::NoWrap = (w, nbc_xy).try_into()?;
+            v.shift_cursor(buf)?;
+            v.to_edit_lines(buf)
         }
     };
+
+    // lines till cursor-line (exclusive).
+    let mut lines = {
+        let off = view::cursor_line(&lines, nbc).unwrap_or(cursor.row.into());
+        lines[off..].to_vec()
+    };
+
+    // lines from cursor-line (inclusive), till screen-end.
+    let m = (coord.hgt as usize).saturating_sub(lines.len());
+    let iter: Box<dyn Iterator<Item = view::ScrLine>> = match w.config_wrap() {
+        true => {
+            let mut iter = WrapIter::new_scroll_up(name, w, buf)?;
+            lines.extend(iter.take_lines(m));
+            Box::new(iter)
+        }
+        false => {
+            let mut iter = NowrapIter::new_scroll_up(name, w, buf)?;
+            lines.extend(iter.take_lines(m));
+            Box::new(iter)
+        }
+    };
+    let (_, nu_wth) = view::to_nu_width(&lines, line_number);
 
     let ocol = cursor.col.saturating_sub(nu_wth);
     let max_wth = coord.wth.saturating_sub(nu_wth);
 
     let max_row = coord.hgt.saturating_sub(scroll_off + 1);
     for line in iter.take(n) {
-        if cursor.row.saturating_add(1) <= max_row {
-            cursor.row = cursor.row.saturating_add(1);
-        } else {
-            cursor.row = max_row;
-            cursor.col = cmp::min(cmp::min(ocol, line.n), max_wth);
-            nbc = line.bc + (cursor.col as usize);
-        }
-
-        lines.insert(0, line);
+        lines.insert(0, line.clone());
         lines.pop();
+
+        let row = cursor.row.saturating_add(1);
+        cursor.row = if_else!(row <= max_row, row, max_row);
+        cursor.col = cmp::min(cmp::min(ocol, line.n), max_wth);
+        nbc = lines[cursor.row as usize].bc + (cursor.col as usize);
     }
     // adjust for new nu_wth
     let (_, nu_wth) = view::to_nu_width(&lines, line_number);

@@ -114,32 +114,32 @@ impl WindowEdit {
     fn to_edit_lines(&self, buf: &Buffer) -> Result<Vec<view::ScrLine>> {
         if self.wrap {
             let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
-            v.shift_cursor(buf);
+            v.shift_cursor(buf)?;
             Ok(v.to_edit_lines(buf))
         } else {
             let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
-            v.shift_cursor(buf);
+            v.shift_cursor(buf)?;
             Ok(v.to_edit_lines(buf))
         }
     }
 
     fn mto_screen_home(&self, buf: &Buffer, dp: DP) -> Result<usize> {
         let lines = self.to_edit_lines(buf)?;
-        let cursor = match view::cursor_line(&lines, buf.to_char_cursor()) {
+        let nbc = match view::cursor_line(&lines, buf.to_char_cursor()) {
             Some(off) => lines[off].bc,
             None => buf.to_char_cursor(),
         };
 
-        let cursor = match dp {
+        let nbc = match dp {
             DP::TextCol => {
-                let xy = buf.to_xy_cursor(Some(cursor));
+                let xy = buf.to_xy_cursor(Some(nbc));
                 let line = buf.line(xy.row);
-                cursor + buffer::skip_whitespace(&line, xy.col, DP::Right)?
+                nbc + buffer::skip_whitespace(&line, xy.col, DP::Right)?
             }
-            DP::None => cursor,
+            DP::None => nbc,
             dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
         };
-        Ok(cursor)
+        Ok(nbc)
     }
 
     fn mto_screen_middle(&self, buf: &Buffer) -> Result<usize> {
@@ -147,7 +147,7 @@ impl WindowEdit {
         let (_, nu_wth) = view::to_nu_width(&lines, self.line_number);
         let middle = self.coord.wth.saturating_sub(nu_wth) / 2;
 
-        let cursor = match view::cursor_line(&lines, buf.to_char_cursor()) {
+        let nbc = match view::cursor_line(&lines, buf.to_char_cursor()) {
             Some(off) if lines[off].n <= middle => {
                 let eol = lines[off].n.saturating_sub(1) as usize;
                 lines[off].bc + eol
@@ -155,7 +155,7 @@ impl WindowEdit {
             Some(off) => lines[off].bc + (middle as usize),
             None => buf.to_char_cursor(),
         };
-        Ok(cursor)
+        Ok(nbc)
     }
 
     fn mto_screen_end(&self, buf: &Buffer, n: usize) -> Result<usize> {
@@ -167,11 +167,11 @@ impl WindowEdit {
             let iter = scroll::NowrapIter::new_scroll_down(name, self, buf)?;
             iter.skip(n.saturating_sub(1)).next()
         };
-        let cursor = match item {
+        let nbc = match item {
             Some(sl) => sl.bc + (sl.n.saturating_sub(1) as usize),
             None => buffer::last_char_idx(buf),
         };
-        Ok(cursor)
+        Ok(nbc)
     }
 
     fn mto_screen_up(&self, buf: &Buffer, n: usize) -> Result<usize> {
@@ -189,12 +189,12 @@ impl WindowEdit {
             iter.skip(n.saturating_sub(1)).next()
         };
         let col = self.cursor.col.saturating_sub(nu_wth);
-        let cursor = match item {
+        let nbc = match item {
             Some(sl) if col < sl.n => sl.bc + (col as usize),
             Some(sl) => sl.bc + (sl.n.saturating_sub(1) as usize),
             None => 0,
         };
-        Ok(cursor)
+        Ok(nbc)
     }
 
     fn mto_screen_down(&self, buf: &Buffer, n: usize) -> Result<usize> {
@@ -212,12 +212,12 @@ impl WindowEdit {
             iter.skip(n).next()
         };
         let col = self.cursor.col.saturating_sub(nu_wth);
-        let cursor = match item {
+        let nbc = match item {
             Some(sl) if col < sl.n => sl.bc + (col as usize),
             Some(sl) => sl.bc + (sl.n.saturating_sub(1) as usize),
             None => 0,
         };
-        Ok(cursor)
+        Ok(nbc)
     }
 
     fn mto_win_high(&self, buf: &Buffer, n: usize) -> Result<usize> {
@@ -228,7 +228,7 @@ impl WindowEdit {
             let iter = lines.into_iter().filter(|line| !line.colk.is_empty());
             iter.collect()
         };
-        let cursor = match lines.len() {
+        let nbc = match lines.len() {
             0 => buf.to_char_cursor(),
             _ => {
                 let sl = match lines.iter().skip(n.saturating_sub(1)).next() {
@@ -241,14 +241,14 @@ impl WindowEdit {
                 sl.bc + buffer::skip_whitespace(l, xy.col, DP::Right)?
             }
         };
-        Ok(cursor)
+        Ok(nbc)
     }
 
     fn mto_win_middle(&self, buf: &Buffer) -> Result<usize> {
         use crate::text;
 
         let lines = self.to_edit_lines(buf)?;
-        let cursor = {
+        let nbc = {
             let bc = match lines.len() {
                 0 => buf.to_char_cursor(),
                 m => lines[m / 2].bc,
@@ -258,7 +258,7 @@ impl WindowEdit {
             let line = text::visual_line(&line);
             bc + buffer::skip_whitespace(line, xy.col, DP::Right)?
         };
-        Ok(cursor)
+        Ok(nbc)
     }
 
     fn mto_win_low(&self, buf: &Buffer, n: usize) -> Result<usize> {
@@ -269,7 +269,7 @@ impl WindowEdit {
             let iter = lines.into_iter().filter(|line| !line.colk.is_empty());
             iter.collect()
         };
-        let cursor = match lines.len() {
+        let nbc = match lines.len() {
             0 => buf.to_char_cursor(),
             m => {
                 let off = if m < (self.scroll_off as usize) {
@@ -283,7 +283,7 @@ impl WindowEdit {
                 lines[off].bc + buffer::skip_whitespace(l, xy.col, DP::Right)?
             }
         };
-        Ok(cursor)
+        Ok(nbc)
     }
 
     fn mto_win_scroll(&self, buf: &Buffer, mto: event::Mto) -> Result<(Cursor, usize)> {
@@ -374,55 +374,50 @@ impl Window for WindowEdit {
         let (evnt, buf) = match app.take_buffer(&self.curr_buf_id) {
             Some(mut buf) => match self.keymap.fold(&mut buf, evnt)? {
                 Event::Mt(Mto::ScreenHome(dp)) => {
-                    let cursor = self.mto_screen_home(&buf, dp)?;
-                    buf.set_cursor(cursor).clear_sticky_col();
+                    let nbc = self.mto_screen_home(&buf, dp)?;
+                    buf.set_cursor(nbc).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::ScreenEnd(n, _dp)) => {
-                    let cursor = self.mto_screen_end(&buf, n)?;
-                    buf.set_cursor(cursor).clear_sticky_col();
+                    let nbc = self.mto_screen_end(&buf, n)?;
+                    buf.set_cursor(nbc).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::ScreenMiddle) => {
-                    let cursor = self.mto_screen_middle(&buf)?;
-                    buf.set_cursor(cursor).clear_sticky_col();
+                    let nbc = self.mto_screen_middle(&buf)?;
+                    buf.set_cursor(nbc).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::ScreenUp(n, _dp)) => {
-                    let cursor = self.mto_screen_up(&buf, n)?;
-                    buf.set_cursor(cursor).clear_sticky_col();
+                    let nbc = self.mto_screen_up(&buf, n)?;
+                    buf.set_cursor(nbc).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::ScreenDown(n, _dp)) => {
-                    let cursor = self.mto_screen_down(&buf, n)?;
-                    buf.set_cursor(cursor).clear_sticky_col();
+                    let nbc = self.mto_screen_down(&buf, n)?;
+                    buf.set_cursor(nbc).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::WinH(n)) => {
-                    let cursor = {
-                        let n = n.saturating_sub(1);
-                        self.mto_win_high(&buf, n)?
-                    };
-                    buf.set_cursor(cursor).clear_sticky_col();
+                    let nbc = self.mto_win_high(&buf, n.saturating_sub(1))?;
+                    buf.set_cursor(nbc).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::WinM) => {
-                    let cursor = self.mto_win_middle(&buf)?;
-                    buf.set_cursor(cursor).clear_sticky_col();
+                    let nbc = self.mto_win_middle(&buf)?;
+                    buf.set_cursor(nbc).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(Mto::WinL(n)) => {
-                    let cursor = {
-                        let n = n.saturating_sub(1);
-                        self.mto_win_low(&buf, n)?
-                    };
-                    buf.set_cursor(cursor).clear_sticky_col();
+                    let nbc = self.mto_win_low(&buf, n.saturating_sub(1))?;
+                    buf.set_cursor(nbc).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(mto @ Mto::WinScroll(_, _, _)) => {
-                    let (wcursor, cursor) = self.mto_win_scroll(&buf, mto)?;
-                    self.cursor = wcursor;
-                    buf.set_cursor(cursor).clear_sticky_col();
+                    let (cursor, nbc) = self.mto_win_scroll(&buf, mto)?;
+                    self.cursor = cursor;
+                    self.obc_xy = buf.to_xy_cursor(Some(nbc));
+                    buf.set_cursor(nbc).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
                 Event::Appn(event::Appn::StatusCursor) => {
@@ -448,27 +443,19 @@ impl Window for WindowEdit {
             let s = format!("buffer {}", self.curr_buf_id);
             Error::Invalid(String::new(), s)
         };
+        let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
         self.cursor = if self.wrap {
             let mut v: view::Wrap = (&*self, self.obc_xy).try_into()?;
-            let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
-            v.shift_cursor(buf);
+            v.shift_cursor(buf)?;
             let old_screen = self.old_screen.replace(v.to_edit_lines(buf));
             v.render(buf, self, old_screen)?
         } else {
             let mut v: view::NoWrap = (&*self, self.obc_xy).try_into()?;
-            let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
-            v.shift_cursor(buf);
+            v.shift_cursor(buf)?;
             let old_screen = self.old_screen.replace(v.to_edit_lines(buf));
             v.render(buf, self, old_screen)?
         };
-        self.obc_xy = {
-            let err = {
-                let s = format!("buffer {}", self.curr_buf_id);
-                Error::Invalid(String::new(), s)
-            };
-            let buf = err_at!(app.as_buffer(&self.curr_buf_id).ok_or(err))?;
-            buf.to_xy_cursor(None)
-        };
+        self.obc_xy = buf.to_xy_cursor(None);
         debug!("obc_xy:{}", self.obc_xy);
 
         Ok(())
