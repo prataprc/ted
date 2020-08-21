@@ -323,16 +323,16 @@ impl KeyEdit {
             },
             Z(n) if m_empty => match evnt {
                 // motion commands, window scroll - vertical
+                Enter(_) => {
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::TextUp, DP::TextCol));
+                    (noop, evnt)
+                }
                 Char('+', _) => {
                     let evnt = Mt(Mto::WinScroll(n, Scroll::Cursor, DP::Right));
                     (noop, evnt)
                 }
                 Char('^', _) => {
                     let evnt = Mt(Mto::WinScroll(n, Scroll::Cursor, DP::Left));
-                    (noop, evnt)
-                }
-                Enter(_) => {
-                    let evnt = Mt(Mto::WinScroll(n, Scroll::TextUp, DP::TextCol));
                     (noop, evnt)
                 }
                 Char('t', _) => {

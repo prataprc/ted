@@ -119,12 +119,16 @@ where
     let iter: Box<dyn Iterator<Item = view::ScrLine>> = match w.config_wrap() {
         true => {
             let mut iter = WrapIter::new_scroll_up(name, w, buf)?;
-            lines.extend(iter.take_lines(m));
+            iter.take_lines(m)
+                .into_iter()
+                .for_each(|l| lines.insert(0, l));
             Box::new(iter)
         }
         false => {
             let mut iter = NowrapIter::new_scroll_up(name, w, buf)?;
-            lines.extend(iter.take_lines(m));
+            iter.take_lines(m)
+                .into_iter()
+                .for_each(|l| lines.insert(0, l));
             Box::new(iter)
         }
     };
@@ -196,7 +200,8 @@ where
             let nu_wth = ColNu::new(line_idx, line_number).to_width();
             let wth = coord.wth.saturating_sub(nu_wth);
             let iter = view::wrap_line(buf, line_idx, nu_wth, wth).into_iter();
-            iter.skip_while(|x| (x.bc + (x.n as usize)) < nbc).collect()
+            iter.skip_while(|x| (x.bc + (x.n as usize)) <= nbc)
+                .collect()
         };
         lines.reverse();
 
@@ -244,38 +249,46 @@ where
 
     fn next_down(&mut self) -> Option<view::ScrLine> {
         match self.lines.pop() {
-            Some(line) => Some(line),
-            None => match self.line_idx {
-                Some(line_idx) => {
-                    self.lines = {
-                        let nu = ColNu::new(line_idx, self.line_number);
-                        let wth = self.coord.wth.saturating_sub(nu.to_width());
-                        view::wrap_line(self.buf, line_idx, nu.to_width(), wth)
-                    };
-                    self.lines.reverse();
-                    self.line_idx = incr_line_idx(self.buf, self.line_idx);
-                    self.lines.pop()
-                }
-                None => None,
-            },
+            Some(line) => {
+                debug!("WrapIter-down {}", line);
+                Some(line)
+            }
+            None => {
+                let line_idx = self.line_idx?;
+
+                self.lines = {
+                    let nu = ColNu::new(line_idx, self.line_number);
+                    let wth = self.coord.wth.saturating_sub(nu.to_width());
+                    view::wrap_line(self.buf, line_idx, nu.to_width(), wth)
+                };
+                self.lines.reverse();
+                self.line_idx = incr_line_idx(self.buf, self.line_idx);
+                let line = self.lines.pop()?;
+                debug!("WrapIter-down {}", line);
+                Some(line)
+            }
         }
     }
 
     fn next_up(&mut self) -> Option<view::ScrLine> {
         match self.lines.pop() {
-            Some(line) => Some(line),
-            None => match self.line_idx {
-                Some(line_idx) => {
-                    self.lines = {
-                        let nu = ColNu::new(line_idx, self.line_number);
-                        let wth = self.coord.wth.saturating_sub(nu.to_width());
-                        view::wrap_line(self.buf, line_idx, nu.to_width(), wth)
-                    };
-                    self.line_idx = decr_line_idx(self.line_idx);
-                    self.lines.pop()
-                }
-                None => None,
-            },
+            Some(line) => {
+                debug!("WrapIter-up {}", line);
+                Some(line)
+            }
+            None => {
+                let line_idx = self.line_idx?;
+
+                self.lines = {
+                    let nu = ColNu::new(line_idx, self.line_number);
+                    let wth = self.coord.wth.saturating_sub(nu.to_width());
+                    view::wrap_line(self.buf, line_idx, nu.to_width(), wth)
+                };
+                self.line_idx = decr_line_idx(self.line_idx);
+                let line = self.lines.pop()?;
+                debug!("WrapIter-up {}", line);
+                Some(line)
+            }
         }
     }
 
@@ -373,42 +386,38 @@ where
     }
 
     fn next_down(&mut self) -> Option<view::ScrLine> {
-        match self.line_idx {
-            Some(line_idx) => {
-                let nu_wth = ColNu::new(line_idx, self.line_number).to_width();
-                let col = {
-                    let col = self.cursor.col.saturating_sub(nu_wth) as usize;
-                    self.buf.to_xy_cursor(None).col.saturating_sub(col)
-                };
-                let line = {
-                    let wth = self.coord.wth.saturating_sub(nu_wth);
-                    view::nowrap_line(self.buf, line_idx, col, nu_wth, wth)
-                };
-                self.line_idx = incr_line_idx(self.buf, Some(line_idx));
-                Some(line)
-            }
-            None => None,
-        }
+        let line_idx = self.line_idx?;
+
+        let nu_wth = ColNu::new(line_idx, self.line_number).to_width();
+        let col = {
+            let col = self.cursor.col.saturating_sub(nu_wth) as usize;
+            self.buf.to_xy_cursor(None).col.saturating_sub(col)
+        };
+        let line = {
+            let wth = self.coord.wth.saturating_sub(nu_wth);
+            view::nowrap_line(self.buf, line_idx, col, nu_wth, wth)
+        };
+        self.line_idx = incr_line_idx(self.buf, Some(line_idx));
+        debug!("NowrapIter-down {}", line);
+        Some(line)
     }
 
     fn next_up(&mut self) -> Option<view::ScrLine> {
-        match self.line_idx {
-            Some(line_idx) => {
-                let nu_wth = ColNu::new(line_idx, self.line_number).to_width();
-                let col = {
-                    let col = self.cursor.col.saturating_sub(nu_wth) as usize;
-                    self.buf.to_xy_cursor(None).col.saturating_sub(col)
-                };
-                let line = {
-                    let nu = ColNu::new(line_idx, self.line_number);
-                    let wth = self.coord.wth.saturating_sub(nu.to_width());
-                    view::nowrap_line(self.buf, line_idx, col, nu_wth, wth)
-                };
-                self.line_idx = decr_line_idx(Some(line_idx));
-                Some(line)
-            }
-            None => None,
-        }
+        let line_idx = self.line_idx?;
+
+        let nu_wth = ColNu::new(line_idx, self.line_number).to_width();
+        let col = {
+            let col = self.cursor.col.saturating_sub(nu_wth) as usize;
+            self.buf.to_xy_cursor(None).col.saturating_sub(col)
+        };
+        let line = {
+            let nu = ColNu::new(line_idx, self.line_number);
+            let wth = self.coord.wth.saturating_sub(nu.to_width());
+            view::nowrap_line(self.buf, line_idx, col, nu_wth, wth)
+        };
+        self.line_idx = decr_line_idx(Some(line_idx));
+        debug!("NowrapIter-down {}", line);
+        Some(line)
     }
 
     fn take_lines(&mut self, mut n: usize) -> Vec<view::ScrLine> {

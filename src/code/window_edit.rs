@@ -316,10 +316,10 @@ impl WindowEdit {
                 let n_page = self.coord.hgt.saturating_sub(2) as usize;
                 scroll_down(&name, self, buf, n_page * n)
             }
-            (Scroll::Cursor, DP::Left) => todo!(),
-            (Scroll::Cursor, DP::Right) => todo!(),
             (Scroll::TextUp, DP::TextCol) => todo!(),
             (Scroll::TextUp, DP::None) => todo!(),
+            (Scroll::Cursor, DP::Left) => todo!(),
+            (Scroll::Cursor, DP::Right) => todo!(),
             (Scroll::TextCenter, DP::TextCol) => todo!(),
             (Scroll::TextCenter, DP::None) => todo!(),
             (Scroll::TextBottom, DP::TextCol) => todo!(),
