@@ -250,7 +250,7 @@ where
     fn next_down(&mut self) -> Option<view::ScrLine> {
         match self.lines.pop() {
             Some(line) => {
-                debug!("WrapIter-down {}", line);
+                trace!("WrapIter-down {}", line);
                 Some(line)
             }
             None => {
@@ -264,7 +264,7 @@ where
                 self.lines.reverse();
                 self.line_idx = incr_line_idx(self.buf, self.line_idx);
                 let line = self.lines.pop()?;
-                debug!("WrapIter-down {}", line);
+                trace!("WrapIter-down {}", line);
                 Some(line)
             }
         }
@@ -273,7 +273,7 @@ where
     fn next_up(&mut self) -> Option<view::ScrLine> {
         match self.lines.pop() {
             Some(line) => {
-                debug!("WrapIter-up {}", line);
+                trace!("WrapIter-up {}", line);
                 Some(line)
             }
             None => {
@@ -286,7 +286,7 @@ where
                 };
                 self.line_idx = decr_line_idx(self.line_idx);
                 let line = self.lines.pop()?;
-                debug!("WrapIter-up {}", line);
+                trace!("WrapIter-up {}", line);
                 Some(line)
             }
         }
@@ -398,7 +398,7 @@ where
             view::nowrap_line(self.buf, line_idx, col, nu_wth, wth)
         };
         self.line_idx = incr_line_idx(self.buf, Some(line_idx));
-        debug!("NowrapIter-down {}", line);
+        trace!("NowrapIter-down {}", line);
         Some(line)
     }
 
@@ -416,7 +416,7 @@ where
             view::nowrap_line(self.buf, line_idx, col, nu_wth, wth)
         };
         self.line_idx = decr_line_idx(Some(line_idx));
-        debug!("NowrapIter-down {}", line);
+        trace!("NowrapIter-down {}", line);
         Some(line)
     }
 

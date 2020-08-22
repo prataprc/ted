@@ -109,7 +109,7 @@ impl KeyEdit {
                 Char('[', _) => (B(1, DP::Left), noop),
                 Char(']', _) => (B(1, DP::Right), noop),
                 Char('g', _) => (G(1), noop),
-                Char('z', _) => (Z(1), noop),
+                Char('z', _) => (Z(0), noop),
                 // operation prefix
                 Char('c', _) => (Op(event::Opr::Change(1, Mto::None)), noop),
                 Char('d', _) => (Op(event::Opr::Delete(1, Mto::None)), noop),

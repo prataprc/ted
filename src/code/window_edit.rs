@@ -221,8 +221,6 @@ impl WindowEdit {
     }
 
     fn mto_win_high(&self, buf: &Buffer, n: usize) -> Result<usize> {
-        use crate::text;
-
         let lines: Vec<view::ScrLine> = {
             let lines = self.to_edit_lines(buf)?;
             let iter = lines.into_iter().filter(|line| !line.colk.is_empty());
@@ -237,16 +235,13 @@ impl WindowEdit {
                 };
                 let xy = buf.to_xy_cursor(Some(sl.bc));
                 let line = buf.line(xy.row);
-                let l = text::visual_line(&line);
-                sl.bc + buffer::skip_whitespace(l, xy.col, DP::Right)?
+                sl.bc + buffer::skip_whitespace(&line, xy.col, DP::Right)?
             }
         };
         Ok(nbc)
     }
 
     fn mto_win_middle(&self, buf: &Buffer) -> Result<usize> {
-        use crate::text;
-
         let lines = self.to_edit_lines(buf)?;
         let nbc = {
             let bc = match lines.len() {
@@ -255,15 +250,12 @@ impl WindowEdit {
             };
             let xy = buf.to_xy_cursor(Some(bc));
             let line = buf.line(xy.row);
-            let line = text::visual_line(&line);
-            bc + buffer::skip_whitespace(line, xy.col, DP::Right)?
+            bc + buffer::skip_whitespace(&line, xy.col, DP::Right)?
         };
         Ok(nbc)
     }
 
     fn mto_win_low(&self, buf: &Buffer, n: usize) -> Result<usize> {
-        use crate::text;
-
         let lines: Vec<view::ScrLine> = {
             let lines = self.to_edit_lines(buf)?;
             let iter = lines.into_iter().filter(|line| !line.colk.is_empty());
@@ -279,14 +271,17 @@ impl WindowEdit {
                 };
                 let xy = buf.to_xy_cursor(Some(lines[off].bc));
                 let line = buf.line(xy.row);
-                let l = text::visual_line(&line);
-                lines[off].bc + buffer::skip_whitespace(l, xy.col, DP::Right)?
+                lines[off].bc + buffer::skip_whitespace(&line, xy.col, DP::Right)?
             }
         };
         Ok(nbc)
     }
 
-    fn mto_win_scroll(&self, buf: &Buffer, mto: event::Mto) -> Result<(Cursor, usize)> {
+    fn mto_win_scroll(
+        &mut self,
+        buf: &mut Buffer,
+        mto: event::Mto,
+    ) -> Result<(usize, Option<Cursor>)> {
         use scroll::{scroll_down, scroll_up};
 
         let name = format!("mto_win_scroll-{}", mto);
@@ -296,40 +291,150 @@ impl WindowEdit {
         };
 
         match (scrll, dp) {
-            (Scroll::Ones, DP::Left) => scroll_up(&name, self, buf, n),
-            (Scroll::Ones, DP::Right) => scroll_down(&name, self, buf, n),
+            (Scroll::Ones, DP::Left) => {
+                let (cursor, nbc) = scroll_up(&name, self, buf, n)?;
+                Ok((nbc, Some(cursor)))
+            }
+            (Scroll::Ones, DP::Right) => {
+                let (cursor, nbc) = scroll_down(&name, self, buf, n)?;
+                Ok((nbc, Some(cursor)))
+            }
             (Scroll::Lines, DP::Left) if n == 1 => {
                 let n = self.scroll.unwrap_or((self.coord.hgt / 2) as usize);
-                scroll_up(&name, self, buf, n)
+                let (cursor, nbc) = scroll_up(&name, self, buf, n)?;
+                Ok((nbc, Some(cursor)))
             }
-            (Scroll::Lines, DP::Left) => scroll_up(&name, self, buf, n),
+            (Scroll::Lines, DP::Left) => {
+                let (cursor, nbc) = scroll_up(&name, self, buf, n)?;
+                Ok((nbc, Some(cursor)))
+            }
             (Scroll::Lines, DP::Right) if n == 1 => {
                 let n = self.scroll.unwrap_or((self.coord.hgt / 2) as usize);
-                scroll_down(&name, self, buf, n)
+                let (cursor, nbc) = scroll_down(&name, self, buf, n)?;
+                Ok((nbc, Some(cursor)))
             }
-            (Scroll::Lines, DP::Right) => scroll_down(&name, self, buf, n),
+            (Scroll::Lines, DP::Right) => {
+                let (cursor, nbc) = scroll_down(&name, self, buf, n)?;
+                Ok((nbc, Some(cursor)))
+            }
             (Scroll::Pages, DP::Left) => {
                 let n_page = self.coord.hgt.saturating_sub(2) as usize;
-                scroll_up(&name, self, buf, n_page * n)
+                let (cursor, nbc) = scroll_up(&name, self, buf, n_page * n)?;
+                Ok((nbc, Some(cursor)))
             }
             (Scroll::Pages, DP::Right) => {
                 let n_page = self.coord.hgt.saturating_sub(2) as usize;
-                scroll_down(&name, self, buf, n_page * n)
+                let (cursor, nbc) = scroll_down(&name, self, buf, n_page * n)?;
+                Ok((nbc, Some(cursor)))
             }
-            (Scroll::TextUp, DP::TextCol) => todo!(),
-            (Scroll::TextUp, DP::None) => todo!(),
+            (Scroll::TextUp, pos) => {
+                let lines = self.to_edit_lines(buf)?;
+                let (_, nu_wth) = view::to_nu_width(&lines, self.line_number);
+
+                let (cursor, nbc) = if n == 0 {
+                    let nbc = lines[self.cursor.row as usize].bc;
+                    let (row, col) = (self.scroll_off, nu_wth);
+                    (Cursor { row, col }, nbc)
+                } else {
+                    buf.set_cursor(0);
+                    let (row, col) = (0, nu_wth);
+                    self.cursor = Cursor { row, col };
+
+                    let n = n.saturating_sub((self.scroll_off as usize) + 1);
+                    let (mut cursor, nbc) = scroll_down(&name, self, buf, n)?;
+                    cursor.row = self.scroll_off;
+                    (cursor, nbc)
+                };
+
+                buf.set_cursor(nbc);
+                self.obc_xy = buf.to_xy_cursor(Some(nbc));
+                self.cursor = cursor;
+
+                let nbc = match pos {
+                    DP::TextCol => {
+                        let xy = buf.to_xy_cursor(Some(nbc));
+                        let line = buf.line(xy.row);
+                        nbc + buffer::skip_whitespace(&line, xy.col, DP::Right)?
+                    }
+                    _ => nbc,
+                };
+                Ok((nbc, None))
+            }
+            (Scroll::TextCenter, pos) => {
+                let lines = self.to_edit_lines(buf)?;
+                let (_, nu_wth) = view::to_nu_width(&lines, self.line_number);
+
+                let (cursor, nbc) = if n == 0 {
+                    let nbc = lines[self.cursor.row as usize].bc;
+                    let (row, col) = (self.coord.hgt / 2, nu_wth);
+                    (Cursor { row, col }, nbc)
+                } else {
+                    buf.set_cursor(0);
+                    let (row, col) = (0, nu_wth);
+                    self.cursor = Cursor { row, col };
+
+                    let n = n.saturating_sub((self.scroll_off as usize) + 1);
+                    let (mut cursor, nbc) = scroll_down(&name, self, buf, n)?;
+                    cursor.row = self.coord.hgt / 2;
+                    (cursor, nbc)
+                };
+
+                buf.set_cursor(nbc);
+                self.obc_xy = buf.to_xy_cursor(Some(nbc));
+                self.cursor = cursor;
+                let nbc = match pos {
+                    DP::TextCol => {
+                        let xy = buf.to_xy_cursor(Some(nbc));
+                        let line = buf.line(xy.row);
+                        nbc + buffer::skip_whitespace(&line, xy.col, DP::Right)?
+                    }
+                    _ => nbc,
+                };
+                Ok((nbc, None))
+            }
+            (Scroll::TextBottom, pos) => {
+                let lines = self.to_edit_lines(buf)?;
+                let (_, nu_wth) = view::to_nu_width(&lines, self.line_number);
+
+                let (cursor, nbc) = if n == 0 {
+                    let nbc = lines[self.cursor.row as usize].bc;
+                    let (row, col) = (self.coord.hgt.saturating_sub(1), nu_wth);
+                    (Cursor { row, col }, nbc)
+                } else {
+                    buf.set_cursor(0);
+                    let (row, col) = (0, nu_wth);
+                    self.cursor = Cursor { row, col };
+
+                    let n = n.saturating_sub((self.scroll_off as usize) + 1);
+                    let (mut cursor, nbc) = scroll_down(&name, self, buf, n)?;
+                    cursor.row = self.coord.hgt.saturating_sub(1);
+                    (cursor, nbc)
+                };
+
+                buf.set_cursor(nbc);
+                self.obc_xy = buf.to_xy_cursor(Some(nbc));
+                self.cursor = cursor;
+                let nbc = match pos {
+                    DP::TextCol => {
+                        let xy = buf.to_xy_cursor(Some(nbc));
+                        let line = buf.line(xy.row);
+                        nbc + buffer::skip_whitespace(&line, xy.col, DP::Right)?
+                    }
+                    _ => nbc,
+                };
+                Ok((nbc, None))
+            }
+            (Scroll::Chars, DP::Left) if !self.wrap => todo!(),
+            (Scroll::Chars, DP::Right) if !self.wrap => todo!(),
+            (Scroll::Slide, DP::Left) if !self.wrap => todo!(),
+            (Scroll::Slide, DP::Right) if !self.wrap => todo!(),
+            (Scroll::Align, DP::Left) if !self.wrap => todo!(),
+            (Scroll::Align, DP::Right) if !self.wrap => todo!(),
+            (Scroll::Chars, _) => Ok((buf.to_char_cursor(), None)),
+            (Scroll::Slide, _) => Ok((buf.to_char_cursor(), None)),
+            (Scroll::Align, _) => Ok((buf.to_char_cursor(), None)),
             (Scroll::Cursor, DP::Left) => todo!(),
             (Scroll::Cursor, DP::Right) => todo!(),
-            (Scroll::TextCenter, DP::TextCol) => todo!(),
-            (Scroll::TextCenter, DP::None) => todo!(),
-            (Scroll::TextBottom, DP::TextCol) => todo!(),
-            (Scroll::TextBottom, DP::None) => todo!(),
-            (Scroll::Chars, DP::Left) => todo!(),
-            (Scroll::Chars, DP::Right) => todo!(),
-            (Scroll::Slide, DP::Left) => todo!(),
-            (Scroll::Slide, DP::Right) => todo!(),
-            (Scroll::Align, DP::Left) => todo!(),
-            (Scroll::Align, DP::Right) => todo!(),
             (scrll, dp) => err_at!(Fatal, msg: format!("{} {}", scrll, dp))?,
         }
     }
@@ -414,9 +519,14 @@ impl Window for WindowEdit {
                     (Event::Noop, Some(buf))
                 }
                 Event::Mt(mto @ Mto::WinScroll(_, _, _)) => {
-                    let (cursor, nbc) = self.mto_win_scroll(&buf, mto)?;
-                    self.cursor = cursor;
-                    self.obc_xy = buf.to_xy_cursor(Some(nbc));
+                    let (nbc, cursor) = self.mto_win_scroll(&mut buf, mto)?;
+                    self.cursor = match cursor {
+                        Some(cursor) => {
+                            self.obc_xy = buf.to_xy_cursor(Some(nbc));
+                            cursor
+                        }
+                        None => self.cursor,
+                    };
                     buf.set_cursor(nbc).clear_sticky_col();
                     (Event::Noop, Some(buf))
                 }
