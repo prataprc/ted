@@ -373,11 +373,11 @@ impl KeyEdit {
                     (noop, evnt)
                 }
                 Char('s', _) => {
-                    let evnt = Mt(Mto::WinScroll(n, Scroll::Align, DP::Left));
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Align, DP::Right));
                     (noop, evnt)
                 }
                 Char('e', _) => {
-                    let evnt = Mt(Mto::WinScroll(n, Scroll::Align, DP::Right));
+                    let evnt = Mt(Mto::WinScroll(n, Scroll::Align, DP::Left));
                     (noop, evnt)
                 }
                 evnt => (noop, evnt),

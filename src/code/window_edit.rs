@@ -123,6 +123,14 @@ impl WindowEdit {
         }
     }
 
+    fn to_slide_width(&self, buf: &Buffer) -> Result<usize> {
+        let (_, nu_wth) = {
+            let lines = self.to_edit_lines(buf)?;
+            view::to_nu_width(&lines, self.line_number)
+        };
+        Ok((self.coord.wth.saturating_sub(nu_wth) / 2) as usize)
+    }
+
     fn mto_screen_home(&self, buf: &Buffer, dp: DP) -> Result<usize> {
         let lines = self.to_edit_lines(buf)?;
         let nbc = match view::cursor_line(&lines, buf.to_char_cursor()) {
@@ -282,7 +290,7 @@ impl WindowEdit {
         buf: &mut Buffer,
         mto: event::Mto,
     ) -> Result<(usize, Option<Cursor>)> {
-        use scroll::{scroll_down, scroll_up};
+        use crate::scroll::{scroll_down, scroll_left, scroll_right, scroll_up};
 
         let name = format!("mto_win_scroll-{}", mto);
         let (n, scrll, dp) = match mto {
@@ -424,12 +432,38 @@ impl WindowEdit {
                 };
                 Ok((nbc, None))
             }
-            (Scroll::Chars, DP::Left) if !self.wrap => todo!(),
-            (Scroll::Chars, DP::Right) if !self.wrap => todo!(),
-            (Scroll::Slide, DP::Left) if !self.wrap => todo!(),
-            (Scroll::Slide, DP::Right) if !self.wrap => todo!(),
-            (Scroll::Align, DP::Left) if !self.wrap => todo!(),
-            (Scroll::Align, DP::Right) if !self.wrap => todo!(),
+            (Scroll::Chars, DP::Right) if !self.wrap => {
+                let (cursor, nbc) = scroll_right(&name, self, buf, n)?;
+                Ok((nbc, Some(cursor)))
+            }
+            (Scroll::Chars, DP::Left) if !self.wrap => {
+                let (cursor, nbc) = scroll_left(&name, self, buf, n)?;
+                Ok((nbc, Some(cursor)))
+            }
+            (Scroll::Slide, DP::Right) if !self.wrap => {
+                let n = self.to_slide_width(buf)?;
+                let (cursor, nbc) = scroll_right(&name, self, buf, n)?;
+                Ok((nbc, Some(cursor)))
+            }
+            (Scroll::Slide, DP::Left) if !self.wrap => {
+                let n = self.to_slide_width(buf)?;
+                let (cursor, nbc) = scroll_left(&name, self, buf, n)?;
+                Ok((nbc, Some(cursor)))
+            }
+            (Scroll::Align, DP::Right) if !self.wrap => {
+                let n = self.coord.wth.saturating_sub(self.cursor.col + 1);
+                let (cursor, nbc) = scroll_right(&name, self, buf, n as usize)?;
+                Ok((nbc, Some(cursor)))
+            }
+            (Scroll::Align, DP::Left) if !self.wrap => {
+                let (_, nu_wth) = {
+                    let lines = self.to_edit_lines(buf)?;
+                    view::to_nu_width(&lines, self.line_number)
+                };
+                let n = self.cursor.col.saturating_sub(nu_wth) as usize;
+                let (cursor, nbc) = scroll_right(&name, self, buf, n)?;
+                Ok((nbc, Some(cursor)))
+            }
             (Scroll::Chars, _) => Ok((buf.to_char_cursor(), None)),
             (Scroll::Slide, _) => Ok((buf.to_char_cursor(), None)),
             (Scroll::Align, _) => Ok((buf.to_char_cursor(), None)),

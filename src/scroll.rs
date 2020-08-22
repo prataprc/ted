@@ -11,6 +11,64 @@ use crate::{
     Result,
 };
 
+pub fn scroll_right<W, B>(_name: &str, w: &W, buf: &B, n: usize) -> Result<(Cursor, usize)>
+where
+    W: Window,
+    B: WinBuffer,
+{
+    use crate::text;
+
+    let obc_xy = buf.to_xy_cursor(None);
+
+    let lines = match w.config_wrap() {
+        true => {
+            let mut v: view::Wrap = (w, obc_xy).try_into()?;
+            v.shift_cursor(buf)?;
+            v.to_edit_lines(buf)
+        }
+        false => {
+            let mut v: view::NoWrap = (w, obc_xy).try_into()?;
+            v.shift_cursor(buf)?;
+            v.to_edit_lines(buf)
+        }
+    };
+    let (_, nu_wth) = view::to_nu_width(&lines, w.config_line_number());
+
+    let mut cursor = w.to_cursor().unwrap_or(Cursor::default());
+    let col = cursor.col.saturating_sub(nu_wth) as usize;
+    let (col, nbc) = if n < col {
+        (((col - n) + nu_wth as usize) as u16, buf.to_char_cursor())
+    } else {
+        let m = text::visual_line_n(&buf.line(obc_xy.row)).saturating_sub(1);
+        let xy_col = cmp::min(obc_xy.col.saturating_add(n - col), m);
+        let nbc = buf.to_char_cursor() + xy_col.saturating_sub(obc_xy.col);
+        (nu_wth, nbc)
+    };
+    cursor.col = col;
+    Ok((cursor, nbc))
+}
+
+pub fn scroll_left<W, B>(_name: &str, w: &W, buf: &B, n: usize) -> Result<(Cursor, usize)>
+where
+    W: Window,
+    B: WinBuffer,
+{
+    let obc_xy = buf.to_xy_cursor(None);
+
+    let wth = w.to_coord().wth.saturating_sub(1);
+    let mut cursor = w.to_cursor().unwrap_or(Cursor::default());
+    let left_col = wth.saturating_sub(cursor.col);
+    let (col, nbc) = if n < (left_col as usize) {
+        (cursor.col + (n as u16), buf.to_char_cursor())
+    } else {
+        let x = ((cursor.col as usize) + n).saturating_sub(wth as usize);
+        let nbc = obc_xy.col.saturating_sub(x);
+        (wth, nbc)
+    };
+    cursor.col = col;
+    Ok((cursor, nbc))
+}
+
 pub fn scroll_down<W, B>(name: &str, w: &W, buf: &B, n: usize) -> Result<(Cursor, usize)>
 where
     W: Window,
