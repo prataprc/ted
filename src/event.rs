@@ -27,7 +27,7 @@ pub enum Event {
     Delete(KeyModifiers),
     Char(char, KeyModifiers),
     FKey(u8, KeyModifiers),
-    Insert(KeyModifiers),
+    InsKey(KeyModifiers),
     Left(KeyModifiers),
     Right(KeyModifiers),
     Up(KeyModifiers),
@@ -49,9 +49,10 @@ pub enum Event {
     M,            // mark prefix
     Op(Opr),      // Operation  (op-event)
     // folded events for buffer management.
-    Mark(mark::Mark), // (mark-value,)
-    Md(Mod),          // Mode       (n, mode-event)
-    Mt(Mto),          // Motion     (n, motion-event)
+    Mt(Mto),        // Motion     (n, motion-event)
+    Mr(mark::Mark), // (mark-value,)
+    Md(Mod),        // modal command.
+    In(Insrt),      // insert command.
     TabInsert(String),
     TabClear,
     // other events
@@ -75,15 +76,19 @@ impl Event {
 
         match self.clone() {
             Backspace(m) | Enter(m) | Tab(m) | Delete(m) => m,
-            Char(_, m) | FKey(_, m) | Insert(m) => m,
+            Char(_, m) | FKey(_, m) | InsKey(m) => m,
             Left(m) | Right(m) | Up(m) | Down(m) => m,
             Home(m) | End(m) | PageUp(m) | PageDown(m) => m,
             BackTab | Esc => empty,
             // prefix events
-            N(_) | G(_) | B(_, _) | F(_, _) | T(_, _) => empty,
-            M | J(_) | Z(_) | Op(_) => empty,
+            N(_) | G(_) | B(_, _) | F(_, _) | T(_, _) | M | J(_) | Z(_) => empty,
+            Op(op) => op.to_modifiers(),
             // folded events for buffer management.
-            Mark(_) | Md(_) | Mt(_) | TabInsert(_) | TabClear => empty,
+            Mr(_) => empty,
+            Md(mode) => mode.to_modifiers(),
+            Mt(mto) => mto.to_modifiers(),
+            In(insrt) => insrt.to_modifiers(),
+            TabInsert(_) | TabClear => empty,
             // other events
             JumpFrom(_) | Edit(_) | Write(_) => empty,
             List(_) | Notify(_) | Appn(_) | Ted(_) => empty,
@@ -100,8 +105,8 @@ impl Event {
         }
     }
 
-    /// Return whether the event is to enter insert/append/open mode. In short,
-    /// whether shift to insert-mode.
+    /// Return whether the event is to enter insert/append/open/replace mode.
+    /// In short, whether shift to insert-mode.
     pub fn is_insert(&self) -> bool {
         use {
             Event::Md,
@@ -228,7 +233,7 @@ impl fmt::Display for Event {
             Delete(_) => write!(f, "delete"),
             Char(ch, m) => write!(f, "char({:?},{:?})", ch, m),
             FKey(ch, _) => write!(f, "fkey({})", ch),
-            Insert(_) => write!(f, "insert"),
+            InsKey(_) => write!(f, "insert"),
             Left(_) => write!(f, "left"),
             Right(_) => write!(f, "right"),
             Up(_) => write!(f, "up"),
@@ -250,9 +255,10 @@ impl fmt::Display for Event {
             Z(n) => write!(f, "z({})", n),
             Op(opr) => write!(f, "op({})", opr),
             // folded events for buffer management.
-            Mark(mark) => write!(f, "mark({})", mark),
-            Md(md) => write!(f, "md({})", md),
+            Mr(mark) => write!(f, "mark({})", mark),
             Mt(mt) => write!(f, "mt({})", mt),
+            Md(mode) => write!(f, "md({})", mode),
+            In(insrt) => write!(f, "insrt({})", insrt),
             TabInsert(_) => write!(f, "tab-insert"),
             TabClear => write!(f, "tab-clear"),
             // other events
@@ -272,7 +278,6 @@ impl From<TermEvent> for Event {
     fn from(evnt: TermEvent) -> Event {
         match evnt {
             TermEvent::Key(KeyEvent { code, modifiers: m }) => {
-                let ctrl = m.contains(KeyModifiers::CONTROL);
                 let empty = m.is_empty();
                 match code {
                     //
@@ -280,12 +285,11 @@ impl From<TermEvent> for Event {
                     KeyCode::Enter => Event::Enter(m),
                     KeyCode::Tab => Event::Tab(m),
                     KeyCode::Delete => Event::Delete(m),
-                    KeyCode::Char('[') if ctrl => Event::Esc,
                     KeyCode::Char(ch) => Event::Char(ch, m),
                     KeyCode::F(f) if empty => Event::FKey(f, m),
                     KeyCode::BackTab => Event::BackTab,
                     KeyCode::Esc => Event::Esc,
-                    KeyCode::Insert => Event::Insert(m),
+                    KeyCode::Insert => Event::InsKey(m),
                     KeyCode::Left if empty => Event::Left(m),
                     KeyCode::Right if empty => Event::Right(m),
                     KeyCode::Up if empty => Event::Up(m),
@@ -470,13 +474,20 @@ impl fmt::Display for Opr {
     }
 }
 
-/// Ted is a text processing application and like vi, it is modal.
+impl Opr {
+    fn to_modifiers(&self) -> KeyModifiers {
+        KeyModifiers::empty()
+    }
+}
+
+/// Modal command.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Mod {
     Esc,
-    Insert(usize, DP), // (n, None/TextCol)
-    Append(usize, DP), // (n, Right/End)
-    Open(usize, DP),   // (n, Left/Right)
+    Insert(usize, DP),  // (n, None/TextCol)
+    Append(usize, DP),  // (n, Right/End)
+    Replace(usize, DP), // (n, None/TextCol)
+    Open(usize, DP),    // (n, Left/Right)
 }
 
 impl fmt::Display for Mod {
@@ -485,11 +496,49 @@ impl fmt::Display for Mod {
             Mod::Esc => write!(f, "esc"),
             Mod::Insert(n, dp) => write!(f, "insert({},{})", n, dp),
             Mod::Append(n, dp) => write!(f, "append({},{})", n, dp),
+            Mod::Replace(n, dp) => write!(f, "replace({},{})", n, dp),
             Mod::Open(n, dp) => write!(f, "open({},{})", n, dp),
         }
     }
 }
 
+impl Mod {
+    fn to_modifiers(&self) -> KeyModifiers {
+        KeyModifiers::empty()
+    }
+}
+
+/// Insert command.
+#[derive(Clone, Eq, PartialEq)]
+pub enum Insrt {
+    ReInsert,
+    RemoveWord,
+    RemoveLine,
+    NextWord,
+    PrevWord,
+    RShift(usize), // (n,)
+    LShift(usize), // (n,)
+}
+
+impl fmt::Display for Insrt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        match self {
+            Insrt::ReInsert => write!(f, "re-insert"),
+            Insrt::RemoveWord => write!(f, "remove-word"),
+            Insrt::RemoveLine => write!(f, "remove-line"),
+            Insrt::NextWord => write!(f, "next-line"),
+            Insrt::PrevWord => write!(f, "prev-line"),
+            Insrt::RShift(n) => write!(f, "rshift({})", n),
+            Insrt::LShift(n) => write!(f, "lshift({})", n),
+        }
+    }
+}
+
+impl Insrt {
+    fn to_modifiers(&self) -> KeyModifiers {
+        KeyModifiers::empty()
+    }
+}
 /// Scroll sub-commands for Mto motion command.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Scroll {
@@ -638,6 +687,10 @@ impl Mto {
             _ => err_at!(Fatal, msg: format!("unexpected {}", self))?,
         };
         Ok(evnt)
+    }
+
+    fn to_modifiers(&self) -> KeyModifiers {
+        KeyModifiers::empty()
     }
 }
 

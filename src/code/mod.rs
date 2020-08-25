@@ -337,7 +337,7 @@ impl Application for Code {
 
         let inner = mem::replace(&mut self.inner, Inner::default());
         let (mut inner, evnt) = match (inner, evnt) {
-            (Inner::Edit(edit), Event::Mark(mrk)) => {
+            (Inner::Edit(edit), Event::Mr(mrk)) => {
                 mark::set_mark(&mut self.marks, mrk);
                 (Inner::Edit(edit), Event::Noop)
             }

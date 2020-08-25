@@ -24,8 +24,8 @@ pub struct KeyEdit {
 impl KeyEdit {
     pub fn fold(&mut self, buf: &Buffer, evnt: Event) -> Result<Event> {
         match buf.to_mode() {
-            "insert" => self.insert_fold(evnt),
-            "normal" => self.normal_fold(evnt),
+            "insert" => self.insert_fold(buf, evnt),
+            "normal" => self.normal_fold(buf, evnt),
             _ => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
@@ -36,24 +36,75 @@ impl KeyEdit {
 }
 
 impl KeyEdit {
-    fn insert_fold(&mut self, e: Event) -> Result<Event> {
-        Ok(e)
-    }
-
-    fn normal_fold(&mut self, evnt: Event) -> Result<Event> {
+    fn insert_fold(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
         use crate::event::Event::*;
-        use crossterm::event::KeyModifiers as KM;
+        use crate::event::Insrt;
 
         let noop = Event::Noop;
 
         let prefix = mem::replace(&mut self.prefix, Event::default());
-        let (m_empty, ctrl, shift) = {
+        let (empty, ctrl) = {
+            use crossterm::event::KeyModifiers as KM;
+            let m = evnt.to_modifiers();
+            (m.is_empty(), m.contains(KM::CONTROL))
+        };
+
+        let (prefix, evnt) = match prefix {
+            Event::Noop if empty => match evnt {
+                Event::Esc => (noop, Md(Mod::Esc)),
+                evnt @ Event::Delete(_) => (noop, evnt),
+                evnt @ Event::Tab(_) => (noop, evnt),
+                evnt @ Event::Enter(_) => (noop, evnt),
+                evnt @ Event::Up(_) => (noop, evnt),
+                evnt @ Event::Down(_) => (noop, evnt),
+                evnt @ Event::Left(_) => (noop, evnt),
+                evnt @ Event::Right(_) => (noop, evnt),
+                evnt @ Event::Home(_) => (noop, evnt),
+                evnt @ Event::End(_) => (noop, evnt),
+                evnt @ Event::PageUp(_) => (noop, evnt),
+                evnt @ Event::PageDown(_) => (noop, evnt),
+                Event::Char('h', m) => (noop, Backspace(m)),
+                evnt => (noop, evnt),
+            },
+            Event::Noop if ctrl => match evnt {
+                Event::Char('[', _) => (noop, Md(Mod::Esc)),
+                Event::Char('a', _) => (noop, In(Insrt::ReInsert)),
+                Event::Char('@', _) => {
+                    let mut evnt = In(Insrt::ReInsert);
+                    evnt.push(Md(Mod::Esc));
+                    (noop, evnt)
+                }
+                Event::Char('w', _) => (noop, In(Insrt::RemoveWord)),
+                Event::Char('u', _) => (noop, In(Insrt::RemoveLine)),
+                Event::Char('n', _) => (noop, In(Insrt::NextWord)),
+                Event::Char('p', _) => (noop, In(Insrt::PrevWord)),
+                Event::Char('t', _) => (noop, In(Insrt::RShift(1))),
+                Event::Char('d', _) => (noop, In(Insrt::LShift(1))),
+                evnt => (noop, evnt),
+            },
+            prefix => (prefix, evnt),
+        };
+
+        debug!("insert prefix:{} event:{}", prefix, evnt);
+
+        self.prefix = prefix;
+        Ok(evnt)
+    }
+
+    fn normal_fold(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
+        use crate::event::Event::*;
+
+        let noop = Event::Noop;
+
+        let prefix = mem::replace(&mut self.prefix, Event::default());
+        let (empty, ctrl, shift) = {
+            use crossterm::event::KeyModifiers as KM;
             let m = evnt.to_modifiers();
             (m.is_empty(), m.contains(KM::CONTROL), m.contains(KM::SHIFT))
         };
 
         let (prefix, evnt) = match prefix {
-            Event::Noop if m_empty | shift => match evnt {
+            Event::Noop if empty | shift => match evnt {
                 // motion command - characterwise
                 Backspace(_) => (noop, Mt(Mto::Left(1, DP::Nobound))),
                 Left(_) => (noop, Mt(Mto::Left(1, DP::LineBound))),
@@ -161,7 +212,7 @@ impl KeyEdit {
                 }
                 evnt => (noop, evnt),
             },
-            N(n) if m_empty | shift => match evnt {
+            N(n) if empty | shift => match evnt {
                 // motion command - characterwise
                 Backspace(_) => (noop, Mt(Mto::Left(n, DP::Nobound))),
                 Left(_) => (noop, Mt(Mto::Left(n, DP::LineBound))),
@@ -268,7 +319,7 @@ impl KeyEdit {
                 }
                 evnt => (noop, evnt),
             },
-            G(n) if m_empty | shift => match evnt {
+            G(n) if empty | shift => match evnt {
                 // motion command - characterwise
                 Home(_) => (noop, Mt(Mto::ScreenHome(DP::None))),
                 End(_) => (noop, Mt(Mto::ScreenEnd(n, DP::None))),
@@ -306,22 +357,22 @@ impl KeyEdit {
                 }
                 evnt => (noop, evnt),
             },
-            B(n, d) if m_empty => match evnt {
+            B(n, d) if empty => match evnt {
                 Char('(', _) => (noop, Mt(Mto::UnmatchPair(n, '(', d))),
                 Char(')', _) => (noop, Mt(Mto::UnmatchPair(n, ')', d))),
                 Char('{', _) => (noop, Mt(Mto::UnmatchPair(n, '{', d))),
                 Char('}', _) => (noop, Mt(Mto::UnmatchPair(n, '}', d))),
                 evnt => (noop, evnt),
             },
-            F(n, d) if m_empty => match evnt {
+            F(n, d) if empty => match evnt {
                 Char(ch, _) => (noop, Mt(Mto::CharF(n, Some(ch), d))),
                 evnt => (noop, evnt),
             },
-            T(n, d) if m_empty => match evnt {
+            T(n, d) if empty => match evnt {
                 Char(ch, _) => (noop, Mt(Mto::CharT(n, Some(ch), d))),
                 evnt => (noop, evnt),
             },
-            Z(n) if m_empty => match evnt {
+            Z(n) if empty => match evnt {
                 // motion commands, window scroll - vertical
                 Enter(_) => {
                     let evnt = Mt(Mto::WinScroll(n, Scroll::TextUp, DP::TextCol));
@@ -382,14 +433,14 @@ impl KeyEdit {
                 }
                 evnt => (noop, evnt),
             },
-            M if m_empty => match evnt {
+            M if empty => match evnt {
                 Char(ch, _) => match ch {
-                    'a'..='z' | 'A'..='Z' | '\'' | '`' => (noop, Mark(ch.into())),
+                    'a'..='z' | 'A'..='Z' | '\'' | '`' => (noop, Mr(ch.into())),
                     _ => (noop, evnt),
                 },
                 evnt => (noop, evnt),
             },
-            J(typ) if m_empty => match evnt {
+            J(typ) if empty => match evnt {
                 Char(ch, _) => match ch {
                     '\'' | '`' => (noop, Mt(Mto::Jump(typ, ch))),
                     'a'..='z' => (noop, Mt(Mto::Jump(typ, ch))),
@@ -401,7 +452,7 @@ impl KeyEdit {
             prefix => (prefix, evnt),
         };
 
-        debug!("prefix:{} event:{}", prefix, evnt);
+        debug!("normal prefix:{} event:{}", prefix, evnt);
 
         self.prefix = prefix;
         Ok(evnt)

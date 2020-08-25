@@ -38,6 +38,9 @@ pub const NL: char = '\n';
 /// Maximum number of lines supported by this buffer implementation.
 pub const MAX_LINES: usize = 1_000_000_000;
 
+/// Number of spaces to use for each step of indent.
+pub const SHIFT_WIDTH: usize = 4;
+
 lazy_static! {
     static ref BUFFER_NUM: Mutex<usize> = Mutex::new(0);
 }
@@ -140,9 +143,10 @@ pub struct Buffer {
     pub read_only: bool,
     /// Text-format for this buffer.
     pub format: text::Format,
+    /// Shift-width, number of spaces to use for each step of indent.
+    pub shift_width: usize,
 
-    // Globally counting buffer number.
-    num: usize, // buffer number
+    pub num: usize, // buffer number
     // Buffer states
     inner: Inner,
     // current tab-completion state
@@ -164,8 +168,9 @@ pub struct Buffer {
 
 #[derive(Clone)]
 enum Inner {
-    Insert(InsertBuffer),
     Normal(NormalBuffer),
+    Insert(InsertBuffer),
+    Replace(ReplaceBuffer),
 }
 
 impl Default for Inner {
@@ -180,6 +185,7 @@ impl Default for Buffer {
             location: Location::default(),
             read_only: bool::default(),
             format: text::Format::default(),
+            shift_width: SHIFT_WIDTH,
 
             num: usize::default(),
             inner: Inner::default(),
@@ -208,6 +214,7 @@ impl Buffer {
             location: loc,
             read_only: false,
             format: text::Format::default(),
+            shift_width: SHIFT_WIDTH,
 
             num: *num,
             inner: Inner::Normal(NormalBuffer::new(buf)),
@@ -232,6 +239,7 @@ impl Buffer {
         match &mut self.inner {
             Inner::Normal(val) => val.set_cursor(cursor),
             Inner::Insert(val) => val.set_cursor(cursor),
+            Inner::Replace(val) => val.set_cursor(cursor),
         };
         self
     }
@@ -243,6 +251,11 @@ impl Buffer {
 
     pub fn set_format(&mut self, format: text::Format) -> &mut Self {
         self.format = format;
+        self
+    }
+
+    pub fn set_shift_width(&mut self, shift_width: usize) -> &mut Self {
+        self.shift_width = shift_width;
         self
     }
 
@@ -397,8 +410,9 @@ impl Buffer {
     #[inline]
     pub fn to_mode(&self) -> &'static str {
         match &self.inner {
-            Inner::Insert(_) => "insert",
             Inner::Normal(_) => "normal",
+            Inner::Insert(_) => "insert",
+            Inner::Replace(_) => "replace",
         }
     }
 
@@ -445,6 +459,7 @@ impl Buffer {
         match &self.inner {
             Inner::Normal(val) => val.to_change(),
             Inner::Insert(val) => val.to_change(),
+            Inner::Replace(val) => val.to_change(),
         }
     }
 
@@ -452,6 +467,7 @@ impl Buffer {
         match &mut self.inner {
             Inner::Insert(ib) => ib.to_mut_change(),
             Inner::Normal(nb) => nb.to_mut_change(),
+            Inner::Replace(rb) => rb.to_mut_change(),
         }
     }
 
@@ -472,18 +488,22 @@ impl Buffer {
 
 impl Buffer {
     pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
-        let evnt = match self.to_mode() {
-            "insert" => self.handle_i_event(evnt),
-            "normal" => self.handle_n_event(evnt),
-            mode => err_at!(Fatal, msg: format!("invalid buffer-mode {}", mode)),
-        }?;
+        let mut res = Event::Noop;
+        for evnt in evnt {
+            res.push(match self.to_mode() {
+                "normal" => self.handle_n_event(evnt),
+                "insert" | "replace" => self.handle_i_event(evnt),
+                mode => err_at!(Fatal, msg: format!("invalid mode {}", mode)),
+            }?);
+        }
 
-        Ok(evnt)
+        Ok(res)
     }
 
     pub fn mode_normal(&mut self) {
         self.inner = match mem::replace(&mut self.inner, Inner::default()) {
             Inner::Insert(ib) => Inner::Normal(ib.into()),
+            Inner::Replace(rb) => Inner::Normal(rb.into()),
             inner @ Inner::Normal(_) => inner,
         };
     }
@@ -491,6 +511,7 @@ impl Buffer {
     pub fn mode_insert(&mut self) {
         self.inner = match mem::replace(&mut self.inner, Inner::default()) {
             Inner::Normal(nb) => Inner::Insert(nb.into()),
+            Inner::Replace(rb) => Inner::Insert(rb.into()),
             inner @ Inner::Insert(_) => inner,
         };
     }
@@ -500,6 +521,7 @@ impl Buffer {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
+            Inner::Replace(rb) => &mut rb.change,
         };
 
         *change = Change::to_next_change(change);
@@ -511,6 +533,7 @@ impl Buffer {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
+            Inner::Replace(rb) => &mut rb.change,
         };
 
         *change = Change::to_next_change(change);
@@ -522,6 +545,7 @@ impl Buffer {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
+            Inner::Replace(rb) => &mut rb.change,
         };
 
         *change = Change::to_next_change(change);
@@ -536,6 +560,7 @@ impl Buffer {
         let change = match &mut self.inner {
             Inner::Normal(nb) => &mut nb.change,
             Inner::Insert(ib) => &mut ib.change,
+            Inner::Replace(rb) => &mut rb.change,
         };
 
         *change = Change::to_next_change(change);
@@ -707,13 +732,13 @@ impl Buffer {
                     _ => Event::Mt(Mto::Jump(typ, mindex)),
                 }
             }
-            Event::Mark(mrk) => match mrk.to_index() {
+            Event::Mr(mrk) => match mrk.to_index() {
                 'a'..='z' | '\'' | '`' => {
                     let mrk = mrk.into_mark(self);
                     mark::set_mark(&mut self.marks, mrk);
                     Event::Noop
                 }
-                'A'..='Z' => Event::Mark(mrk.into_mark(self)),
+                'A'..='Z' => Event::Mr(mrk.into_mark(self)),
                 _ => Event::Noop,
             },
 
@@ -792,6 +817,7 @@ impl Buffer {
                 _ => (Inner::Normal(nb), Event::Noop),
             },
             inner @ Inner::Insert(_) => (inner, evnt),
+            inner @ Inner::Replace(_) => (inner, evnt),
         };
 
         self.inner = inner;
@@ -957,6 +983,12 @@ impl From<InsertBuffer> for NormalBuffer {
     }
 }
 
+impl From<ReplaceBuffer> for NormalBuffer {
+    fn from(rb: ReplaceBuffer) -> NormalBuffer {
+        NormalBuffer { change: rb.change }
+    }
+}
+
 impl NormalBuffer {
     fn new(buf: Rope) -> NormalBuffer {
         let mut nb = NormalBuffer::default();
@@ -990,6 +1022,12 @@ impl From<NormalBuffer> for InsertBuffer {
     }
 }
 
+impl From<ReplaceBuffer> for InsertBuffer {
+    fn from(rb: ReplaceBuffer) -> InsertBuffer {
+        InsertBuffer { change: rb.change }
+    }
+}
+
 impl Default for InsertBuffer {
     fn default() -> InsertBuffer {
         InsertBuffer {
@@ -1005,6 +1043,41 @@ impl InsertBuffer {
 }
 
 impl InsertBuffer {
+    fn to_change(&self) -> cell::Ref<Change> {
+        self.change.as_ref().borrow()
+    }
+
+    fn to_mut_change(&mut self) -> cell::RefMut<Change> {
+        self.change.as_ref().borrow_mut()
+    }
+}
+
+#[derive(Clone)]
+struct ReplaceBuffer {
+    change: Rc<RefCell<Change>>,
+}
+
+impl From<NormalBuffer> for ReplaceBuffer {
+    fn from(nb: NormalBuffer) -> ReplaceBuffer {
+        ReplaceBuffer { change: nb.change }
+    }
+}
+
+impl Default for ReplaceBuffer {
+    fn default() -> ReplaceBuffer {
+        ReplaceBuffer {
+            change: Default::default(),
+        }
+    }
+}
+
+impl ReplaceBuffer {
+    fn set_cursor(&mut self, cursor: usize) {
+        self.to_mut_change().set_cursor(cursor)
+    }
+}
+
+impl ReplaceBuffer {
     fn to_change(&self) -> cell::Ref<Change> {
         self.change.as_ref().borrow()
     }
