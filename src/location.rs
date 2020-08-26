@@ -11,20 +11,25 @@ lazy_static! {
     static ref MEM_BUFFER_N: Mutex<usize> = Mutex::new(0);
 }
 
-/// Location of buffer's content, typically a persistent medium.
+/// Location of buffer's content, typically persistent medium. Each
+/// variant denotes the location type.
 #[derive(Clone)]
 pub enum Location {
+    /// Memory location, transient aka buffer is not persisted.
     Memory {
         name: String,
         text: String,
         read_only: bool,
     },
+    /// Disk location, durable.
     Disk {
         loc: ffi::OsString,
         path_file: ffi::OsString,
         enc: String,
         read_only: bool,
     },
+    /// Ted application buffers, similar to `Memory`. Mostly configured
+    /// as read-only.
     Ted {
         name: String,
         text: String,
@@ -75,7 +80,7 @@ impl Location {
         })
     }
 
-    /// Create a new buffer to be used within `ted` windows.
+    /// Create a new buffer to be used within `ted` window.
     pub fn new_ted<R>(name: &str, r: R, read_only: bool) -> Result<Location>
     where
         R: io::Read,
@@ -91,6 +96,7 @@ impl Location {
 }
 
 impl Location {
+    /// Read the content of buffer as [String].
     pub fn read(&self) -> Result<String> {
         use std::fs;
 
@@ -107,6 +113,12 @@ impl Location {
         }
     }
 
+    /// Read the content as String, and convert it to bytes.
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        Ok(self.read()?.into())
+    }
+
+    /// Return whether the buffer is read-only.
     pub fn is_read_only(&self) -> bool {
         match self {
             Location::Memory { read_only, .. } => *read_only,
@@ -115,7 +127,8 @@ impl Location {
         }
     }
 
-    pub fn to_tab_title(&self, wth: usize) -> Result<String> {
+    /// Return user-friendly title for buffer.
+    pub fn to_title(&self, wth: usize) -> Result<String> {
         match self {
             Location::Disk { loc, .. } => disk_to_tab_title(loc, wth),
             Location::Memory { name, .. } => Ok(format!(" M({:13}) ", name)),
@@ -123,7 +136,7 @@ impl Location {
         }
     }
 
-    /// Return full path of the location, for display purpose.
+    /// Return full path/name of location, for display purpose.
     pub fn to_long_string(&self) -> Result<String> {
         let name = match self {
             Location::Disk { path_file, .. } => {
@@ -136,7 +149,8 @@ impl Location {
         Ok(name)
     }
 
-    /// Return shrunk, but meaningful, version of path for display purpose.
+    /// Return a shrunk, but meaningful, version of path/name for
+    /// display purpose.
     pub fn to_short_string(&self) -> Result<String> {
         let name = match self {
             Location::Memory { name, .. } => name.clone(),

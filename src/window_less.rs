@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use log::{debug, trace};
 
-use std::{convert::TryInto, fmt, io, mem, result};
+use std::{convert::TryInto, fmt, mem, result};
 
 use crate::{
     buffer::Buffer,
@@ -47,8 +47,8 @@ impl WindowLess {
     pub fn new(name: &str, content: &str, coord: Coord, scheme: ColorScheme) -> Result<Self> {
         let buf = {
             let read_only = true;
-            let loc = Location::new_ted(&name, io::empty(), read_only)?;
-            Buffer::from_reader(content.as_bytes(), loc)?
+            let loc = Location::new_ted(&name, content.as_bytes(), read_only)?;
+            Buffer::from_reader(loc)?
         };
         let mut w = WindowLess {
             coord,
@@ -61,7 +61,7 @@ impl WindowLess {
             wrap: false,
         };
         debug!("{}", w);
-        w.buffer.mode_normal();
+        w.buffer.set_normal_mode();
         Ok(w)
     }
 

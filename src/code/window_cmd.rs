@@ -42,10 +42,10 @@ impl WindowCmd {
         let mut buf = {
             let read_only = false;
             let loc = Location::new_ted("code-cmd", io::empty(), read_only)?;
-            Buffer::from_reader(io::empty(), loc)?
+            Buffer::from_reader(loc)?
         };
-        buf.mode_insert();
-        buf.cmd_insert_char(':').unwrap();
+        buf.set_insert_mode();
+        buf.cud_char(None, ':').unwrap();
 
         let cursor = view::NoWrap::initial_cursor(false /*line_number*/);
         let obc_xy = (0, 0).into();
@@ -97,10 +97,11 @@ impl Window for WindowCmd {
     fn on_event(&mut self, app: &mut code::Code, mut evnt: Event) -> Result<Event> {
         use crate::code::cmd::Command;
 
-        let mut buf = mem::replace(&mut self.buf, Buffer::default());
+        let mut buf = mem::replace(&mut self.buf, Buffer::empty());
         evnt = match self.keymap.fold(&mut buf, evnt)? {
             Event::N(n) => {
-                buf.cmd_insert(0, &format!(".,.+{}", n.saturating_sub(1)))?;
+                let s = format!(".,.+{}", n.saturating_sub(1));
+                buf.cud_str(Some(0), &s)?;
                 Event::Noop
             }
             Event::Enter(_) => {

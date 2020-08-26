@@ -65,7 +65,7 @@ impl WindowPrompt {
             buffer: Buffer::empty(),
             options: Vec::default(),
         };
-        w.buffer.mode_insert();
+        w.buffer.set_insert_mode();
         w
     }
 }

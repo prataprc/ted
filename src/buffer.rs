@@ -32,9 +32,6 @@ use crate::{
     {err_at, Error, Result},
 };
 
-/// Newline character supported by this buffer implementation.
-pub const NL: char = '\n';
-
 /// Maximum number of lines supported by this buffer implementation.
 pub const MAX_LINES: usize = 1_000_000_000;
 
@@ -45,11 +42,12 @@ lazy_static! {
     static ref BUFFER_NUM: Mutex<usize> = Mutex::new(0);
 }
 
-/// Cursor within the buffer, where the first row, first column
-/// start from (0, 0).
+/// Cursor within buffer in two-dimensional coordinate.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct Cursor {
+    /// Cursor column start from ZERO.
     pub col: usize,
+    /// Cursor row start from ZERO.
     pub row: usize,
 }
 
@@ -109,32 +107,10 @@ impl Ord for Cursor {
     }
 }
 
-#[derive(Clone, Copy)]
-enum StickyCol {
-    Home,
-    End,
-    None,
-}
-
-impl Default for StickyCol {
-    fn default() -> Self {
-        StickyCol::None
-    }
-}
-
-#[derive(Clone)]
-enum TabState {
-    Active(String),
-    None,
-}
-
-impl Default for TabState {
-    fn default() -> Self {
-        TabState::None
-    }
-}
-
-// all bits and pieces of content is managed by buffer.
+/// All bits and pieces of content is managed by buffer.
+///
+/// Content is to be found in location, refer [Location] for details. Use
+/// `set_` methods to configure the buffer instance.
 #[derive(Clone)]
 pub struct Buffer {
     /// Source for this buffer, typically a file from local disk.
@@ -145,13 +121,15 @@ pub struct Buffer {
     pub format: text::Format,
     /// Shift-width, number of spaces to use for each step of indent.
     pub shift_width: usize,
-
+    /// Buffer number, for easy picking. Make sure to set unique numbers
+    /// for each buffer.
     pub num: usize, // buffer number
+
     // Buffer states
     inner: Inner,
+
     // current tab-completion state
     tab_state: TabState,
-
     // mark-list [a-z]
     marks: mark::Marks,
     // sticky state for cursor column.
@@ -179,35 +157,47 @@ impl Default for Inner {
     }
 }
 
-impl Default for Buffer {
-    fn default() -> Self {
-        Buffer {
-            location: Location::default(),
-            read_only: bool::default(),
-            format: text::Format::default(),
-            shift_width: SHIFT_WIDTH,
+impl Inner {
+    #[inline]
+    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<()> {
+        match self {
+            Inner::Normal(_) => Ok(()),
+            Inner::Insert(ib) => ib.cud_char(cursor, ch),
+            Inner::Replace(rb) => rb.cud_char(cursor, ch),
+        }
+    }
 
-            num: usize::default(),
-            inner: Inner::default(),
-            tab_state: TabState::default(),
+    #[inline]
+    fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<()> {
+        match self {
+            Inner::Normal(_) => Ok(()),
+            Inner::Insert(ib) => ib.cud_str(cursor, text),
+            Inner::Replace(rb) => rb.cud_str(cursor, text),
+        }
+    }
 
-            marks: mark::new_marks(),
-            sticky_col: StickyCol::default(),
-            mto_pattern: Mto::default(),
-            mto_find_char: Mto::default(),
-            insert_repeat: usize::default(),
-            last_inserts: Vec::default(),
+    #[inline]
+    fn cud_delete<R>(&mut self, range: R) -> Result<()>
+    where
+        R: RangeBounds<usize>,
+    {
+        match self {
+            Inner::Normal(_) => Ok(()),
+            Inner::Insert(ib) => ib.cud_delete(range),
+            Inner::Replace(rb) => rb.cud_delete(range),
         }
     }
 }
 
 /// Create and configure a text buffer.
 impl Buffer {
-    pub fn from_reader<R>(data: R, loc: Location) -> Result<Buffer>
-    where
-        R: io::Read,
-    {
-        let buf = err_at!(FailBuffer, Rope::from_reader(data))?;
+    /// Create a new instance of buffer pre-populating it with
+    /// content from `loc`. Refer [Location] for details.
+    pub fn from_reader(loc: Location) -> Result<Buffer> {
+        let buf = {
+            let bytes = loc.to_bytes()?;
+            err_at!(FailBuffer, Rope::from_reader(bytes.as_slice()))?
+        };
         let mut num = BUFFER_NUM.lock().unwrap();
         *num = *num + 1;
         let b = Buffer {
@@ -215,11 +205,11 @@ impl Buffer {
             read_only: false,
             format: text::Format::default(),
             shift_width: SHIFT_WIDTH,
-
             num: *num,
-            inner: Inner::Normal(NormalBuffer::new(buf)),
-            tab_state: TabState::default(),
 
+            inner: Inner::Normal(NormalBuffer::new(buf)),
+
+            tab_state: TabState::default(),
             marks: mark::new_marks(),
             sticky_col: StickyCol::default(),
             mto_pattern: Mto::default(),
@@ -231,10 +221,12 @@ impl Buffer {
         Ok(b)
     }
 
+    /// Create an empty buffer backed by transient in-memory location.
     pub fn empty() -> Buffer {
-        Self::from_reader(io::empty(), Location::default()).unwrap()
+        Self::from_reader(Location::default()).unwrap()
     }
 
+    /// Set cursor postion within the buffer, cursor as character index.
     pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
         match &mut self.inner {
             Inner::Normal(val) => val.set_cursor(cursor),
@@ -244,26 +236,35 @@ impl Buffer {
         self
     }
 
+    /// Configure buffer as read-only.
     pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
         self.read_only = read_only;
         self
     }
 
+    /// Configure buffer's text-format. Refer [text::Format] for details.
     pub fn set_format(&mut self, format: text::Format) -> &mut Self {
         self.format = format;
         self
     }
 
+    /// Configure shift-width for text-indentation.
     pub fn set_shift_width(&mut self, shift_width: usize) -> &mut Self {
         self.shift_width = shift_width;
         self
     }
 
+    /// Clear sticky-column for this buffer. Certian buffer commands shall
+    /// make the cursor stick to the end-of-the-line or beginning-of-the-line.
     pub fn clear_sticky_col(&mut self) -> &mut Self {
         self.sticky_col = StickyCol::default();
         self
     }
 
+    /// Set cursor to stick to end-of-line or beginning-of-line.
+    ///
+    /// * End-of-line: `pos` == [DP::StickyCol] && at == "end"
+    /// * Beginning-of-line: `pos` == [DP::StickyCol] && at == "home"
     pub fn set_sticky_col(&mut self, pos: DP, at: &str) -> &mut Self {
         match (pos, at) {
             (DP::TextCol, _) => self.sticky_col = StickyCol::default(),
@@ -273,6 +274,24 @@ impl Buffer {
             (pos, at) => panic!("invalid position: {} {}", pos, at),
         };
         self
+    }
+
+    /// Switch buffer to `Normal` mode.
+    pub fn set_normal_mode(&mut self) {
+        self.inner = match mem::replace(&mut self.inner, Inner::default()) {
+            Inner::Insert(ib) => Inner::Normal(ib.into()),
+            Inner::Replace(rb) => Inner::Normal(rb.into()),
+            inner @ Inner::Normal(_) => inner,
+        };
+    }
+
+    /// Switch buffer to `Insert` mode.
+    pub fn set_insert_mode(&mut self) {
+        self.inner = match mem::replace(&mut self.inner, Inner::default()) {
+            Inner::Normal(nb) => Inner::Insert(nb.into()),
+            Inner::Replace(rb) => Inner::Insert(rb.into()),
+            inner @ Inner::Insert(_) => inner,
+        };
     }
 }
 
@@ -396,14 +415,13 @@ impl Buffer {
     /// Return whether buffer is marked read-only.
     #[inline]
     pub fn is_read_only(&self) -> bool {
-        self.read_only
+        self.location.is_read_only()
     }
 
     /// Return whether buffer is marked as modified.
     #[inline]
     pub fn is_modified(&self) -> bool {
-        let change = self.to_change();
-        change.parent.is_some() || !change.children.is_empty()
+        self.to_change().is_modified()
     }
 
     /// Return current buffer state as string.
@@ -448,6 +466,7 @@ impl Buffer {
         self.to_change().as_ref().to_string()
     }
 
+    /// Convert byte-index to valid character-index within buffer.
     pub fn byte_to_char(&self, byte_idx: usize) -> usize {
         self.to_change().as_ref().byte_to_char(byte_idx)
     }
@@ -463,14 +482,7 @@ impl Buffer {
         }
     }
 
-    fn to_mut_change(&mut self) -> cell::RefMut<Change> {
-        match &mut self.inner {
-            Inner::Insert(ib) => ib.to_mut_change(),
-            Inner::Normal(nb) => nb.to_mut_change(),
-            Inner::Replace(rb) => rb.to_mut_change(),
-        }
-    }
-
+    #[inline]
     fn char_to_line(&self, char_idx: usize) -> usize {
         self.to_change().rope.char_to_line(char_idx)
     }
@@ -499,72 +511,25 @@ impl Buffer {
 
         Ok(res)
     }
+}
 
-    pub fn mode_normal(&mut self) {
-        self.inner = match mem::replace(&mut self.inner, Inner::default()) {
-            Inner::Insert(ib) => Inner::Normal(ib.into()),
-            Inner::Replace(rb) => Inner::Normal(rb.into()),
-            inner @ Inner::Normal(_) => inner,
-        };
-    }
-
-    pub fn mode_insert(&mut self) {
-        self.inner = match mem::replace(&mut self.inner, Inner::default()) {
-            Inner::Normal(nb) => Inner::Insert(nb.into()),
-            Inner::Replace(rb) => Inner::Insert(rb.into()),
-            inner @ Inner::Insert(_) => inner,
-        };
+impl Buffer {
+    #[inline]
+    pub fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<()> {
+        self.inner.cud_char(cursor, ch)
     }
 
     #[inline]
-    pub fn cmd_insert_char(&mut self, ch: char) -> Result<()> {
-        let change = match &mut self.inner {
-            Inner::Normal(nb) => &mut nb.change,
-            Inner::Insert(ib) => &mut ib.change,
-            Inner::Replace(rb) => &mut rb.change,
-        };
-
-        *change = Change::to_next_change(change);
-        self.to_mut_change().insert_char(ch)
+    pub fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<()> {
+        self.inner.cud_str(cursor, text)
     }
 
     #[inline]
-    pub fn cmd_insert(&mut self, char_idx: usize, text: &str) -> Result<()> {
-        let change = match &mut self.inner {
-            Inner::Normal(nb) => &mut nb.change,
-            Inner::Insert(ib) => &mut ib.change,
-            Inner::Replace(rb) => &mut rb.change,
-        };
-
-        *change = Change::to_next_change(change);
-        self.to_mut_change().insert(char_idx, text)
-    }
-
-    #[inline]
-    pub fn cmd_backspace(&mut self, n: usize) -> Result<()> {
-        let change = match &mut self.inner {
-            Inner::Normal(nb) => &mut nb.change,
-            Inner::Insert(ib) => &mut ib.change,
-            Inner::Replace(rb) => &mut rb.change,
-        };
-
-        *change = Change::to_next_change(change);
-        self.to_mut_change().backspace(n)
-    }
-
-    #[inline]
-    pub fn cmd_delete_over<R>(&mut self, range: R) -> Result<()>
+    pub fn cud_delete<R>(&mut self, range: R) -> Result<()>
     where
         R: RangeBounds<usize>,
     {
-        let change = match &mut self.inner {
-            Inner::Normal(nb) => &mut nb.change,
-            Inner::Insert(ib) => &mut ib.change,
-            Inner::Replace(rb) => &mut rb.change,
-        };
-
-        *change = Change::to_next_change(change);
-        self.to_mut_change().remove_over(range)
+        self.inner.cud_delete(range)
     }
 }
 
@@ -580,6 +545,7 @@ impl Buffer {
         };
 
         debug!("buffer {}", evnt);
+
         let evnt = match evnt {
             // motion command - characterwise.
             Event::Mt(Mto::Left(n, dp)) => {
@@ -798,7 +764,7 @@ impl Buffer {
                         let cursor = mto_line_home(self, DP::None)?;
                         self.set_cursor(cursor);
                     }
-                    self.cmd_insert_char(NL)?;
+                    self.cud_str(None, self.format.newline())?;
                     let cursor = mto_left(self, 1, DP::Nobound)?;
                     self.set_cursor(cursor).clear_sticky_col();
                     (Inner::Insert(nb.into()), Event::Noop)
@@ -811,7 +777,7 @@ impl Buffer {
                     }
                     let cursor = mto_right(self, 1, DP::Nobound)?;
                     self.set_cursor(cursor).clear_sticky_col();
-                    self.cmd_insert_char(NL)?;
+                    self.cud_str(None, self.format.newline())?;
                     (Inner::Insert(nb.into()), Event::Noop)
                 }
                 _ => (Inner::Normal(nb), Event::Noop),
@@ -878,29 +844,31 @@ impl Buffer {
                 self.repeat()?;
                 let cursor = mto_left(self, 1, DP::LineBound)?;
                 self.set_cursor(cursor).clear_sticky_col();
-                self.mode_normal();
+                self.set_normal_mode();
                 Event::Noop
             }
             // on going insert
             Char(ch, _) => {
-                self.cmd_insert_char(ch)?;
+                self.cud_char(None, ch)?;
                 Event::Noop
             }
-            Backspace(_) => {
-                self.cmd_backspace(1)?;
+            Backspace(_) if self.to_char_cursor() > 0 => {
+                let from = self.to_char_cursor().saturating_sub(1);
+                self.cud_delete(from..=from)?;
                 Event::Noop
             }
+            Backspace(_) => Event::Noop,
             Enter(_) => {
-                self.cmd_insert_char(NL)?;
+                self.cud_str(None, self.format.newline())?;
                 Event::Noop
             }
             Tab(_) => {
-                self.cmd_insert_char('\t')?;
+                self.cud_char(None, '\t')?;
                 Event::Noop
             }
             Delete(_) => {
                 let cursor = self.to_char_cursor();
-                self.cmd_delete_over(cursor..=cursor)?;
+                self.cud_delete(cursor..=cursor)?;
                 Event::Noop
             }
             // tab completion events
@@ -909,11 +877,11 @@ impl Buffer {
                 match &self.tab_state {
                     TabState::Active(old) => {
                         let to = cursor + old.chars().count();
-                        self.cmd_delete_over(cursor..to)?;
+                        self.cud_delete(cursor..to)?;
                     }
                     TabState::None => (),
                 }
-                self.cmd_insert(cursor, new.as_str())?;
+                self.cud_str(Some(cursor), new.as_str())?;
                 self.tab_state = TabState::Active(new);
                 Event::Noop
             }
@@ -922,7 +890,7 @@ impl Buffer {
                     TabState::Active(old) => {
                         let from = self.to_char_cursor();
                         let to = from + old.chars().count();
-                        self.cmd_delete_over(from..to)?;
+                        self.cud_delete(from..to)?;
                     }
                     TabState::None => (),
                 };
@@ -1040,6 +1008,27 @@ impl InsertBuffer {
     fn set_cursor(&mut self, cursor: usize) {
         self.to_mut_change().set_cursor(cursor)
     }
+
+    #[inline]
+    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<()> {
+        self.change = Change::fork(&mut self.change);
+        self.to_mut_change().cud_char(cursor, ch)
+    }
+
+    #[inline]
+    fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<()> {
+        self.change = Change::fork(&mut self.change);
+        self.to_mut_change().cud_str(cursor, text)
+    }
+
+    #[inline]
+    fn cud_delete<R>(&mut self, range: R) -> Result<()>
+    where
+        R: RangeBounds<usize>,
+    {
+        self.change = Change::fork(&mut self.change);
+        self.to_mut_change().cud_delete(range)
+    }
 }
 
 impl InsertBuffer {
@@ -1075,6 +1064,27 @@ impl ReplaceBuffer {
     fn set_cursor(&mut self, cursor: usize) {
         self.to_mut_change().set_cursor(cursor)
     }
+
+    #[inline]
+    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<()> {
+        self.change = Change::fork(&mut self.change);
+        self.to_mut_change().cud_char(cursor, ch)
+    }
+
+    #[inline]
+    fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<()> {
+        self.change = Change::fork(&mut self.change);
+        self.to_mut_change().cud_str(cursor, text)
+    }
+
+    #[inline]
+    fn cud_delete<R>(&mut self, range: R) -> Result<()>
+    where
+        R: RangeBounds<usize>,
+    {
+        self.change = Change::fork(&mut self.change);
+        self.to_mut_change().cud_delete(range)
+    }
 }
 
 impl ReplaceBuffer {
@@ -1087,11 +1097,25 @@ impl ReplaceBuffer {
     }
 }
 
+// A change captures a single session of CUD commands. The main
+// purpose is to implement undo/redo and few other associated features.
+//
+// NOTE: Visualize the change tree, maintained via `past` and `news`
+// references, as inverted tree of changes, with root being the oldest
+// change.
 #[derive(Clone)]
 struct Change {
+    // persistent clone shared among all previous changes.
     rope: Rope,
-    parent: Option<rc::Weak<RefCell<Change>>>,
-    children: Vec<Rc<RefCell<Change>>>,
+    // a change always come from a single past.
+    past: Option<rc::Weak<RefCell<Change>>>,
+    // and it can have ZERO or more futures.
+    news: Vec<Rc<RefCell<Change>>>,
+    // redo path, offset into `news`.
+    redo: Option<usize>,
+    // list of events for this change-session.
+    cuds: Event,
+    // last and latest cursor position for this change.
     cursor: usize,
 }
 
@@ -1099,19 +1123,10 @@ impl Default for Change {
     fn default() -> Change {
         Change {
             rope: Rope::from_reader(io::empty()).unwrap(),
-            parent: None,
-            children: Vec::default(),
-            cursor: 0,
-        }
-    }
-}
-
-impl From<Rope> for Change {
-    fn from(rope: Rope) -> Change {
-        Change {
-            rope,
-            parent: None,
-            children: Vec::default(),
+            past: None,
+            news: Vec::default(),
+            redo: None,
+            cuds: Event::Noop,
             cursor: 0,
         }
     }
@@ -1123,37 +1138,43 @@ impl AsRef<Rope> for Change {
     }
 }
 
-impl AsMut<Rope> for Change {
-    fn as_mut(&mut self) -> &mut Rope {
-        &mut self.rope
-    }
-}
-
 impl Change {
+    // Start from the first change.
     fn start(rope: Rope) -> Rc<RefCell<Change>> {
         Rc::new(RefCell::new(Change {
             rope,
-            parent: None,
-            children: Vec::default(),
+            past: None,
+            news: Vec::default(),
+            redo: None,
+            cuds: Event::Noop,
             cursor: 0,
         }))
     }
 
-    fn to_next_change(prev: &mut Rc<RefCell<Change>>) -> Rc<RefCell<Change>> {
-        let next = {
-            let prev_change: &Change = &prev.as_ref().borrow();
+    // fork from current `change`, where current change can be the
+    // leaf node of the inverted tree, or an intermediate node
+    // of the inverted tree.
+    //
+    // a fork always create a new leaf.
+    fn fork(change: &mut Rc<RefCell<Change>>) -> Rc<RefCell<Change>> {
+        let leaf = {
+            let cc: &Change = &change.as_ref().borrow();
             Rc::new(RefCell::new(Change {
-                rope: prev_change.as_ref().clone(),
-                parent: None,
-                children: Vec::default(),
-                cursor: prev_change.cursor,
+                rope: cc.as_ref().clone(),
+                past: Some(Rc::downgrade(change)),
+                news: Vec::default(),
+                redo: None,
+                cuds: Event::Noop,
+                cursor: cc.cursor, // inherit the cursor position.
             }))
         };
-
-        next.borrow_mut().children.push(Rc::clone(prev));
-        prev.borrow_mut().parent = Some(Rc::downgrade(&next));
-
-        next
+        {
+            let cc: &mut Change = &mut change.as_ref().borrow_mut();
+            let redo = cc.news.len();
+            cc.news.push(Rc::clone(&leaf));
+            cc.redo = Some(redo);
+        }
+        leaf
     }
 
     #[inline]
@@ -1164,8 +1185,15 @@ impl Change {
     fn to_xy_cursor(&self, cursor: Option<usize>) -> Cursor {
         let cursor = cursor.unwrap_or(self.cursor);
         let row_at = self.rope.char_to_line(cursor);
-        let col_at = cursor - self.rope.line_to_char(row_at);
+        let col_at = cursor.saturating_sub(self.rope.line_to_char(row_at));
         (col_at, row_at).into()
+    }
+
+    fn is_modified(&self) -> bool {
+        match self.cuds {
+            Event::Noop => false,
+            _ => true,
+        }
     }
 }
 
@@ -1174,26 +1202,20 @@ impl Change {
         self.cursor = cursor;
     }
 
-    fn insert_char(&mut self, ch: char) -> Result<()> {
-        self.rope.insert_char(self.cursor, ch);
+    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<()> {
+        let cursor = cursor.unwrap_or(self.cursor);
+        self.rope.insert_char(cursor, ch);
         self.cursor += 1;
         Ok(())
     }
 
-    fn insert(&mut self, char_idx: usize, text: &str) -> Result<()> {
-        self.rope.insert(char_idx, text);
+    fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<()> {
+        let cursor = cursor.unwrap_or(self.cursor);
+        self.rope.insert(cursor, text);
         Ok(())
     }
 
-    fn backspace(&mut self, n: usize) -> Result<()> {
-        if self.cursor > 0 {
-            let cursor = self.cursor.saturating_sub(n);
-            self.rope.remove(cursor..self.cursor);
-        }
-        Ok(())
-    }
-
-    fn remove_over<R>(&mut self, range: R) -> Result<()>
+    fn cud_delete<R>(&mut self, range: R) -> Result<()>
     where
         R: RangeBounds<usize>,
     {
@@ -1218,62 +1240,6 @@ impl Change {
         }
         Ok(())
     }
-}
-
-impl Change {
-    //TODO
-    //fn fwd_match_group(&mut self) {
-    //    self.cursor = {
-    //        let mut iter = self.iter(true /*fwd*/).enumerate();
-    //        let res = loop {
-    //            match iter.next() {
-    //                Some((i, '(')) => break Some((')', i + 1, true)),
-    //                Some((i, ')')) => break Some(('(', i, false)),
-    //                Some((i, '{')) => break Some(('}', i + 1, true)),
-    //                Some((i, '}')) => break Some(('{', i, false)),
-    //                Some((i, '<')) => break Some(('>', i + 1, true)),
-    //                Some((i, '>')) => break Some(('<', i, false)),
-    //                Some((i, '[')) => break Some(('[', i + 1, true)),
-    //                Some((i, ']')) => break Some(('[', i, false)),
-    //                Some((_, NL)) => break None,
-    //                Some(_) => (),
-    //                None => break None,
-    //            };
-    //        };
-    //        if let Some((nch, noff, fwd)) = res {
-    //            let cursor = self.cursor + noff;
-    //            let mut iter = self.iter_at(fwd, cursor).enumerate();
-    //            loop {
-    //                match iter.next() {
-    //                    Some((i, ch)) if ch == nch && fwd => {
-    //                        break cursor + i;
-    //                    }
-    //                    Some((i, ch)) if ch == nch => {
-    //                        break cursor - i - 1;
-    //                    }
-    //                    Some(_) => (),
-    //                    None => break cursor,
-    //                }
-    //            }
-    //        } else {
-    //            self.cursor
-    //        }
-    //    };
-    //}
-
-    //TODO
-    //fn iter<'a>(&'a self, dp: DP) -> Box<dyn Iterator<Item = char> + 'a> {
-    //    let chars = self.rope.chars_at(self.cursor);
-    //    match dp {
-    //        DP::Left => Box::new(IterChar {
-    //            _change: None,
-    //            iter: chars,
-    //            reverse: true,
-    //        }),
-    //        DP::Right => Box::new(chars),
-    //        _ => unreachable!(),
-    //    }
-    //}
 }
 
 pub fn mto_left(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
@@ -2401,6 +2367,31 @@ impl Search {
                 }
             }
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum StickyCol {
+    Home,
+    End,
+    None,
+}
+
+impl Default for StickyCol {
+    fn default() -> Self {
+        StickyCol::None
+    }
+}
+
+#[derive(Clone)]
+enum TabState {
+    Active(String),
+    None,
+}
+
+impl Default for TabState {
+    fn default() -> Self {
+        TabState::None
     }
 }
 

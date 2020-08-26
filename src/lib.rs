@@ -44,7 +44,7 @@ mod keymap_edit;
 mod keymap_less;
 
 mod syntax;
-mod text;
+pub mod text;
 
 lazy_static! {
     /// Global collection of all pre-packaged color-schemes.

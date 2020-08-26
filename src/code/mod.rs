@@ -285,22 +285,22 @@ impl Code {
         }
 
         for loc in locs.into_iter() {
-            match loc.read() {
-                Ok(s) if loc.is_read_only() => {
-                    debug!("opening {} in read-mode", loc);
-                    let mut buf = Buffer::from_reader(s.as_bytes(), loc).unwrap();
+            let read_only = loc.is_read_only();
+            let loc_msg = loc.to_string();
+            match Buffer::from_reader(loc) {
+                Ok(mut buf) if read_only => {
+                    debug!("opening {} in read-mode", loc_msg);
                     buf.set_read_only(true);
                     buffers.push(buf);
                 }
-                Ok(s) => {
-                    debug!("opening {} in write-mode", loc);
-                    let mut buf = Buffer::from_reader(s.as_bytes(), loc).unwrap();
+                Ok(mut buf) => {
+                    debug!("opening {} in write-mode", loc_msg);
                     buf.set_read_only(self.config.read_only);
                     buffers.push(buf);
                 }
                 Err(err) => {
                     let lines = vec![
-                        format!("error opening {} : {}", loc, err.to_error()),
+                        format!("error opening {} : {}", loc_msg, err.to_error()),
                         format!("-press any key to continue-"),
                     ];
                     let prompt = WindowPrompt::new(coord, lines, scheme.clone());
@@ -443,7 +443,7 @@ impl Application for Code {
         let active = false;
         match self.as_buffer(&edit.wfile.to_buffer_id()) {
             Some(buf) => {
-                let text = match buf.to_location().to_tab_title(wth) {
+                let text = match buf.to_location().to_title(wth) {
                     Ok(text) => text,
                     Err(_) => {
                         let iter = text::take_width(buf.to_id().chars().rev(), wth);

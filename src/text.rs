@@ -1,16 +1,26 @@
+//! Module implement types and functions to handle text.
+
 use unicode_width::UnicodeWidthChar;
 
-use std::io;
+use std::{convert::TryFrom, io};
 
 use crate::{Error, Result};
 
+/// Text encoding. This is required for serializing string from buffer
+/// to disk/network or vice-versa.
 pub enum Encoding {
     Utf8(String),
 }
 
-impl From<String> for Encoding {
-    fn from(s: String) -> Encoding {
-        Encoding::Utf8(s)
+impl TryFrom<(String, String)> for Encoding {
+    type Error = Error;
+
+    fn try_from((s, enc): (String, String)) -> Result<Encoding> {
+        match enc.as_str() {
+            "utf-8" => Ok(Encoding::Utf8(s)),
+            "utf8" => Ok(Encoding::Utf8(s)),
+            enc => err_at!(Invalid, msg: format!("encoding `{}`", enc)),
+        }
     }
 }
 
@@ -23,6 +33,8 @@ impl From<Encoding> for String {
 }
 
 impl Encoding {
+    /// Read bytes from `r`, using file-encoding `fenc`. If successful,
+    /// resulting `Encoding` value can be converted to String.
     pub fn from_reader<R>(mut r: R, fenc: &str) -> Result<Encoding>
     where
         R: io::Read,
@@ -44,7 +56,8 @@ impl Encoding {
         }
     }
 
-    pub fn save<W>(&self, mut w: W, _: &str) -> Result<()>
+    /// Serialize string into specified encoding and save them to `w`.
+    pub fn save<W>(&self, mut w: W) -> Result<()>
     where
         W: io::Write,
     {
@@ -54,6 +67,7 @@ impl Encoding {
     }
 }
 
+/// Text format. Mostly to deal with new-line.
 #[derive(Clone)]
 pub enum Format {
     Dos,
@@ -68,6 +82,7 @@ impl Default for Format {
 }
 
 impl Format {
+    /// Return the new-line string for this text-format variant.
     pub fn newline(&self) -> &'static str {
         match self {
             Format::Dos => "\r\n",
@@ -76,7 +91,7 @@ impl Format {
         }
     }
 
-    // return trimed string, and number of bytes trimmed at the end.
+    /// Return trimed string, and number of bytes trimmed at the end.
     pub fn trim_newline(text: &str) -> (&str, usize) {
         use std::{slice::from_raw_parts, str::from_utf8_unchecked};
 
@@ -95,16 +110,20 @@ impl Format {
     }
 }
 
+/// Return the visual-line as string-reference, ignoring the trailing
+/// new line.
 #[inline]
 pub fn visual_line(text: &str) -> &str {
     Format::trim_newline(text).0
 }
 
+/// Return the number of characters in the visual-line.
 #[inline]
 pub fn visual_line_n(text: &str) -> usize {
     Format::trim_newline(text).0.chars().count()
 }
 
+/// Return the total visual-width of all characters emitted by `iter`.
 #[inline]
 pub fn width<I>(iter: I) -> usize
 where
@@ -113,6 +132,8 @@ where
     iter.filter_map(|ch| ch.width()).sum()
 }
 
+/// Take characters from `iter`, whose total visual-width does not exceed
+/// `wth` visual-width.
 pub fn take_width<I>(mut iter: I, wth: usize) -> std::vec::IntoIter<char>
 where
     I: Iterator<Item = char>,
