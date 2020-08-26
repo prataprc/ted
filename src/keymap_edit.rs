@@ -37,24 +37,28 @@ impl KeyEdit {
 
 impl KeyEdit {
     fn insert_fold(&mut self, _: &Buffer, evnt: Event) -> Result<Event> {
+        use crate::event::Cud;
         use crate::event::Event::*;
-        use crate::event::Insrt;
 
         let noop = Event::Noop;
 
         let prefix = mem::replace(&mut self.prefix, Event::default());
-        let (empty, ctrl) = {
+        let (empty, ctrl, shift) = {
             use crossterm::event::KeyModifiers as KM;
             let m = evnt.to_modifiers();
-            (m.is_empty(), m.contains(KM::CONTROL))
+            (m.is_empty(), m.contains(KM::CONTROL), m.contains(KM::SHIFT))
         };
 
         let (prefix, evnt) = match prefix {
             Event::Noop if empty => match evnt {
+                Event::Char(ch, m) if ch.is_control() => (noop, Char(ch, m)),
+                Event::Char(ch, _) => (noop, Wr(Cud::Char(ch))),
                 Event::Esc => (noop, Md(Mod::Esc)),
-                evnt @ Event::Delete(_) => (noop, evnt),
-                evnt @ Event::Tab(_) => (noop, evnt),
-                evnt @ Event::Enter(_) => (noop, evnt),
+                Event::InsKey(_) => (noop.clone(), noop),
+                Event::Backspace(_) => (noop, Wr(Cud::Backspace(1))),
+                Event::Delete(_) => (noop, Wr(Cud::Delete(1))),
+                Event::Tab(_) => (noop, Wr(Cud::Tab(1))),
+                Event::Enter(_) => (noop, Wr(Cud::Enter(1))),
                 evnt @ Event::Up(_) => (noop, evnt),
                 evnt @ Event::Down(_) => (noop, evnt),
                 evnt @ Event::Left(_) => (noop, evnt),
@@ -63,23 +67,29 @@ impl KeyEdit {
                 evnt @ Event::End(_) => (noop, evnt),
                 evnt @ Event::PageUp(_) => (noop, evnt),
                 evnt @ Event::PageDown(_) => (noop, evnt),
-                Event::Char('h', m) => (noop, Backspace(m)),
+                evnt => (noop, evnt),
+            },
+            Event::Noop if shift => match evnt {
+                Event::Char(ch, m) if ch.is_control() => (noop, Char(ch, m)),
+                Event::Char(ch, _) => (noop, Wr(Cud::Char(ch))),
                 evnt => (noop, evnt),
             },
             Event::Noop if ctrl => match evnt {
+                Event::InsKey(_) => (noop.clone(), noop),
+                Event::Char('h', m) => (noop, Backspace(m)),
                 Event::Char('[', _) => (noop, Md(Mod::Esc)),
-                Event::Char('a', _) => (noop, In(Insrt::ReInsert)),
+                Event::Char('a', _) => (noop, Wr(Cud::ReInsert)),
                 Event::Char('@', _) => {
-                    let mut evnt = In(Insrt::ReInsert);
+                    let mut evnt = Wr(Cud::ReInsert);
                     evnt.push(Md(Mod::Esc));
                     (noop, evnt)
                 }
-                Event::Char('w', _) => (noop, In(Insrt::RemoveWord)),
-                Event::Char('u', _) => (noop, In(Insrt::RemoveLine)),
-                Event::Char('n', _) => (noop, In(Insrt::NextWord)),
-                Event::Char('p', _) => (noop, In(Insrt::PrevWord)),
-                Event::Char('t', _) => (noop, In(Insrt::RShift(1))),
-                Event::Char('d', _) => (noop, In(Insrt::LShift(1))),
+                Event::Char('w', _) => (noop, Wr(Cud::RemoveWord)),
+                Event::Char('u', _) => (noop, Wr(Cud::RemoveLine)),
+                Event::Char('n', _) => (noop, Wr(Cud::NextWord)),
+                Event::Char('p', _) => (noop, Wr(Cud::PrevWord)),
+                Event::Char('t', _) => (noop, Wr(Cud::RShift(1))),
+                Event::Char('d', _) => (noop, Wr(Cud::LShift(1))),
                 evnt => (noop, evnt),
             },
             prefix => (prefix, evnt),

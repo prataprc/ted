@@ -52,7 +52,7 @@ pub enum Event {
     Mt(Mto),        // Motion     (n, motion-event)
     Mr(mark::Mark), // (mark-value,)
     Md(Mod),        // modal command.
-    In(Insrt),      // insert command.
+    Wr(Cud),        // insert command.
     TabInsert(String),
     TabClear,
     // other events
@@ -87,7 +87,7 @@ impl Event {
             Mr(_) => empty,
             Md(mode) => mode.to_modifiers(),
             Mt(mto) => mto.to_modifiers(),
-            In(insrt) => insrt.to_modifiers(),
+            Wr(cud) => cud.to_modifiers(),
             TabInsert(_) | TabClear => empty,
             // other events
             JumpFrom(_) | Edit(_) | Write(_) => empty,
@@ -258,7 +258,7 @@ impl fmt::Display for Event {
             Mr(mark) => write!(f, "mark({})", mark),
             Mt(mt) => write!(f, "mt({})", mt),
             Md(mode) => write!(f, "md({})", mode),
-            In(insrt) => write!(f, "insrt({})", insrt),
+            Wr(cud) => write!(f, "wr({})", cud),
             TabInsert(_) => write!(f, "tab-insert"),
             TabClear => write!(f, "tab-clear"),
             // other events
@@ -510,7 +510,12 @@ impl Mod {
 
 /// Insert command.
 #[derive(Clone, Eq, PartialEq)]
-pub enum Insrt {
+pub enum Cud {
+    Backspace(usize), // remove n chars before cursor
+    Delete(usize),    // remove n chars forward from cursor.
+    Tab(usize),       // insert tab/spaces
+    Enter(usize),     // insert newline(s)
+    Char(char),       // insert char
     ReInsert,
     RemoveWord,
     RemoveLine,
@@ -520,21 +525,26 @@ pub enum Insrt {
     LShift(usize), // (n,)
 }
 
-impl fmt::Display for Insrt {
+impl fmt::Display for Cud {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match self {
-            Insrt::ReInsert => write!(f, "re-insert"),
-            Insrt::RemoveWord => write!(f, "remove-word"),
-            Insrt::RemoveLine => write!(f, "remove-line"),
-            Insrt::NextWord => write!(f, "next-line"),
-            Insrt::PrevWord => write!(f, "prev-line"),
-            Insrt::RShift(n) => write!(f, "rshift({})", n),
-            Insrt::LShift(n) => write!(f, "lshift({})", n),
+            Cud::Backspace(n) => write!(f, "backspace({})", n),
+            Cud::Delete(n) => write!(f, "delete({})", n),
+            Cud::Tab(n) => write!(f, "tab({})", n),
+            Cud::Enter(n) => write!(f, "enter({})", n),
+            Cud::Char(ch) => write!(f, "char({})", ch),
+            Cud::ReInsert => write!(f, "re-insert"),
+            Cud::RemoveWord => write!(f, "remove-word"),
+            Cud::RemoveLine => write!(f, "remove-line"),
+            Cud::NextWord => write!(f, "next-line"),
+            Cud::PrevWord => write!(f, "prev-line"),
+            Cud::RShift(n) => write!(f, "rshift({})", n),
+            Cud::LShift(n) => write!(f, "lshift({})", n),
         }
     }
 }
 
-impl Insrt {
+impl Cud {
     fn to_modifiers(&self) -> KeyModifiers {
         KeyModifiers::empty()
     }
