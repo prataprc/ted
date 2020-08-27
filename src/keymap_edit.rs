@@ -187,7 +187,7 @@ impl KeyEdit {
                 Char('A', _) => (noop, Md(Mod::Append(1, DP::End))),
                 Char('O', _) => (noop, Md(Mod::Open(1, DP::Left))),
                 Char('o', _) => (noop, Md(Mod::Open(1, DP::Right))),
-                Md(Mod::Insert(n, p)) => (noop, Md(Mod::Insert(n, p))),
+                Char('R', _) => (noop, Md(Mod::Replace(1, DP::None))),
                 evnt => (noop, evnt),
             },
             Event::Noop if ctrl => match evnt {
@@ -294,7 +294,6 @@ impl KeyEdit {
                 Char('A', _) => (noop, Md(Mod::Append(n, DP::End))),
                 Char('O', _) => (noop, Md(Mod::Open(n, DP::Left))),
                 Char('o', _) => (noop, Md(Mod::Open(n, DP::Right))),
-                Md(Mod::Insert(m, p)) => (noop, Md(Mod::Insert(n * m, p))),
                 evnt => (noop, evnt),
             },
             N(n) if ctrl => match evnt {
