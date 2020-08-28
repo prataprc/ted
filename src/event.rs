@@ -7,13 +7,15 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 #[allow(unused_imports)]
 use log::debug;
 use tree_sitter as ts;
+use unicode_width::UnicodeWidthChar;
 
 use std::{fmt, iter::FromIterator, mem, result};
 
 use crate::{
+    buffer::{self, Buffer},
     mark,
     pubsub::Notify,
-    window::{WindowLess, WindowPrompt},
+    window::{WinBuffer, WindowLess, WindowPrompt},
     Error, Result,
 };
 
@@ -56,13 +58,12 @@ pub enum Event {
     TabInsert(String),
     TabClear,
     // other events
+    Appn(Appn),
     JumpFrom(usize), // (cursor,)
+    // local events
     Edit(Edit),
-    Write(Input),
     List(Vec<Event>),
     Notify(Notify),
-    Appn(Appn),
-    Ted(Ted),
     Noop,
 }
 
@@ -90,9 +91,9 @@ impl Event {
             Wr(cud) => cud.to_modifiers(),
             TabInsert(_) | TabClear => empty,
             // other events
-            JumpFrom(_) | Edit(_) | Write(_) => empty,
-            List(_) | Notify(_) | Appn(_) | Ted(_) => empty,
-            Noop => empty,
+            Appn(_) | JumpFrom(_) => empty,
+            // local events
+            Edit(_) | List(_) | Notify(_) | Noop => empty,
         }
     }
 
@@ -262,13 +263,12 @@ impl fmt::Display for Event {
             TabInsert(_) => write!(f, "tab-insert"),
             TabClear => write!(f, "tab-clear"),
             // other events
+            Appn(cd) => write!(f, "Appn({})", cd),
             JumpFrom(cursor) => write!(f, "jump-from({})", cursor),
+            // local events
             Edit(val) => write!(f, "edit({})", val),
-            Write(val) => write!(f, "write({})", val),
             List(es) => write!(f, "list({})", es.len()),
             Notify(notf) => write!(f, "notify({})", notf),
-            Appn(cd) => write!(f, "Appn({})", cd),
-            Ted(td) => write!(f, "Ted({})", td),
             Noop => write!(f, "noop"),
         }
     }
@@ -375,6 +375,72 @@ impl fmt::Debug for Edit {
     }
 }
 
+impl Edit {
+    pub fn into_ts_input(self, buf: &Buffer) -> Result<ts::InputEdit> {
+        let (st, oe, ne) = match self {
+            Edit::Ins { cursor, txt } => {
+                let n = txt.chars().count();
+                (cursor, cursor, cursor + n)
+            }
+            Edit::Del { cursor, txt } => {
+                let n = txt.chars().count();
+                (cursor, cursor + n, cursor)
+            }
+            Edit::Chg { cursor, oldt, newt } => {
+                let m = oldt.chars().count();
+                let n = newt.chars().count();
+                (cursor, cursor + m, cursor + n)
+            }
+        };
+        Ok(ts::InputEdit {
+            start_byte: Self::to_byte(st, buf),
+            old_end_byte: Self::to_byte_end(oe, buf)?,
+            new_end_byte: Self::to_byte_end(ne, buf)?,
+            start_position: {
+                let (row, column) = Self::to_xy(st, buf);
+                ts::Point { row, column }
+            },
+            old_end_position: {
+                let (row, column) = Self::to_xy_end(st, buf)?;
+                ts::Point { row, column }
+            },
+            new_end_position: {
+                let (row, column) = Self::to_xy_end(st, buf)?;
+                ts::Point { row, column }
+            },
+        })
+    }
+
+    fn to_byte(cursor: usize, buf: &Buffer) -> usize {
+        buf.char_to_byte(cursor)
+    }
+
+    fn to_byte_end(cursor: usize, buf: &Buffer) -> Result<usize> {
+        let m = match buf.chars_at(cursor, DP::Right)?.next() {
+            Some(ch) => ch.width().unwrap_or(0).saturating_sub(1),
+            None => 0,
+        };
+        Ok(buf.char_to_byte(cursor) + m)
+    }
+
+    fn to_xy(cursor: usize, buf: &Buffer) -> (usize, usize) {
+        let buffer::Cursor { row, .. } = buf.to_xy_cursor(Some(cursor));
+        let row = buf.char_to_byte(buf.line_to_char(row));
+        let col = buf.char_to_byte(cursor).saturating_sub(row);
+        (row, col)
+    }
+
+    fn to_xy_end(cursor: usize, buf: &Buffer) -> Result<(usize, usize)> {
+        let m = match buf.chars_at(cursor, DP::Right)?.next() {
+            Some(ch) => ch.width().unwrap_or(0).saturating_sub(1),
+            None => 0,
+        };
+        let buffer::Cursor { row, .. } = buf.to_xy_cursor(Some(cursor));
+        let row = buf.char_to_byte(buf.line_to_char(row));
+        let col = buf.char_to_byte(cursor).saturating_sub(row);
+        Ok((row, col + m))
+    }
+}
 /// Event argument, specify the direction or position.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd)]
 pub enum DP {
@@ -722,103 +788,6 @@ impl fmt::Display for Appn {
             Prompt(_) => write!(f, "prompt"),
             StatusFile => write!(f, "status_file"),
             StatusCursor => write!(f, "status_cursor"),
-        }
-    }
-}
-
-/// Event specific to application `code`.
-#[derive(Clone, Eq, PartialEq)]
-pub enum Ted {
-    ShowConfig,
-}
-
-impl fmt::Display for Ted {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        use Ted::ShowConfig;
-
-        match self {
-            ShowConfig => write!(f, "show-config"),
-        }
-    }
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub struct Input {
-    start_byte: usize,
-    old_end_byte: usize,
-    new_end_byte: usize,
-    start_position: (usize, usize),   // (row, column) starts from ZERO
-    old_end_position: (usize, usize), // (row, column) starts from ZERO
-    new_end_position: (usize, usize), // (row, column) starts from ZERO
-}
-
-impl fmt::Display for Input {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(
-            f,
-            "Input<{},({}->{})",
-            self.start_byte, self.old_end_byte, self.new_end_byte
-        )
-    }
-}
-
-impl fmt::Debug for Input {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        write!(
-            f,
-            "Input<{},({}->{}):{:?},({:?}->{:?})",
-            self.start_byte,
-            self.old_end_byte,
-            self.new_end_byte,
-            self.start_position,
-            self.old_end_position,
-            self.new_end_position
-        )
-    }
-}
-
-impl Input {
-    pub fn start_edit(
-        start_byte: usize,
-        old_end_byte: usize,
-        start_position: (usize, usize),
-        old_end_position: (usize, usize),
-    ) -> Input {
-        Input {
-            start_byte,
-            old_end_byte,
-            new_end_byte: usize::default(),
-            start_position,
-            old_end_position,
-            new_end_position: <(usize, usize)>::default(),
-        }
-    }
-
-    pub fn finish(mut self, new_eb: usize, new_ep: (usize, usize)) -> Event {
-        self.new_end_byte = new_eb;
-        self.new_end_position = new_ep;
-        Event::Write(self)
-    }
-}
-
-impl From<Input> for ts::InputEdit {
-    fn from(val: Input) -> Self {
-        ts::InputEdit {
-            start_byte: val.start_byte,
-            old_end_byte: val.old_end_byte,
-            new_end_byte: val.new_end_byte,
-            start_position: ts::Point {
-                row: val.start_position.0,
-                column: val.start_position.1,
-            },
-            old_end_position: ts::Point {
-                row: val.old_end_position.0,
-                column: val.old_end_position.1,
-            },
-            new_end_position: ts::Point {
-                row: val.new_end_position.0,
-                column: val.new_end_position.1,
-            },
         }
     }
 }

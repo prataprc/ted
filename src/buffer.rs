@@ -494,6 +494,11 @@ impl Buffer {
     pub fn byte_to_char(&self, byte_idx: usize) -> usize {
         self.to_change().as_ref().byte_to_char(byte_idx)
     }
+
+    #[inline]
+    pub fn char_to_byte(&self, char_idx: usize) -> usize {
+        self.to_change().rope.char_to_byte(char_idx)
+    }
 }
 
 impl Buffer {
@@ -926,7 +931,7 @@ impl InsertBuffer {
                     // repeat insert, if any, before exiting the insert-mode.
                     for _ in 0..self.repeat {
                         for evnt in self.i_evnts.clone().into_iter() {
-                            self.do_on_event(buf, evnt)?;
+                            res_evnts.push(self.do_on_event(buf, evnt)?);
                         }
                     }
 

@@ -73,9 +73,9 @@ impl Syntax for PlainText {
         let mut new_evnt: Event = Event::default();
         for evnt in evnt.into_iter() {
             match evnt {
-                Event::Write(val) => match self.tree.take() {
+                Event::Edit(edit) => match self.tree.take() {
                     Some(mut old_tree) => {
-                        old_tree.edit(&val.into());
+                        old_tree.edit(&edit.into_ts_input(buf)?);
                         let s = buf.to_string();
                         self.tree = self.parser.parse(&s, Some(&old_tree));
                     }
