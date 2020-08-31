@@ -961,10 +961,11 @@ impl InsertBuffer {
     }
 
     fn do_on_event(&self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
-        use crate::event::Event::*;
+        use crate::event::{self, Event::*};
+        use std::iter::repeat;
 
         let evnt = match evnt {
-            // movement
+            // cursor movement
             Mt(Mto::Left(n, dp)) => {
                 let cursor = mto_left(buf, n, dp)?;
                 buf.set_cursor(cursor).clear_sticky_col();
@@ -995,55 +996,62 @@ impl InsertBuffer {
                 buf.set_cursor(cursor).set_sticky_col(dp, "end");
                 Event::Noop
             }
-            // on going insert
+            // insert session
             Char(ch, _) => {
+                let cursor = buf.to_char_cursor();
                 buf.cud_char(None, ch)?;
-                Event::Noop
+                Edit(event::Edit::new_ins(cursor, ch.into()))
             }
             Backspace(_) if buf.to_char_cursor() > 0 => {
-                let from = buf.to_char_cursor().saturating_sub(1);
+                let cursor = buf.to_char_cursor();
+                let from = cursor.saturating_sub(1);
                 buf.cud_delete(from..=from)?;
-                Event::Noop
+                Edit(event::Edit::new_del(cursor, buf.slice(from..=from)))
             }
-            Backspace(_) => Event::Noop,
             Enter(_) => {
-                buf.cud_str(None, buf.format.newline())?;
-                Event::Noop
+                let cursor = buf.to_char_cursor();
+                let txt = buf.format.newline();
+                buf.cud_str(None, txt)?;
+                Edit(event::Edit::new_ins(cursor, txt.to_string()))
             }
             Tab(_) => {
-                buf.cud_char(None, '\t')?;
-                Event::Noop
+                let cursor = buf.to_char_cursor();
+                let txt = String::from_iter(repeat(' ').take(buf.shift_width));
+                buf.cud_str(None, &txt)?;
+                Edit(event::Edit::new_ins(cursor, txt))
             }
             Delete(_) => {
                 let cursor = buf.to_char_cursor();
                 buf.cud_delete(cursor..=cursor)?;
-                Event::Noop
+                Edit(event::Edit::new_del(cursor, buf.slice(cursor..=cursor)))
             }
             // tab completion events
-            TabInsert(new) => {
+            TabInsert(newt) => {
                 let cursor = buf.to_char_cursor();
-                match &buf.tab_state {
+                let oldt = match &buf.tab_state {
                     TabState::Active(old) => {
                         let to = cursor + old.chars().count();
                         buf.cud_delete(cursor..to)?;
+                        buf.slice(cursor..to)
                     }
-                    TabState::None => (),
-                }
-                buf.cud_str(Some(cursor), new.as_str())?;
-                buf.tab_state = TabState::Active(new);
-                Event::Noop
+                    TabState::None => String::default(),
+                };
+                buf.cud_str(Some(cursor), newt.as_str())?;
+                buf.tab_state = TabState::Active(newt.clone());
+                Edit(event::Edit::new_chg(cursor, oldt, newt))
             }
             TabClear => {
-                match &buf.tab_state {
+                let cursor = buf.to_char_cursor();
+                let evnt = match &buf.tab_state {
                     TabState::Active(old) => {
-                        let from = buf.to_char_cursor();
-                        let to = from + old.chars().count();
-                        buf.cud_delete(from..to)?;
+                        let to = cursor + old.chars().count();
+                        buf.cud_delete(cursor..to)?;
+                        Edit(event::Edit::new_del(cursor, buf.slice(cursor..to)))
                     }
-                    TabState::None => (),
+                    TabState::None => Event::Noop,
                 };
                 buf.tab_state = TabState::default();
-                Event::Noop
+                evnt
             }
             evnt => evnt,
         };
@@ -1076,21 +1084,21 @@ impl ReplaceBuffer {
     }
 
     #[inline]
-    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<()> {
-        self.to_mut_change().cud_char(cursor, ch)
+    fn cud_char(&mut self, _cursor: Option<usize>, _ch: char) -> Result<()> {
+        todo!()
     }
 
     #[inline]
-    fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<()> {
-        self.to_mut_change().cud_str(cursor, text)
+    fn cud_str(&mut self, _cursor: Option<usize>, _text: &str) -> Result<()> {
+        todo!()
     }
 
     #[inline]
-    fn cud_delete<R>(&mut self, range: R) -> Result<()>
+    fn cud_delete<R>(&mut self, _range: R) -> Result<()>
     where
         R: RangeBounds<usize>,
     {
-        self.to_mut_change().cud_delete(range)
+        todo!()
     }
 }
 

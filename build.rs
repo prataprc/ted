@@ -100,8 +100,8 @@ fn install_npm_pkgs() -> Result<(), String> {
         ("npm", vec!["install", "--save", "nan"], "npm --save nan"),
         (
             "npm",
-            vec!["install", "--save-dev", "tree-sitter-cli"],
-            "npm --save-dev tree-sitter-cli",
+            vec!["install", "--save-dev", "tree-sitter-cli@0.16.8"],
+            "npm --save-dev tree-sitter-cli@0.16.8",
         ),
         (
             "npm",

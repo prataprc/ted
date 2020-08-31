@@ -376,6 +376,20 @@ impl fmt::Debug for Edit {
 }
 
 impl Edit {
+    pub fn new_ins(cursor: usize, txt: String) -> Edit {
+        Edit::Ins { cursor, txt }
+    }
+
+    pub fn new_del(cursor: usize, txt: String) -> Edit {
+        Edit::Del { cursor, txt }
+    }
+
+    pub fn new_chg(cursor: usize, oldt: String, newt: String) -> Edit {
+        Edit::Chg { cursor, oldt, newt }
+    }
+}
+
+impl Edit {
     pub fn into_ts_input(self, buf: &Buffer) -> Result<ts::InputEdit> {
         let (st, oe, ne) = match self {
             Edit::Ins { cursor, txt } => {
@@ -441,6 +455,7 @@ impl Edit {
         Ok((row, col + m))
     }
 }
+
 /// Event argument, specify the direction or position.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd)]
 pub enum DP {
