@@ -204,9 +204,19 @@ impl Inner {
     }
 
     #[inline]
-    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<()> {
+    fn cud_newlines(&mut self, cursor: Option<usize>, nl: &str, n: usize) -> Result<usize> {
         match self {
-            Inner::Normal(_) => Ok(()),
+            Inner::Normal(nb) => nb.cud_newlines(cursor, nl, n),
+            Inner::Insert(ib) => ib.cud_newlines(cursor, nl, n),
+            Inner::Replace(rb) => rb.cud_newlines(cursor, nl, n),
+            Inner::None => err_at!(Fatal, msg: format!("unreachable")),
+        }
+    }
+
+    #[inline]
+    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<usize> {
+        match self {
+            Inner::Normal(nb) => nb.cud_char(cursor, ch),
             Inner::Insert(ib) => ib.cud_char(cursor, ch),
             Inner::Replace(rb) => rb.cud_char(cursor, ch),
             Inner::None => err_at!(Fatal, msg: format!("unreachable")),
@@ -214,11 +224,11 @@ impl Inner {
     }
 
     #[inline]
-    fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<()> {
+    fn cud_str(&mut self, cursor: Option<usize>, txt: &str) -> Result<usize> {
         match self {
-            Inner::Normal(_) => Ok(()),
-            Inner::Insert(ib) => ib.cud_str(cursor, text),
-            Inner::Replace(rb) => rb.cud_str(cursor, text),
+            Inner::Normal(nb) => nb.cud_str(cursor, txt),
+            Inner::Insert(ib) => ib.cud_str(cursor, txt),
+            Inner::Replace(rb) => rb.cud_str(cursor, txt),
             Inner::None => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
@@ -229,7 +239,7 @@ impl Inner {
         R: RangeBounds<usize>,
     {
         match self {
-            Inner::Normal(_) => Ok(()),
+            Inner::Normal(nb) => nb.cud_delete(range),
             Inner::Insert(ib) => ib.cud_delete(range),
             Inner::Replace(rb) => rb.cud_delete(range),
             Inner::None => err_at!(Fatal, msg: format!("unreachable")),
@@ -580,12 +590,17 @@ impl Buffer {
 
 impl Buffer {
     #[inline]
-    pub fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<()> {
+    pub fn cud_newlines(&mut self, cursor: Option<usize>, nl: &str, n: usize) -> Result<usize> {
+        self.inner.cud_newlines(cursor, nl, n)
+    }
+
+    #[inline]
+    pub fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<usize> {
         self.inner.cud_char(cursor, ch)
     }
 
     #[inline]
-    pub fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<()> {
+    pub fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<usize> {
         self.inner.cud_str(cursor, text)
     }
 
@@ -623,6 +638,29 @@ impl NormalBuffer {
 
     fn set_cursor(&mut self, cursor: usize) {
         self.to_mut_change().set_cursor(cursor);
+    }
+
+    #[inline]
+    fn cud_newlines(&mut self, cursor: Option<usize>, nl: &str, n: usize) -> Result<usize> {
+        self.to_mut_change().cud_newlines(cursor, nl, n)
+    }
+
+    #[inline]
+    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<usize> {
+        self.to_mut_change().cud_char(cursor, ch)
+    }
+
+    #[inline]
+    fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<usize> {
+        self.to_mut_change().cud_str(cursor, text)
+    }
+
+    #[inline]
+    fn cud_delete<R>(&mut self, range: R) -> Result<()>
+    where
+        R: RangeBounds<usize>,
+    {
+        self.to_mut_change().cud_delete(range)
     }
 }
 
@@ -858,9 +896,9 @@ struct InsertBuffer {
 }
 
 impl InsertBuffer {
-    fn new(n: usize, change: Rc<RefCell<Change>>) -> Self {
+    fn new(repeat: usize, change: Rc<RefCell<Change>>) -> Self {
         InsertBuffer {
-            repeat: n.saturating_sub(1),
+            repeat: repeat.saturating_sub(1),
             i_evnts: Event::default(),
             change,
         }
@@ -871,12 +909,17 @@ impl InsertBuffer {
     }
 
     #[inline]
-    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<()> {
+    fn cud_newlines(&mut self, cursor: Option<usize>, nl: &str, n: usize) -> Result<usize> {
+        self.to_mut_change().cud_newlines(cursor, nl, n)
+    }
+
+    #[inline]
+    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<usize> {
         self.to_mut_change().cud_char(cursor, ch)
     }
 
     #[inline]
-    fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<()> {
+    fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<usize> {
         self.to_mut_change().cud_str(cursor, text)
     }
 
@@ -955,8 +998,55 @@ impl InsertBuffer {
     }
 
     fn do_on_event(buf: &mut Buffer, evnt: Event) -> Result<Event> {
-        use crate::event::{self, Event::*};
+        use crate::event::{self, Cud, Event::*};
         use std::iter::repeat;
+
+        debug!("{}", evnt);
+
+        // handle tab-rotation for completion.
+        let evnt = match (buf.tab_state.clone(), evnt) {
+            (TabState::None, TabInsert(newt)) => {
+                let cursor = {
+                    let cursor = buf.to_char_cursor();
+                    buf.cud_str(Some(cursor), newt.as_str())?
+                };
+                buf.set_cursor(cursor).clear_sticky_col();
+
+                buf.tab_state = TabState::Active(newt.clone());
+                Edit(event::Edit::new_ins(cursor, newt))
+            }
+            (TabState::None, TabClear) => Event::Noop,
+            (TabState::None, evnt) => evnt,
+            (TabState::Active(oldt), TabInsert(newt)) => {
+                let cursor = {
+                    let cursor = buf.to_char_cursor();
+                    cursor.saturating_sub(text::width(oldt.chars()))
+                };
+                let to = cursor + oldt.chars().count();
+                buf.cud_delete(cursor..to)?;
+                let cursor = buf.cud_str(Some(cursor), newt.as_str())?;
+                buf.set_cursor(cursor).clear_sticky_col();
+
+                buf.tab_state = TabState::Active(newt.clone());
+                Edit(event::Edit::new_chg(cursor, oldt, newt))
+            }
+            (TabState::Active(oldt), TabClear) => {
+                let cursor = {
+                    let cursor = buf.to_char_cursor();
+                    cursor.saturating_sub(text::width(oldt.chars()))
+                };
+                let to = cursor + oldt.chars().count();
+                buf.cud_delete(cursor..to)?;
+                buf.set_cursor(cursor);
+
+                buf.tab_state = TabState::default();
+                Edit(event::Edit::new_del(cursor, oldt))
+            }
+            (TabState::Active(_), evnt) => {
+                buf.tab_state = TabState::default();
+                evnt
+            }
+        };
 
         let evnt = match evnt {
             // cursor movement
@@ -991,64 +1081,46 @@ impl InsertBuffer {
                 Event::Noop
             }
             // insert session
-            Char(ch, _) => {
+            Wr(Cud::Char(ch)) => {
                 let cursor = buf.to_char_cursor();
-                buf.cud_char(None, ch)?;
+                {
+                    let cursor = buf.cud_char(None, ch)?;
+                    buf.set_cursor(cursor).clear_sticky_col();
+                }
                 Edit(event::Edit::new_ins(cursor, ch.into()))
             }
-            Backspace(_) if buf.to_char_cursor() > 0 => {
+            Wr(Cud::Tab(n)) => {
                 let cursor = buf.to_char_cursor();
-                let from = cursor.saturating_sub(1);
-                buf.cud_delete(from..=from)?;
-                Edit(event::Edit::new_del(cursor, buf.slice(from..=from)))
-            }
-            Enter(_) => {
-                let cursor = buf.to_char_cursor();
-                let txt = buf.format.newline();
-                buf.cud_str(None, txt)?;
-                Edit(event::Edit::new_ins(cursor, txt.to_string()))
-            }
-            Tab(_) => {
-                let cursor = buf.to_char_cursor();
-                let txt = String::from_iter(repeat(' ').take(buf.shift_width));
-                buf.cud_str(None, &txt)?;
+                let n = buf.shift_width * n;
+                let txt = String::from_iter(repeat(' ').take(n));
+                {
+                    let cursor = buf.cud_str(None, &txt)?;
+                    buf.set_cursor(cursor).clear_sticky_col();
+                }
                 Edit(event::Edit::new_ins(cursor, txt))
             }
-            Delete(_) => {
+            Wr(Cud::Enter(n)) => {
                 let cursor = buf.to_char_cursor();
-                buf.cud_delete(cursor..=cursor)?;
-                Edit(event::Edit::new_del(cursor, buf.slice(cursor..=cursor)))
+                let to = buf.cud_newlines(Some(cursor), buf.format.newline(), n)?;
+                buf.set_cursor(cursor).clear_sticky_col();
+                Edit(event::Edit::new_ins(cursor, buf.slice(cursor..to)))
             }
-            // tab completion events
-            TabInsert(newt) => {
+            Wr(Cud::Backspace(n)) if buf.to_char_cursor() > 0 => {
                 let cursor = buf.to_char_cursor();
-                let oldt = match &buf.tab_state {
-                    TabState::Active(old) => {
-                        let to = cursor + old.chars().count();
-                        buf.cud_delete(cursor..to)?;
-                        buf.slice(cursor..to)
-                    }
-                    TabState::None => String::default(),
-                };
-                buf.cud_str(Some(cursor), newt.as_str())?;
-                buf.tab_state = TabState::Active(newt.clone());
-                Edit(event::Edit::new_chg(cursor, oldt, newt))
+                let from = cursor.saturating_sub(n);
+                buf.cud_delete(from..cursor)?;
+                buf.set_cursor(from);
+                Edit(event::Edit::new_del(cursor, buf.slice(from..cursor)))
             }
-            TabClear => {
+            Wr(Cud::Delete(n)) => {
                 let cursor = buf.to_char_cursor();
-                let evnt = match &buf.tab_state {
-                    TabState::Active(old) => {
-                        let to = cursor + old.chars().count();
-                        buf.cud_delete(cursor..to)?;
-                        Edit(event::Edit::new_del(cursor, buf.slice(cursor..to)))
-                    }
-                    TabState::None => Event::Noop,
-                };
-                buf.tab_state = TabState::default();
-                evnt
+                let to = cmp::min(cursor.saturating_add(n), buf.n_chars());
+                buf.cud_delete(cursor..to)?;
+                Edit(event::Edit::new_del(cursor, buf.slice(cursor..to)))
             }
             evnt => evnt,
         };
+
         Ok(evnt)
     }
 }
@@ -1070,12 +1142,17 @@ impl ReplaceBuffer {
     }
 
     #[inline]
-    fn cud_char(&mut self, _cursor: Option<usize>, _ch: char) -> Result<()> {
+    fn cud_newlines(&mut self, cursor: Option<usize>, nl: &str, n: usize) -> Result<usize> {
+        self.to_mut_change().cud_newlines(cursor, nl, n)
+    }
+
+    #[inline]
+    fn cud_char(&mut self, _cursor: Option<usize>, _ch: char) -> Result<usize> {
         todo!()
     }
 
     #[inline]
-    fn cud_str(&mut self, _cursor: Option<usize>, _text: &str) -> Result<()> {
+    fn cud_str(&mut self, _cursor: Option<usize>, _text: &str) -> Result<usize> {
         todo!()
     }
 
@@ -1207,17 +1284,26 @@ impl Change {
         self.cursor = cursor;
     }
 
-    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<()> {
+    fn cud_newlines(&mut self, cursor: Option<usize>, nl: &str, n: usize) -> Result<usize> {
         let cursor = cursor.unwrap_or(self.cursor);
-        self.rope.insert_char(cursor, ch);
-        self.cursor += 1;
-        Ok(())
+
+        let mut new_line = String::default();
+        (0..n).for_each(|_| new_line.push_str(nl));
+        self.rope.insert(cursor, &new_line);
+
+        Ok(cursor + n)
     }
 
-    fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<()> {
+    fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<usize> {
         let cursor = cursor.unwrap_or(self.cursor);
-        self.rope.insert(cursor, text);
-        Ok(())
+        self.rope.insert_char(cursor, ch);
+        Ok(cursor + 1)
+    }
+
+    fn cud_str(&mut self, cursor: Option<usize>, txt: &str) -> Result<usize> {
+        let cursor = cursor.unwrap_or(self.cursor);
+        self.rope.insert(cursor, txt);
+        Ok(cursor + text::width(txt.chars()))
     }
 
     fn cud_delete<R>(&mut self, range: R) -> Result<()>
@@ -1775,48 +1861,66 @@ pub fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-fn mod_insert(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
-    let ib = InsertBuffer::new(n, Change::fork(buf.as_mut_change()));
+fn mod_insert(buf: &mut Buffer, repeat: usize, pos: DP) -> Result<Event> {
     if pos == DP::TextCol {
         let cursor = mto_line_home(buf, pos)?;
         buf.set_cursor(cursor).set_sticky_col(pos, "home");
     }
-    buf.inner = ib.into();
+    buf.inner = {
+        let ib = InsertBuffer::new(repeat, Change::fork(buf.as_mut_change()));
+        ib.into()
+    };
     Ok(Event::Noop)
 }
 
-fn mod_append(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
-    let ib = InsertBuffer::new(n, Change::fork(buf.as_mut_change()));
-    if pos == DP::End {
-        let cursor = mto_line_end(buf, 1, pos)?;
-        buf.set_cursor(cursor);
-    }
-    let cursor = mto_right(buf, 1, DP::Nobound)?;
+fn mod_append(buf: &mut Buffer, repeat: usize, pos: DP) -> Result<Event> {
+    let cursor = match pos {
+        DP::End => {
+            let cursor = buf.to_char_cursor();
+            let n = text::visual_line_n(&buf.line(buf.char_to_line(cursor)));
+            buf.to_line_home(None) + n
+        }
+        DP::Right => buf.to_char_cursor().saturating_add(1),
+        _ => err_at!(Fatal, msg: format!("unreachable"))?,
+    };
     buf.set_cursor(cursor).clear_sticky_col();
-    buf.inner = ib.into();
+
+    buf.inner = {
+        let ib = InsertBuffer::new(repeat, Change::fork(buf.as_mut_change()));
+        ib.into()
+    };
     Ok(Event::Noop)
 }
 
-fn mod_open(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
-    let ib = InsertBuffer::new(n, Change::fork(buf.as_mut_change()));
+fn mod_open(buf: &mut Buffer, repeat: usize, pos: DP) -> Result<Event> {
     match pos {
         DP::Left => {
-            let cursor = mto_line_home(buf, DP::None)?;
-            buf.set_cursor(cursor);
-            buf.cud_str(None, buf.format.newline())?;
-            let cursor = mto_left(buf, 1, DP::Nobound)?;
+            let cursor = {
+                let cursor = buf.line_to_char(buf.to_xy_cursor(None).row);
+                buf.cud_newlines(Some(cursor), buf.format.newline(), 1)?;
+                cursor
+            };
             buf.set_cursor(cursor).clear_sticky_col();
         }
         DP::Right => {
-            let cursor = mto_line_end(buf, 1, DP::None)?;
-            buf.set_cursor(cursor);
-            let cursor = mto_right(buf, 1, DP::Nobound)?;
+            debug!("{}", buf.to_char_cursor());
+            let cursor = {
+                let cursor = buf.to_char_cursor();
+                let n = text::visual_line_n(&buf.line(buf.char_to_line(cursor)));
+                buf.to_line_home(None) + n
+            };
+            // let cursor = mto_right(buf, 1, DP::Nobound)?;
+            debug!("{} {:?}", cursor, buf.format.newline());
+            let cursor = buf.cud_newlines(Some(cursor), buf.format.newline(), 1)?;
+            debug!("{}", cursor);
             buf.set_cursor(cursor).clear_sticky_col();
-            buf.cud_str(None, buf.format.newline())?;
         }
         _ => err_at!(Fatal, msg: format!("unreachable"))?,
     }
-    buf.inner = ib.into();
+    buf.inner = {
+        let ib = InsertBuffer::new(repeat, Change::fork(buf.as_mut_change()));
+        ib.into()
+    };
     Ok(Event::Noop)
 }
 

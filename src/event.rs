@@ -232,7 +232,7 @@ impl fmt::Display for Event {
             Enter(_) => write!(f, "enter"),
             Tab(_) => write!(f, "tab"),
             Delete(_) => write!(f, "delete"),
-            Char(ch, m) => write!(f, "char({:?},{:?})", ch, m),
+            Char(ch, m) => write!(f, "char('{}',{:?})", ch, m),
             FKey(ch, _) => write!(f, "fkey({})", ch),
             InsKey(_) => write!(f, "insert"),
             Left(_) => write!(f, "left"),
@@ -592,11 +592,11 @@ impl Mod {
 /// Insert command.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Cud {
+    Char(char),       // insert char
+    Tab(usize),       // insert (n,) tab/spaces
+    Enter(usize),     // insert (n,) newline(s)
     Backspace(usize), // remove n chars before cursor
     Delete(usize),    // remove n chars forward from cursor.
-    Tab(usize),       // insert tab/spaces
-    Enter(usize),     // insert newline(s)
-    Char(char),       // insert char
     ReInsert,
     RemoveWord,
     RemoveLine,
@@ -613,7 +613,7 @@ impl fmt::Display for Cud {
             Cud::Delete(n) => write!(f, "delete({})", n),
             Cud::Tab(n) => write!(f, "tab({})", n),
             Cud::Enter(n) => write!(f, "enter({})", n),
-            Cud::Char(ch) => write!(f, "char({})", ch),
+            Cud::Char(ch) => write!(f, "char('{}')", ch),
             Cud::ReInsert => write!(f, "re-insert"),
             Cud::RemoveWord => write!(f, "remove-word"),
             Cud::RemoveLine => write!(f, "remove-line"),
