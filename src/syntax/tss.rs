@@ -3,7 +3,7 @@ use log::{debug, error, trace};
 use tree_sitter as ts;
 
 use crate::{
-    buffer::{self, Buffer},
+    buffer::Buffer,
     colors::ColorScheme,
     event::Event,
     syntax::{self, Syntax},
@@ -98,13 +98,13 @@ impl Syntax for Tss {
         Ok(new_evnt)
     }
 
-    fn to_span_line(&self, b: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
         match self.tree.as_ref() {
             Some(tree) => {
                 let mut atmt = self.atmt.clone();
-                syntax::highlight(b, &self.scheme, tree, &mut atmt, a, z)
+                syntax::highlight(buf, &self.scheme, tree, &mut atmt, a, z)
             }
-            None => buffer::to_span_line(b, a, z),
+            None => buf.to_span_line(a, z),
         }
     }
 

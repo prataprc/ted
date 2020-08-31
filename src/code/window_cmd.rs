@@ -142,6 +142,6 @@ impl Render for WindowCmd {
 
     #[inline]
     fn to_span_line(&self, buf: &Self::Buf, a: usize, z: usize) -> Result<Spanline> {
-        buffer::to_span_line(buf, a, z)
+        buf.to_span_line(a, z)
     }
 }

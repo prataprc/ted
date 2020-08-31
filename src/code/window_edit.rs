@@ -177,7 +177,7 @@ impl WindowEdit {
         };
         let nbc = match item {
             Some(sl) => sl.bc + (sl.n.saturating_sub(1) as usize),
-            None => buffer::last_char_idx(buf),
+            None => buf.last_char_idx(),
         };
         Ok(nbc)
     }

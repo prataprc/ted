@@ -282,7 +282,7 @@ impl Buffer {
         Self::from_reader(Location::default()).unwrap()
     }
 
-    /// Set cursor postion within the buffer, cursor as character index.
+    /// Set cursor postion within the buffer, cursor is character index.
     pub fn set_cursor(&mut self, cursor: usize) -> &mut Self {
         match &mut self.inner {
             Inner::Normal(val) => val.set_cursor(cursor),
@@ -311,8 +311,9 @@ impl Buffer {
         self
     }
 
-    /// Clear sticky-column for this buffer. Certian buffer commands shall
+    /// Clear sticky-column for this buffer. Certian buffer commands can
     /// make the cursor stick to the end-of-the-line or beginning-of-the-line.
+    /// Refer [Buffer::set_sticky_col] for details.
     pub fn clear_sticky_col(&mut self) -> &mut Self {
         self.sticky_col = StickyCol::default();
         self
@@ -530,10 +531,12 @@ impl Buffer {
     }
 
     /// Convert byte-index to valid character-index within buffer.
+    #[inline]
     pub fn byte_to_char(&self, byte_idx: usize) -> usize {
         self.to_change().as_ref().byte_to_char(byte_idx)
     }
 
+    /// Convert character-index to valid byte-index within buffer.
     #[inline]
     pub fn char_to_byte(&self, char_idx: usize) -> usize {
         self.to_change().rope.char_to_byte(char_idx)
@@ -575,9 +578,30 @@ impl Buffer {
             change.rope.line_to_char(line_idx)
         }
     }
+
+    /// Return the last character index in buffer.
+    ///
+    /// Must be same as `buffer.n_chars().saturating_sub(1)`.
+    pub fn last_char_idx(&self) -> usize {
+        let row = self.to_last_line_idx();
+        let col = text::visual_line_n(&self.line(row));
+        xy_to_cursor(self, (row, col.saturating_sub(1)))
+    }
+
+    /// Convert `buffer[a..z]` into Spanline that can be rendered.
+    pub fn to_span_line(&self, a: usize, z: usize) -> Result<Spanline> {
+        let span: Span = {
+            let iter = self.chars_at(a, DP::Right)?.take(z - a);
+            String::from_iter(iter).into()
+        };
+        Ok(span.into())
+    }
 }
 
 impl Buffer {
+    /// Handle ZERO or more buffer specific events. If event cannot be
+    /// handled, they are simply retured as is, preserving their order
+    /// in which they are present in the `evnts` list.
     pub fn on_event(&mut self, evnts: Event) -> Result<Event> {
         match &self.inner {
             Inner::Normal(_) => NormalBuffer::on_event(self, evnts),
@@ -588,22 +612,32 @@ impl Buffer {
     }
 }
 
+/// Create-Update-Delete operations on buffer.
 impl Buffer {
+    /// Insert `n` newlines, specified by `nl`, at `cursor` position.
+    /// If cursor is `None`, use the current cursor position. Return
+    /// the new cursor postion.
     #[inline]
     pub fn cud_newlines(&mut self, cursor: Option<usize>, nl: &str, n: usize) -> Result<usize> {
         self.inner.cud_newlines(cursor, nl, n)
     }
 
+    /// Insert character `ch` at `cursor` position. If cursor is None, use the
+    /// current cursor position. Return the new cursor position.
     #[inline]
     pub fn cud_char(&mut self, cursor: Option<usize>, ch: char) -> Result<usize> {
         self.inner.cud_char(cursor, ch)
     }
 
+    /// Insert string `txt` at `cursor position. If cursor is None, use the
+    /// current cursor position. Return the new cursor position.
     #[inline]
-    pub fn cud_str(&mut self, cursor: Option<usize>, text: &str) -> Result<usize> {
-        self.inner.cud_str(cursor, text)
+    pub fn cud_str(&mut self, cursor: Option<usize>, txt: &str) -> Result<usize> {
+        self.inner.cud_str(cursor, txt)
     }
 
+    /// Delete text between the specified range. Range shall be specified
+    /// as character-index.
     #[inline]
     pub fn cud_delete<R>(&mut self, range: R) -> Result<()>
     where
@@ -1333,7 +1367,7 @@ impl Change {
     }
 }
 
-pub fn mto_left(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
+fn mto_left(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
     let cursor = buf.to_char_cursor();
     let home = buf.to_line_home(Some(cursor));
     let new_cursor = cursor.saturating_sub(n);
@@ -1366,7 +1400,7 @@ pub fn mto_left(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
     Ok(cursor)
 }
 
-pub fn mto_right(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
+fn mto_right(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
     let cursor = buf.to_char_cursor();
     let line_idx = buf.char_to_line(cursor);
     let home = buf.to_line_home(Some(cursor));
@@ -1402,7 +1436,7 @@ pub fn mto_right(buf: &Buffer, mut n: usize, dp: DP) -> Result<usize> {
     Ok(cursor)
 }
 
-pub fn mto_line_home(buf: &Buffer, pos: DP) -> Result<usize> {
+fn mto_line_home(buf: &Buffer, pos: DP) -> Result<usize> {
     let cursor = buf.to_line_home(None);
     let cursor = match pos {
         DP::TextCol => {
@@ -1416,7 +1450,7 @@ pub fn mto_line_home(buf: &Buffer, pos: DP) -> Result<usize> {
     Ok(cursor)
 }
 
-pub fn mto_line_end(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
+fn mto_line_end(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     // When a `n` is given also go `n-1` lines downward.
     let cursor = {
         let cursor = mto_down(buf, n.saturating_sub(1), DP::None)?;
@@ -1438,7 +1472,7 @@ pub fn mto_line_end(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     Ok(cursor)
 }
 
-pub fn mto_line_middle(buf: &Buffer, p: usize) -> Result<usize> {
+fn mto_line_middle(buf: &Buffer, p: usize) -> Result<usize> {
     let n = {
         let s = buf.line(buf.char_to_line(buf.to_char_cursor()));
         text::visual_line_n(&s)
@@ -1450,7 +1484,7 @@ pub fn mto_line_middle(buf: &Buffer, p: usize) -> Result<usize> {
     Ok(cursor)
 }
 
-pub fn mto_column(buf: &Buffer, n: usize) -> Result<usize> {
+fn mto_column(buf: &Buffer, n: usize) -> Result<usize> {
     let home = buf.to_line_home(None);
     let n = {
         let s = buf.line(buf.char_to_line(buf.to_char_cursor()));
@@ -1459,7 +1493,7 @@ pub fn mto_column(buf: &Buffer, n: usize) -> Result<usize> {
     Ok(home + n.saturating_sub(1))
 }
 
-pub fn mto_char(buf: &Buffer, evnt: Mto) -> Result<usize> {
+fn mto_char(buf: &Buffer, evnt: Mto) -> Result<usize> {
     let cursor = buf.to_char_cursor();
 
     let (n, ch, dp, pos) = match evnt {
@@ -1490,7 +1524,7 @@ pub fn mto_char(buf: &Buffer, evnt: Mto) -> Result<usize> {
     Ok(cursor)
 }
 
-pub fn mto_up(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
+fn mto_up(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let bc_xy = buf.to_xy_cursor(None);
     let row = bc_xy.row.saturating_sub(n);
     let line = &buf.line(row);
@@ -1511,7 +1545,7 @@ pub fn mto_up(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     Ok(cursor)
 }
 
-pub fn mto_down(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
+fn mto_down(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let row = {
         let row = buf.char_to_line(buf.to_char_cursor()) + n;
         cmp::min(row, buf.to_last_line_idx())
@@ -1536,7 +1570,7 @@ pub fn mto_down(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     Ok(cursor)
 }
 
-pub fn mto_row(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
+fn mto_row(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let cursor = buf.line_to_char(cmp::min(n, buf.to_last_line_idx()));
     let cursor = match dp {
         DP::TextCol => {
@@ -1548,7 +1582,7 @@ pub fn mto_row(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     Ok(cursor)
 }
 
-pub fn mto_percent(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
+fn mto_percent(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let row = {
         let n_lines = buf.to_last_line_idx() + 1;
         cmp::min(((n * n_lines) + 99) / 100, n_lines.saturating_sub(1))
@@ -1564,13 +1598,13 @@ pub fn mto_percent(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     Ok(cursor)
 }
 
-pub fn mto_end(buf: &Buffer) -> Result<usize> {
+fn mto_end(buf: &Buffer) -> Result<usize> {
     let line_idx = buf.to_last_line_idx();
     let n = text::visual_line_n(&buf.line(line_idx));
     Ok(buf.line_to_char(line_idx) + n.saturating_sub(1))
 }
 
-pub fn mto_cursor(buf: &Buffer, n: usize) -> Result<usize> {
+fn mto_cursor(buf: &Buffer, n: usize) -> Result<usize> {
     let cursor = buf.to_char_cursor();
     Ok(limite!(cursor + n, buf.n_chars().saturating_sub(1)))
 }
@@ -1624,7 +1658,7 @@ macro_rules! mto_text_left {
                     }
                     state => state,
                 },
-                None if $pos == DP::Start => break last_char_idx($buf),
+                None if $pos == DP::Start => break $buf.last_char_idx(),
                 None => break 0, // DP::End
             };
         };
@@ -1673,30 +1707,30 @@ macro_rules! mto_text_right {
                     }
                     state => state,
                 },
-                None => break last_char_idx($buf),
+                None => break $buf.last_char_idx(),
             };
         };
         Ok(saturate_cursor($buf, cursor))
     }};
 }
 
-pub fn mto_words_left(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
+fn mto_words_left(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
     mto_text_left!(buf, n, pos, MtoWord::St(n), MtoWord)
 }
 
-pub fn mto_words_right(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
+fn mto_words_right(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
     mto_text_right!(buf, n, pos, MtoWord::St(n), MtoWord)
 }
 
-pub fn mto_wwords_left(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
+fn mto_wwords_left(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
     mto_text_left!(buf, n, pos, MtoWWord::St(n), MtoWWord)
 }
 
-pub fn mto_wwords_right(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
+fn mto_wwords_right(buf: &Buffer, n: usize, pos: DP) -> Result<usize> {
     mto_text_right!(buf, n, pos, MtoWWord::St(n), MtoWWord)
 }
 
-pub fn mto_sentence_left(buf: &Buffer, n: usize) -> Result<usize> {
+fn mto_sentence_left(buf: &Buffer, n: usize) -> Result<usize> {
     let pos = DP::None;
     let start = MtoSentence::St(n);
     let cursor = mto_text_left!(buf, n, pos, start, MtoSentence)?;
@@ -1721,7 +1755,7 @@ pub fn mto_sentence_left(buf: &Buffer, n: usize) -> Result<usize> {
     Ok(cursor + if_else!(buf.to_char_cursor() <= cursor + i, 0, i))
 }
 
-pub fn mto_sentence_right(buf: &Buffer, n: usize) -> Result<usize> {
+fn mto_sentence_right(buf: &Buffer, n: usize) -> Result<usize> {
     let pos = DP::None;
     let start = {
         let ln = {
@@ -1733,7 +1767,7 @@ pub fn mto_sentence_right(buf: &Buffer, n: usize) -> Result<usize> {
     mto_text_right!(buf, n, pos, start, MtoSentence)
 }
 
-pub fn mto_paras_left(buf: &Buffer, mut n: usize) -> Result<usize> {
+fn mto_paras_left(buf: &Buffer, mut n: usize) -> Result<usize> {
     let row = buf.to_xy_cursor(None).row;
     let mut iter = buf.lines_at(row, DP::Left)?.enumerate();
     let row = loop {
@@ -1749,7 +1783,7 @@ pub fn mto_paras_left(buf: &Buffer, mut n: usize) -> Result<usize> {
     Ok(saturate_cursor(buf, buf.line_to_char(row)))
 }
 
-pub fn mto_paras_right(buf: &Buffer, mut n: usize) -> Result<usize> {
+fn mto_paras_right(buf: &Buffer, mut n: usize) -> Result<usize> {
     let row = buf.to_xy_cursor(None).row;
     let mut iter = buf.lines_at(row, DP::Right)?.enumerate();
     iter.next();
@@ -1766,14 +1800,14 @@ pub fn mto_paras_right(buf: &Buffer, mut n: usize) -> Result<usize> {
     Ok(saturate_cursor(buf, buf.line_to_char(row)))
 }
 
-pub fn mto_match_pair(buf: &Buffer) -> Result<usize> {
+fn mto_match_pair(buf: &Buffer) -> Result<usize> {
     use crate::match_pair;
 
     let cursor = buf.to_char_cursor();
     Ok(match_pair::match_under_cursor(buf).unwrap_or(cursor))
 }
 
-pub fn mto_unmatch_pair(buf: &Buffer, ch: char, n: usize, dir: DP) -> Result<usize> {
+fn mto_unmatch_pair(buf: &Buffer, ch: char, n: usize, dir: DP) -> Result<usize> {
     use crate::match_pair;
 
     let cursor = buf.to_char_cursor();
@@ -1785,7 +1819,7 @@ pub fn mto_unmatch_pair(buf: &Buffer, ch: char, n: usize, dir: DP) -> Result<usi
     Ok(cursor)
 }
 
-pub fn mto_bracket(buf: &mut Buffer, e: Mto) -> Result<Event> {
+fn mto_bracket(buf: &mut Buffer, e: Mto) -> Result<Event> {
     let mut m = 0;
     let mut cursor = buf.to_char_cursor();
     match e {
@@ -1824,7 +1858,7 @@ pub fn mto_bracket(buf: &mut Buffer, e: Mto) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-pub fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
+fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     let (n, patt, dp) = match evnt {
         Mto::Pattern(n, Some(patt), dp) => Ok((n, patt, dp)),
         _ => err_at!(Fatal, msg: format!("unreachable")),
@@ -1920,8 +1954,11 @@ fn mod_open(buf: &mut Buffer, repeat: usize, pos: DP) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-// skip whitespace from `offset` in specified direction `dp` and returned
-// the number of position skipped.
+/// Function to skip whitespace in a line.
+///
+/// Cursor position within the line is specified by `off` and direction
+/// in which to skip the whitespace is specified by `dp`. Return the number
+/// of position skipped.
 pub fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
     let line = text::visual_line(&line);
     let chars: Vec<char> = line.chars().collect();
@@ -1947,14 +1984,6 @@ pub fn skip_whitespace(line: &str, off: usize, dp: DP) -> Result<usize> {
         dp => err_at!(Fatal, msg: format!("invalid direction: {}", dp))?,
     };
     Ok(n)
-}
-
-pub fn to_span_line(buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
-    let span: Span = {
-        let iter = buf.chars_at(a, DP::Right)?.take(z - a);
-        String::from_iter(iter).into()
-    };
-    Ok(span.into())
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd)]
@@ -2430,6 +2459,7 @@ where
     }
 }
 
+/// Bi-directional, line-by-line iterator for Buffer.
 pub struct IterLine<'a> {
     _change: cell::Ref<'a, Change>, // holding a reference.
     iter: ropey::iter::Lines<'a>,
@@ -2448,6 +2478,7 @@ impl<'a> Iterator for IterLine<'a> {
     }
 }
 
+/// Bi-directional, char-by-char iterator for Buffer.
 pub struct IterChar<'a> {
     _change: Option<cell::Ref<'a, Change>>, // holding a reference.
     iter: ropey::iter::Chars<'a>,
@@ -2547,13 +2578,7 @@ impl Default for TabState {
 
 #[inline]
 fn saturate_cursor(buf: &Buffer, cursor: usize) -> usize {
-    if_else!(cursor >= buf.n_chars(), last_char_idx(buf), cursor)
-}
-
-pub fn last_char_idx(buf: &Buffer) -> usize {
-    let row = buf.to_last_line_idx();
-    let col = text::visual_line_n(&buf.line(row));
-    xy_to_cursor(buf, (row, col.saturating_sub(1)))
+    if_else!(cursor >= buf.n_chars(), buf.last_char_idx(), cursor)
 }
 
 #[inline]

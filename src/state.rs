@@ -1,6 +1,17 @@
-//! Ted state management. [State] wraps all applications, manages the terminal
-//! handles the event-loop. Some of the functionalities belong to the main.rs
-//! but handled here, acts as the bridge between main.rs and the ted-library.
+//! Ted state management.
+//!
+//! [State] wraps all applications, multi-tab-managment, manage the
+//! terminal, and handle the event-loop. Some of the functionalities
+//! belong to the main.rs but handled here, acts as the bridge between
+//! main.rs and the ted-library.
+//!
+//! _*Multi-tabs*_:
+//!
+//! By default ted is opened with single-tab window. But it is possible
+//! to spawn multiple tab-windows one for each application. Although
+//! [State] dedicates each tab-window for single application instance,
+//! an application type can internally share single instance across
+//! multiple tab-windows.
 
 use dirs;
 #[allow(unused_imports)]
@@ -43,6 +54,9 @@ pub struct Opt {
     #[structopt(long = "log", default_value = "")]
     pub log_file: String,
 
+    #[structopt(long = "nu", default_value = "0")]
+    pub nu: usize,
+
     #[structopt(short = "v", long = "verbose")]
     pub verbose: bool,
 
@@ -64,7 +78,7 @@ pub struct Opt {
     pub files: Vec<String>,
 }
 
-/// Application state
+/// Ted state.
 pub struct State {
     /// Command line options, refer to [Opt][Opt] type.
     pub opts: Opt,
@@ -400,9 +414,13 @@ impl Tab {
     }
 }
 
+/// Display text and parameters for each tab-window.
 pub struct TabTitle {
+    /// Tab title name.
     pub text: String,
+    /// Whether tab is modified.
     pub modified: bool,
+    /// Whether tab is the active window.
     pub active: bool,
 }
 

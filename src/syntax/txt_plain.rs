@@ -3,7 +3,7 @@ use log::{debug, error, trace};
 use tree_sitter as ts;
 
 use crate::{
-    buffer::{self, Buffer},
+    buffer::Buffer,
     colors::{ColorScheme, Highlight},
     event::Event,
     syntax::Syntax,
@@ -89,8 +89,8 @@ impl Syntax for PlainText {
         Ok(new_evnt)
     }
 
-    fn to_span_line(&self, b: &Buffer, a: usize, z: usize) -> Result<Spanline> {
-        let spl = buffer::to_span_line(b, a, z)?;
+    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+        let spl = buf.to_span_line(a, z)?;
         Ok(spl.using(self.scheme.to_style(Highlight::Canvas)))
     }
 

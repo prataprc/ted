@@ -3,7 +3,7 @@ use log::{debug, error, trace};
 use tree_sitter as ts;
 
 use crate::{
-    buffer::{self, Buffer},
+    buffer::Buffer,
     colors::ColorScheme,
     event::Event,
     syntax::Syntax,
@@ -98,8 +98,8 @@ impl Syntax for CodeCmd {
         Ok(new_evnt)
     }
 
-    fn to_span_line(&self, b: &Buffer, a: usize, z: usize) -> Result<Spanline> {
-        buffer::to_span_line(b, a, z)
+    fn to_span_line(&self, buf: &Buffer, a: usize, z: usize) -> Result<Spanline> {
+        buf.to_span_line(a, z)
     }
 
     fn to_status_cursor(&self) -> Result<Span> {
