@@ -1903,16 +1903,12 @@ fn mod_open(buf: &mut Buffer, repeat: usize, pos: DP) -> Result<Event> {
             buf.set_cursor(cursor).clear_sticky_col();
         }
         DP::Right => {
-            debug!("{}", buf.to_char_cursor());
             let cursor = {
                 let cursor = buf.to_char_cursor();
                 let n = text::visual_line_n(&buf.line(buf.char_to_line(cursor)));
                 buf.to_line_home(None) + n
             };
-            // let cursor = mto_right(buf, 1, DP::Nobound)?;
-            debug!("{} {:?}", cursor, buf.format.newline());
             let cursor = buf.cud_newlines(Some(cursor), buf.format.newline(), 1)?;
-            debug!("{}", cursor);
             buf.set_cursor(cursor).clear_sticky_col();
         }
         _ => err_at!(Fatal, msg: format!("unreachable"))?,
