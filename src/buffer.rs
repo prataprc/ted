@@ -145,11 +145,12 @@ enum Inner {
     Normal(NormalBuffer),
     Insert(InsertBuffer),
     Replace(ReplaceBuffer),
+    None,
 }
 
 impl Default for Inner {
     fn default() -> Inner {
-        Inner::Normal(NormalBuffer::default())
+        Inner::None
     }
 }
 
@@ -172,12 +173,33 @@ impl From<ReplaceBuffer> for Inner {
 }
 
 impl Inner {
-    #[inline]
-    fn on_event(self, buf: &mut Buffer, evnts: Event) -> Result<(Inner, Event)> {
+    fn do_repeat(buf: &mut Buffer) -> Result<Event> {
+        match &mut buf.inner {
+            Inner::Normal(_) => err_at!(Fatal, msg: format!("not supported")),
+            Inner::Insert(ib) => {
+                let i_evnts = ib.i_evnts.clone();
+                InsertBuffer::do_repeat(ib.repeat, i_evnts, buf)
+            }
+            Inner::Replace(_) => todo!(),
+            Inner::None => err_at!(Fatal, msg: format!("unreachable"))?,
+        }
+    }
+
+    fn into_normal_buffer(self) -> Result<Inner> {
         match self {
-            Inner::Normal(nb) => nb.on_event(buf, evnts),
-            Inner::Insert(ib) => ib.on_event(buf, evnts),
-            Inner::Replace(_rb) => todo!(),
+            inner @ Inner::Normal(_) => Ok(inner),
+            Inner::Insert(ib) => Ok(Inner::Normal(ib.into())),
+            Inner::Replace(_) => todo!(),
+            Inner::None => err_at!(Fatal, msg: format!("unreachable"))?,
+        }
+    }
+
+    fn insert_event(&mut self, evnt: Event) -> Result<()> {
+        match self {
+            Inner::Normal(_) => Ok(()),
+            Inner::Insert(ib) => ib.insert_event(evnt),
+            Inner::Replace(_) => todo!(),
+            Inner::None => err_at!(Fatal, msg: format!("unreachable"))?,
         }
     }
 
@@ -187,6 +209,7 @@ impl Inner {
             Inner::Normal(_) => Ok(()),
             Inner::Insert(ib) => ib.cud_char(cursor, ch),
             Inner::Replace(rb) => rb.cud_char(cursor, ch),
+            Inner::None => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
@@ -196,6 +219,7 @@ impl Inner {
             Inner::Normal(_) => Ok(()),
             Inner::Insert(ib) => ib.cud_str(cursor, text),
             Inner::Replace(rb) => rb.cud_str(cursor, text),
+            Inner::None => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 
@@ -208,6 +232,7 @@ impl Inner {
             Inner::Normal(_) => Ok(()),
             Inner::Insert(ib) => ib.cud_delete(range),
             Inner::Replace(rb) => rb.cud_delete(range),
+            Inner::None => err_at!(Fatal, msg: format!("unreachable")),
         }
     }
 }
@@ -253,6 +278,7 @@ impl Buffer {
             Inner::Normal(val) => val.set_cursor(cursor),
             Inner::Insert(val) => val.set_cursor(cursor),
             Inner::Replace(val) => val.set_cursor(cursor),
+            Inner::None => (),
         };
         self
     }
@@ -303,6 +329,7 @@ impl Buffer {
             Inner::Insert(ib) => Inner::Normal(ib.into()),
             Inner::Replace(_rb) => todo!(),
             inner @ Inner::Normal(_) => inner,
+            inner @ Inner::None => inner,
         };
     }
 
@@ -315,6 +342,7 @@ impl Buffer {
             }
             Inner::Replace(_rb) => todo!(),
             inner @ Inner::Insert(_) => inner,
+            inner @ Inner::None => inner,
         };
     }
 }
@@ -455,6 +483,7 @@ impl Buffer {
             Inner::Normal(_) => "normal",
             Inner::Insert(_) => "insert",
             Inner::Replace(_) => "replace",
+            Inner::None => "none",
         }
     }
 
@@ -508,6 +537,17 @@ impl Buffer {
             Inner::Normal(val) => val.to_change(),
             Inner::Insert(val) => val.to_change(),
             Inner::Replace(val) => val.to_change(),
+            Inner::None => unreachable!(),
+        }
+    }
+
+    #[inline]
+    fn as_mut_change(&mut self) -> &mut Rc<RefCell<Change>> {
+        match &mut self.inner {
+            Inner::Normal(val) => val.as_mut_change(),
+            Inner::Insert(val) => val.as_mut_change(),
+            Inner::Replace(val) => val.as_mut_change(),
+            Inner::None => unreachable!(),
         }
     }
 
@@ -528,11 +568,13 @@ impl Buffer {
 }
 
 impl Buffer {
-    pub fn on_event(&mut self, evnt: Event) -> Result<Event> {
-        let inner = mem::replace(&mut self.inner, Inner::default());
-        let (inner, evnt) = inner.on_event(self, evnt)?;
-        self.inner = inner;
-        Ok(evnt)
+    pub fn on_event(&mut self, evnts: Event) -> Result<Event> {
+        match &self.inner {
+            Inner::Normal(_) => NormalBuffer::on_event(self, evnts),
+            Inner::Insert(_) => InsertBuffer::on_event(self, evnts),
+            Inner::Replace(_) => todo!(),
+            Inner::None => err_at!(Fatal, msg: format!("unreachable")),
+        }
     }
 }
 
@@ -562,15 +604,6 @@ struct NormalBuffer {
     change: Rc<RefCell<Change>>,
 }
 
-impl Default for NormalBuffer {
-    fn default() -> NormalBuffer {
-        NormalBuffer {
-            i_evnts: Event::default(),
-            change: Default::default(),
-        }
-    }
-}
-
 impl From<InsertBuffer> for NormalBuffer {
     fn from(ib: InsertBuffer) -> NormalBuffer {
         NormalBuffer {
@@ -582,9 +615,10 @@ impl From<InsertBuffer> for NormalBuffer {
 
 impl NormalBuffer {
     fn new(buf: Rope) -> NormalBuffer {
-        let mut nb = NormalBuffer::default();
-        nb.change = Change::start(buf);
-        nb
+        NormalBuffer {
+            i_evnts: Event::default(),
+            change: Change::start(buf),
+        }
     }
 
     fn set_cursor(&mut self, cursor: usize) {
@@ -600,188 +634,183 @@ impl NormalBuffer {
     fn to_mut_change(&mut self) -> cell::RefMut<Change> {
         self.change.as_ref().borrow_mut()
     }
+
+    fn as_mut_change(&mut self) -> &mut Rc<RefCell<Change>> {
+        &mut self.change
+    }
 }
 
 impl NormalBuffer {
-    fn on_event(mut self, buf: &mut Buffer, mut evnts: Event) -> Result<(Inner, Event)> {
+    fn on_event(buf: &mut Buffer, mut evnts: Event) -> Result<Event> {
         let mut res_evnts = Event::Noop;
         loop {
-            self = match evnts.next() {
-                Some(evnt) => match self.do_on_event(buf, evnt)? {
-                    (Inner::Normal(nb), evnt) => {
-                        res_evnts.push(evnt);
-                        nb
+            match evnts.next() {
+                Some(evnt) => {
+                    res_evnts.push(Self::do_on_event(buf, evnt)?);
+                    match &buf.inner {
+                        Inner::Normal(_) => (),
+                        Inner::Insert(_) => {
+                            res_evnts.push(buf.on_event(evnts)?);
+                            break;
+                        }
+                        Inner::Replace(_) => todo!(),
+                        Inner::None => err_at!(Fatal, msg: format!("unreachable"))?,
                     }
-                    (inner @ Inner::Insert(_), evnt) => {
-                        res_evnts.push(evnt);
-                        let (inner, evnt) = inner.on_event(buf, evnts)?;
-                        res_evnts.push(evnt);
-                        break Ok((inner, res_evnts));
-                    }
-                    (_inner @ Inner::Replace(_), _evnt) => todo!(),
-                },
-                None => break Ok((self.into(), res_evnts)),
+                }
+                None => break,
             };
         }
+        Ok(res_evnts)
     }
 
-    fn do_on_event(self, buf: &mut Buffer, evnt: Event) -> Result<(Inner, Event)> {
+    fn do_on_event(buf: &mut Buffer, evnt: Event) -> Result<Event> {
         debug!("{}", evnt);
 
-        match evnt {
+        let evnt = match evnt {
             // first, try switching to insert mode, if event is insert.
-            Event::Md(Mod::Insert(n, pos)) if n > 0 => {
-                let (ib, evnt) = self.mod_insert(buf, n, pos)?;
-                Ok((ib.into(), evnt))
-            }
-            Event::Md(Mod::Append(n, pos)) if n > 0 => {
-                let (ib, evnt) = self.mod_append(buf, n, pos)?;
-                Ok((ib.into(), evnt))
-            }
-            Event::Md(Mod::Open(n, pos)) if n > 0 => {
-                let (ib, evnt) = self.mod_open(buf, n, pos)?;
-                Ok((ib.into(), evnt))
-            }
-            Event::Md(Mod::Insert(_, _)) => Ok((self.into(), Event::Noop)),
-            Event::Md(Mod::Append(_, _)) => Ok((self.into(), Event::Noop)),
-            Event::Md(Mod::Open(_, _)) => Ok((self.into(), Event::Noop)),
+            Event::Md(Mod::Insert(n, pos)) if n > 0 => mod_insert(buf, n, pos)?,
+            Event::Md(Mod::Append(n, pos)) if n > 0 => mod_append(buf, n, pos)?,
+            Event::Md(Mod::Open(n, pos)) if n > 0 => mod_open(buf, n, pos)?,
+            Event::Md(Mod::Insert(_, _)) => Event::Noop,
+            Event::Md(Mod::Append(_, _)) => Event::Noop,
+            Event::Md(Mod::Open(_, _)) => Event::Noop,
             // motion command - characterwise.
             Event::Mt(Mto::Left(n, dp)) => {
                 let cursor = mto_left(buf, n, dp)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::Right(n, dp)) => {
                 let cursor = mto_right(buf, n, dp)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::LineHome(dp)) => {
                 let cursor = mto_line_home(buf, dp)?;
                 buf.set_cursor(cursor).set_sticky_col(dp, "home");
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::LineEnd(n, dp)) => {
                 let cursor = mto_line_end(buf, n, dp)?;
                 buf.set_cursor(cursor).set_sticky_col(dp, "end");
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::LineMiddle(p, _)) if p < 1 => {
                 let cursor = mto_line_middle(buf, 50)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::LineMiddle(p, _)) => {
                 let cursor = mto_line_middle(buf, p)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::Col(n)) => {
                 let cursor = mto_column(buf, n)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(e @ Mto::CharF(_, _, _)) => {
                 buf.mto_find_char = e.clone();
                 let cursor = mto_char(buf, e)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(e @ Mto::CharT(_, _, _)) => {
                 buf.mto_find_char = e.clone();
                 let cursor = mto_char(buf, e)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::CharR(n, dir)) => {
                 let e = buf.mto_find_char.clone();
                 let cursor = mto_char(buf, e.dir_xor(n, dir)?)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             // motion command - linewise.
             Event::Mt(Mto::Up(n, dp)) => {
                 let cursor = mto_up(buf, n, dp)?;
                 buf.set_cursor(cursor);
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::Down(n, dp)) => {
                 let cursor = mto_down(buf, n, dp)?;
                 buf.set_cursor(cursor);
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::Row(n, dp)) => {
                 let n = n.saturating_sub(1);
                 let cursor = mto_row(buf, n, dp)?;
                 buf.set_cursor(cursor);
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::Percent(n, dp)) => {
                 let cursor = mto_percent(buf, n, dp)?;
                 buf.set_cursor(cursor);
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::Cursor(n)) => {
                 let cursor = mto_cursor(buf, n)?;
                 buf.set_cursor(cursor);
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             // motion command - word/sentence/para wise
             Event::Mt(Mto::Word(n, DP::Left, pos)) => {
                 let cursor = mto_words_left(buf, n, pos)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::Word(n, DP::Right, pos)) => {
                 let cursor = mto_words_right(buf, n, pos)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::WWord(n, DP::Left, pos)) => {
                 let cursor = mto_wwords_left(buf, n, pos)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::WWord(n, DP::Right, pos)) => {
                 let cursor = mto_wwords_right(buf, n, pos)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::Sentence(n, DP::Left)) => {
                 let cursor = mto_sentence_left(buf, n)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::Sentence(n, DP::Right)) => {
                 let cursor = mto_sentence_right(buf, n)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::Para(n, DP::Left)) => {
                 let cursor = mto_paras_left(buf, n)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::Para(n, DP::Right)) => {
                 let cursor = mto_paras_right(buf, n)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             // motion command, other motions.
             Event::Mt(Mto::MatchPair) => {
                 let cursor = mto_match_pair(buf)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             Event::Mt(Mto::UnmatchPair(n, ch, dir)) => {
                 let cursor = mto_unmatch_pair(buf, ch, n, dir)?;
                 buf.set_cursor(cursor).clear_sticky_col();
-                Ok((self.into(), Event::Noop))
+                Event::Noop
             }
             // motion command marks and jumps
             Event::Mt(Mto::Jump(typ, mindex)) => {
                 let mrk = mark::get_mark(&buf.marks, mindex);
-                let evnt = match mrk {
+                match mrk {
                     Some(mrk) if typ == '`' => {
                         let cursor = mrk.to_cursor();
                         buf.set_cursor(cursor).clear_sticky_col();
@@ -794,79 +823,30 @@ impl NormalBuffer {
                         Event::Noop
                     }
                     _ => Event::Mt(Mto::Jump(typ, mindex)),
-                };
-                Ok((self.into(), evnt))
+                }
             }
-            Event::Mr(mrk) => {
-                let evnt = match mrk.to_index() {
-                    'a'..='z' | '\'' | '`' => {
-                        let mrk = mrk.into_mark(buf);
-                        mark::set_mark(&mut buf.marks, mrk);
-                        Event::Noop
-                    }
-                    'A'..='Z' => Event::Mr(mrk.into_mark(buf)),
-                    _ => Event::Noop,
-                };
-                Ok((self.into(), evnt))
-            }
-            Event::Mt(e @ Mto::Bracket(_, _, _, _)) => {
-                let evnt = mto_bracket(buf, e)?;
-                Ok((self.into(), evnt))
-            }
+            Event::Mr(mrk) => match mrk.to_index() {
+                'a'..='z' | '\'' | '`' => {
+                    let mrk = mrk.into_mark(buf);
+                    mark::set_mark(&mut buf.marks, mrk);
+                    Event::Noop
+                }
+                'A'..='Z' => Event::Mr(mrk.into_mark(buf)),
+                _ => Event::Noop,
+            },
+            Event::Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(buf, e)?,
             Event::Mt(e @ Mto::Pattern(_, Some(_), _)) => {
                 buf.mto_pattern = e.clone();
-                let evnt = mto_pattern(buf, e)?;
-                Ok((self.into(), evnt))
+                mto_pattern(buf, e)?
             }
             Event::Mt(Mto::PatternR(n, dir)) => {
                 let e = buf.mto_pattern.clone();
-                let evnt = mto_pattern(buf, e.dir_xor(n, dir)?)?;
-                Ok((self.into(), evnt))
+                mto_pattern(buf, e.dir_xor(n, dir)?)?
             }
-            evnt => Ok((self.into(), evnt)),
-        }
-    }
+            evnt => evnt,
+        };
 
-    fn mod_insert(mut self, buf: &mut Buffer, n: usize, pos: DP) -> Result<(InsertBuffer, Event)> {
-        let ib = InsertBuffer::new(n, Change::fork(&mut self.change));
-        if pos == DP::TextCol {
-            let cursor = mto_line_home(buf, pos)?;
-            buf.set_cursor(cursor).set_sticky_col(pos, "home");
-        }
-        Ok((ib, Event::Noop))
-    }
-
-    fn mod_append(mut self, buf: &mut Buffer, n: usize, pos: DP) -> Result<(InsertBuffer, Event)> {
-        let ib = InsertBuffer::new(n, Change::fork(&mut self.change));
-        if pos == DP::End {
-            let cursor = mto_line_end(buf, 1, pos)?;
-            buf.set_cursor(cursor);
-        }
-        let cursor = mto_right(buf, 1, DP::Nobound)?;
-        buf.set_cursor(cursor).clear_sticky_col();
-        Ok((ib, Event::Noop))
-    }
-
-    fn mod_open(mut self, buf: &mut Buffer, n: usize, pos: DP) -> Result<(InsertBuffer, Event)> {
-        let ib = InsertBuffer::new(n, Change::fork(&mut self.change));
-        match pos {
-            DP::Left => {
-                let cursor = mto_line_home(buf, DP::None)?;
-                buf.set_cursor(cursor);
-                buf.cud_str(None, buf.format.newline())?;
-                let cursor = mto_left(buf, 1, DP::Nobound)?;
-                buf.set_cursor(cursor).clear_sticky_col();
-            }
-            DP::Right => {
-                let cursor = mto_line_end(buf, 1, DP::None)?;
-                buf.set_cursor(cursor);
-                let cursor = mto_right(buf, 1, DP::Nobound)?;
-                buf.set_cursor(cursor).clear_sticky_col();
-                buf.cud_str(None, buf.format.newline())?;
-            }
-            _ => err_at!(Fatal, msg: format!("unreachable"))?,
-        }
-        Ok((ib, Event::Noop))
+        Ok(evnt)
     }
 }
 
@@ -917,50 +897,64 @@ impl InsertBuffer {
     fn to_mut_change(&mut self) -> cell::RefMut<Change> {
         self.change.as_ref().borrow_mut()
     }
+
+    fn as_mut_change(&mut self) -> &mut Rc<RefCell<Change>> {
+        &mut self.change
+    }
 }
 
 impl InsertBuffer {
-    fn on_event(mut self, buf: &mut Buffer, mut evnts: Event) -> Result<(Inner, Event)> {
+    fn do_repeat(repeat: usize, i_evnts: Event, buf: &mut Buffer) -> Result<Event> {
+        let mut res_evnts = Event::Noop;
+        // repeat insert, if any, before exiting the insert-mode.
+        for _ in 0..repeat {
+            for evnt in i_evnts.clone().into_iter() {
+                res_evnts.push(Self::do_on_event(buf, evnt)?);
+            }
+        }
+        Ok(res_evnts)
+    }
+
+    fn insert_event(&mut self, evnt: Event) -> Result<()> {
+        self.i_evnts.push(evnt);
+        Ok(())
+    }
+
+    fn on_event(buf: &mut Buffer, mut evnts: Event) -> Result<Event> {
         use crate::event::Event::*;
 
         let mut res_evnts = Event::Noop;
-        loop {
-            self = match evnts.next() {
+        let evnt = loop {
+            let evnt = match evnts.next() {
                 // first, handle mode events.
                 Some(Md(Mod::Esc)) => {
-                    // repeat insert, if any, before exiting the insert-mode.
-                    for _ in 0..self.repeat {
-                        for evnt in self.i_evnts.clone().into_iter() {
-                            res_evnts.push(self.do_on_event(buf, evnt)?);
-                        }
-                    }
-
+                    let evnt = Inner::do_repeat(buf)?;
                     let cursor = mto_left(buf, 1, DP::LineBound)?;
                     buf.set_cursor(cursor).clear_sticky_col();
-                    let nb: NormalBuffer = self.into();
-                    break Ok((nb.into(), Event::Noop));
+                    buf.inner = {
+                        let inner = mem::replace(&mut buf.inner, Inner::default());
+                        inner.into_normal_buffer()?
+                    };
+                    break evnt;
                 }
                 // then other evnts
-                Some(Event::Noop) => {
-                    res_evnts.push(Event::Noop);
-                    self
-                }
-                Some(evnt @ TabInsert(_)) | Some(evnt @ TabClear) => {
-                    res_evnts.push(self.do_on_event(buf, evnt)?);
-                    self
-                }
+                Some(Event::Noop) => Event::Noop,
+                Some(evnt @ TabInsert(_)) => Self::do_on_event(buf, evnt)?,
+                Some(evnt @ TabClear) => Self::do_on_event(buf, evnt)?,
                 Some(evnt) => {
                     // save into this insert-session.
-                    self.i_evnts.push(evnt.clone());
-                    res_evnts.push(self.do_on_event(buf, evnt)?);
-                    self
+                    buf.inner.insert_event(evnt.clone())?;
+                    Self::do_on_event(buf, evnt)?
                 }
-                None => break Ok((self.into(), res_evnts)),
+                None => break Event::Noop,
             };
-        }
+            res_evnts.push(evnt)
+        };
+        res_evnts.push(evnt);
+        Ok(res_evnts)
     }
 
-    fn do_on_event(&self, buf: &mut Buffer, evnt: Event) -> Result<Event> {
+    fn do_on_event(buf: &mut Buffer, evnt: Event) -> Result<Event> {
         use crate::event::{self, Event::*};
         use std::iter::repeat;
 
@@ -1070,14 +1064,6 @@ impl From<NormalBuffer> for ReplaceBuffer {
     }
 }
 
-impl Default for ReplaceBuffer {
-    fn default() -> ReplaceBuffer {
-        ReplaceBuffer {
-            change: Default::default(),
-        }
-    }
-}
-
 impl ReplaceBuffer {
     fn set_cursor(&mut self, cursor: usize) {
         self.to_mut_change().set_cursor(cursor)
@@ -1109,6 +1095,10 @@ impl ReplaceBuffer {
 
     fn to_mut_change(&mut self) -> cell::RefMut<Change> {
         self.change.as_ref().borrow_mut()
+    }
+
+    fn as_mut_change(&mut self) -> &mut Rc<RefCell<Change>> {
+        &mut self.change
     }
 }
 
@@ -1236,18 +1226,18 @@ impl Change {
     {
         use std::ops::Bound::{Excluded, Included, Unbounded};
 
-        let n = self.rope.len_chars();
+        let n_chars = self.rope.len_chars();
 
         let from = match range.start_bound() {
-            Included(from) => cmp::min(*from, n.saturating_sub(1)),
-            Excluded(from) => cmp::min(from.saturating_add(1), n),
+            Included(from) => cmp::min(*from, n_chars.saturating_sub(1)),
+            Excluded(from) => cmp::min(from.saturating_add(1), n_chars),
             Unbounded => 0,
         };
 
         let to = match range.end_bound() {
-            Included(to) => cmp::min((*to).saturating_add(1), n),
-            Excluded(to) => cmp::min(*to, n),
-            Unbounded => n,
+            Included(to) => cmp::min((*to).saturating_add(1), n_chars),
+            Excluded(to) => cmp::min(*to, n_chars),
+            Unbounded => n_chars,
         };
 
         if from < to {
@@ -1419,7 +1409,7 @@ pub fn mto_up(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let row = bc_xy.row.saturating_sub(n);
     let line = &buf.line(row);
     let char_end = text::visual_line_n(&line).saturating_sub(1);
-    let col = cmp::min(char_end, bc_xy.col);
+    let col = cmp::min(bc_xy.col, char_end);
 
     let home = buf.line_to_char(row);
     let cursor = match dp {
@@ -1438,10 +1428,10 @@ pub fn mto_up(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
 pub fn mto_down(buf: &Buffer, n: usize, dp: DP) -> Result<usize> {
     let row = {
         let row = buf.char_to_line(buf.to_char_cursor()) + n;
-        cmp::min(buf.to_last_line_idx(), row)
+        cmp::min(row, buf.to_last_line_idx())
     };
     let char_end = text::visual_line_n(&buf.line(row)).saturating_sub(1);
-    let col = cmp::min(char_end, buf.to_xy_cursor(None).col);
+    let col = cmp::min(buf.to_xy_cursor(None).col, char_end);
 
     let home = buf.line_to_char(row);
     let cursor = match dp {
@@ -1515,7 +1505,7 @@ macro_rules! mto_text_left {
                 text::visual_line(&line).chars().collect()
             };
             let col = {
-                let n = cmp::min(chars.len(), bc_xy.col + 1);
+                let n = cmp::min(bc_xy.col + 1, chars.len());
                 if_else!($pos == DP::Start, n, bc_xy.col)
             };
             let rem_chars = chars[..col].len();
@@ -1782,6 +1772,51 @@ pub fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
     }?;
 
     buf.set_cursor(cursor);
+    Ok(Event::Noop)
+}
+
+fn mod_insert(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
+    let ib = InsertBuffer::new(n, Change::fork(buf.as_mut_change()));
+    if pos == DP::TextCol {
+        let cursor = mto_line_home(buf, pos)?;
+        buf.set_cursor(cursor).set_sticky_col(pos, "home");
+    }
+    buf.inner = ib.into();
+    Ok(Event::Noop)
+}
+
+fn mod_append(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
+    let ib = InsertBuffer::new(n, Change::fork(buf.as_mut_change()));
+    if pos == DP::End {
+        let cursor = mto_line_end(buf, 1, pos)?;
+        buf.set_cursor(cursor);
+    }
+    let cursor = mto_right(buf, 1, DP::Nobound)?;
+    buf.set_cursor(cursor).clear_sticky_col();
+    buf.inner = ib.into();
+    Ok(Event::Noop)
+}
+
+fn mod_open(buf: &mut Buffer, n: usize, pos: DP) -> Result<Event> {
+    let ib = InsertBuffer::new(n, Change::fork(buf.as_mut_change()));
+    match pos {
+        DP::Left => {
+            let cursor = mto_line_home(buf, DP::None)?;
+            buf.set_cursor(cursor);
+            buf.cud_str(None, buf.format.newline())?;
+            let cursor = mto_left(buf, 1, DP::Nobound)?;
+            buf.set_cursor(cursor).clear_sticky_col();
+        }
+        DP::Right => {
+            let cursor = mto_line_end(buf, 1, DP::None)?;
+            buf.set_cursor(cursor);
+            let cursor = mto_right(buf, 1, DP::Nobound)?;
+            buf.set_cursor(cursor).clear_sticky_col();
+            buf.cud_str(None, buf.format.newline())?;
+        }
+        _ => err_at!(Fatal, msg: format!("unreachable"))?,
+    }
+    buf.inner = ib.into();
     Ok(Event::Noop)
 }
 
