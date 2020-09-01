@@ -4,21 +4,23 @@
 use std::sync::mpsc;
 
 use crate::{code, event::Event, pubsub::Notify, state, window::Cursor, Result};
+#[allow(unused_imports)]
+use crate::{pubsub::PubSub, window::Coord};
 
 pub trait Application {
     /// Subscribe a channel for a topic. Any number of components can
-    /// subscribe to the same topic. Refer [pubsub::PubSub] for more detail.
+    /// subscribe to the same topic. Refer [PubSub] for more detail.
     fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>);
 
-    /// Notify all subscribers for `topic` with `msg`. Refer [pubsub::PubSub]
+    /// Notify all subscribers for `topic` with `msg`. Refer [PubSub]
     /// for more detail.
     fn notify(&self, topic: &str, msg: Notify) -> Result<()>;
 
-    /// Handle event. Refer [event::Event] for details.
+    /// Handle event. Refer [Event] for details.
     fn on_event(&mut self, evnt: Event) -> Result<Event>;
 
     /// Refresh terminal window, application is responsible for its view-port,
-    /// typically configured using [window::Coord] when the application was
+    /// typically configured using [Coord] when the application was
     /// created.
     fn on_refresh(&mut self) -> Result<()>;
 

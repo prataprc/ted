@@ -27,7 +27,7 @@ macro_rules! config {
 
         /// Generated using config![] macro. All configuration fields are public
         /// and macros automatically implements serialization, deserialization,
-        /// default and mixin functionalities. Refer [config] macro for
+        /// default and mixin functionalities. Refer [crate::config] macro for
         /// more detail.
         #[derive(Clone, Debug, Serialize)]
         pub struct Config {
@@ -35,7 +35,7 @@ macro_rules! config {
         }
 
         /// Generated using config![] macro. Shadow type for [Config] type.
-        /// Refer [config] macros for more detail.
+        /// Refer [crate::config] macros for more detail.
         #[derive(Clone, Debug, Deserialize)]
         pub struct ConfigToml {
             $(pub $field: Option<$t>,)*

@@ -456,8 +456,8 @@ impl Style {
     /// * "on" and "bg" are treated as equivalent.
     /// * "with" and "fg" are treated as equivalent.
     /// * "attr" and "attribute" are treated as equivalent.
-    /// * for <color> refer to [to_color] method for details.
-    /// * for <attr> refer to [to_color] method for details.
+    /// * for <color> refer to [Style::to_color] method for details.
+    /// * for <attr> refer to [Style::to_color] method for details.
     pub fn from_toml(value: &toml::Value) -> Result<Style> {
         use crate::Error::Invalid;
 

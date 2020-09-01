@@ -5,7 +5,7 @@
 //! belong to the main.rs but handled here, acts as the bridge between
 //! main.rs and the ted-library.
 //!
-//! _*Multi-tabs*_:
+//! __Multi-tab__:
 //!
 //! By default ted is opened with single-tab window. But it is possible
 //! to spawn multiple tab-windows one for each application. Although
@@ -42,8 +42,8 @@ use crate::{
     Error, Result,
 };
 
-#[derive(Debug, Clone, StructOpt)]
 /// Command line options.
+#[derive(Debug, Clone, StructOpt)]
 pub struct Opt {
     #[structopt(long = "app", default_value = "code")]
     pub app: String,
@@ -54,8 +54,8 @@ pub struct Opt {
     #[structopt(long = "log", default_value = "")]
     pub log_file: String,
 
-    #[structopt(long = "nu", default_value = "0")]
-    pub nu: usize,
+    #[structopt(long = "nu")]
+    pub nu: Option<usize>,
 
     #[structopt(short = "v", long = "verbose")]
     pub verbose: bool,
@@ -76,6 +76,19 @@ pub struct Opt {
     pub version: bool,
 
     pub files: Vec<String>,
+}
+
+impl From<Opt> for Event {
+    fn from(opts: Opt) -> Event {
+        use crate::event::{Mto, DP};
+
+        let event = match opts.nu {
+            Some(nu) => Event::Mt(Mto::Row(nu, DP::None)),
+            None => Event::Noop,
+        };
+
+        event
+    }
 }
 
 /// Ted state.
@@ -269,13 +282,13 @@ impl State {
 }
 
 impl State {
-    /// Subscribe a channel for a topic. Refer [pubsub::PubSub] for more detail.
+    /// Subscribe a channel for a topic. Refer [PubSub] for more detail.
     pub fn subscribe(&mut self, topic: &str, tx: mpsc::Sender<Notify>) {
         self.subscribers.subscribe(topic, tx.clone());
         self.inner.subscribe(topic, tx)
     }
 
-    /// Notify all subscribers for `topic` with `msg`. Refer [pubsub::PubSub]
+    /// Notify all subscribers for `topic` with `msg`. Refer [PubSub]
     /// for more detail.
     pub fn notify(&self, topic: &str, msg: Notify) -> Result<()> {
         self.subscribers.notify(topic, msg.clone())?;
@@ -312,47 +325,43 @@ impl State {
         let mut stats = util::Latency::new("EVENT");
         let mut r_stats = util::Latency::new("READT");
 
-        // initial screen refresh
         let mut inner = mem::replace(&mut self.inner, Inner::default());
+
+        // initial screen refresh
         inner.on_refresh(&self)?;
         if let Some(cursor) = inner.to_cursor() {
             err_at!(Fatal, termex!(cursor))?;
         }
 
-        let mut evnts = Event::Noop;
+        let mut evnts: Event = self.opts.clone().into();
         loop {
-            evnts.drain();
-            // new event
-            {
-                let start = time::Instant::now();
-                let evnt: Event = err_at!(Fatal, read())?.into();
-                r_stats.sample(start.elapsed());
-                evnts.push(evnt);
-            }
-
             if evnts.clone().any(|evnt| Self::is_quit(&evnt)) {
                 break;
             }
 
-            let start = time::Instant::now();
-            loop {
+            // handle event(s)
+            {
+                let start = time::Instant::now();
+
                 hidecr!()?;
-                let evnt = evnts.pop();
-                if let Event::Noop = evnt.clone() {
-                    break;
-                }
-                // dispatch
-                evnts.push(inner.on_event(evnt)?);
-                evnts = {
-                    let iter = evnts.filter_map(|e| self.handle_command(e));
-                    Event::from_iter(iter)
-                };
+
+                evnts = self.bubble_down(&mut inner, evnts)?;
+                evnts = self.bubble_up(&mut inner, evnts)?;
+
                 inner.on_refresh(&self)?;
+                if let Some(cursor) = inner.to_cursor() {
+                    err_at!(Fatal, termex!(cursor))?;
+                }
+
+                stats.sample(start.elapsed());
             }
-            if let Some(cursor) = inner.to_cursor() {
-                err_at!(Fatal, termex!(cursor))?;
-            }
-            stats.sample(start.elapsed());
+
+            evnts.drain();
+
+            // new event
+            let start = time::Instant::now();
+            evnts = err_at!(Fatal, read())?.into();
+            r_stats.sample(start.elapsed());
         }
 
         let mut s = format!("{}\n", r_stats.pretty_print());
@@ -367,10 +376,16 @@ impl State {
         }
     }
 
-    fn handle_command(&mut self, evnt: Event) -> Option<Event> {
-        match evnt {
-            evnt => Some(evnt),
+    fn bubble_down(&mut self, inner: &mut Inner, evnts: Event) -> Result<Event> {
+        let mut res_evnts: Event = Event::default();
+        for evnt in evnts {
+            res_evnts.push(inner.on_event(evnt)?);
         }
+        Ok(res_evnts)
+    }
+
+    fn bubble_up(&mut self, _inner: &mut Inner, evnts: Event) -> Result<Event> {
+        Ok(evnts)
     }
 }
 
