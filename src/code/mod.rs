@@ -13,7 +13,7 @@ mod window_file;
 use log::{debug, error, trace};
 use toml;
 
-use std::{ffi, mem, sync::mpsc};
+use std::{convert::TryFrom, ffi, mem, sync::mpsc};
 
 use crate::{
     app::Application,
@@ -28,7 +28,7 @@ use crate::{
     pubsub::{self, PubSub},
     state::{self, State},
     window::{Coord, Cursor, Window, WindowLess, WindowPrompt, WindowStatus, WindowSuggest},
-    Result,
+    Error, Result,
 };
 
 pub struct Code {
@@ -111,14 +111,18 @@ impl AsMut<Config> for Code {
     }
 }
 
-impl<'a> From<(&'a State, Coord)> for Code {
-    fn from((state, coord): (&'a State, Coord)) -> Code {
+impl<'a> TryFrom<(&'a State, Coord)> for Code {
+    type Error = Error;
+
+    fn try_from((state, coord): (&'a State, Coord)) -> Result<Code> {
         let config = {
             let value = {
                 let toml_value = state.config_value.clone();
                 crate::config::to_section(toml_value, "code")
             };
-            Config::default().mixin(value.try_into().unwrap())
+            let mut config = Config::default().mixin(value.try_into().unwrap());
+            config.read_only = state.opts.read_only;
+            config
         };
 
         debug!(
@@ -165,7 +169,7 @@ impl<'a> From<(&'a State, Coord)> for Code {
         } else {
             Inner::Edit(edit)
         };
-        app
+        Ok(app)
     }
 }
 

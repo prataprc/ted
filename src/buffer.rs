@@ -112,8 +112,6 @@ impl Ord for Cursor {
 pub struct Buffer {
     /// Source for this buffer, typically a file from local disk.
     pub location: Location,
-    /// Mark this buffer read-only, in which case insert ops are not allowed.
-    pub read_only: bool,
     /// Text-format for this buffer.
     pub format: text::Format,
     /// Shift-width, number of spaces to use for each step of indent.
@@ -257,7 +255,6 @@ impl Buffer {
         *num = *num + 1;
         let b = Buffer {
             location: loc,
-            read_only: false,
             format: text::Format::default(),
             shift_width: SHIFT_WIDTH,
             num: *num,
@@ -292,7 +289,7 @@ impl Buffer {
 
     /// Configure buffer as read-only.
     pub fn set_read_only(&mut self, read_only: bool) -> &mut Self {
-        self.read_only = read_only;
+        self.location.set_read_only(read_only);
         self
     }
 

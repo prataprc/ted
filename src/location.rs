@@ -93,6 +93,15 @@ impl Location {
             read_only,
         })
     }
+
+    pub fn set_read_only(&mut self, ro: bool) -> &mut Self {
+        match self {
+            Location::Memory { read_only, .. } => *read_only = ro,
+            Location::Disk { read_only, .. } => *read_only = ro,
+            Location::Ted { read_only, .. } => *read_only = ro,
+        }
+        self
+    }
 }
 
 impl Location {

@@ -32,7 +32,6 @@ use std::{
 
 use crate::{
     app::App,
-    code,
     colors::{self, ColorScheme},
     config,
     event::Event,
@@ -263,11 +262,8 @@ impl State {
         // now we are ready to create the app.
         let app = match opts.app.as_str() {
             "code" => {
-                let app: code::Code = {
-                    let coord = state.tm.to_screen_coord();
-                    (&state, coord).into()
-                };
-                Ok(App::Code(app))
+                let coord = state.tm.to_screen_coord();
+                Ok(App::Code((&state, coord).try_into()?))
             }
             _ => err_at!(Invalid, msg: format!("invalid app {:?}", &opts.app)),
         }?;
