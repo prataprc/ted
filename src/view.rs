@@ -439,7 +439,6 @@ impl WrapView {
             "pivot:{} cursor:{} nbc:{} {} {}",
             pivot, cursor, nbc, nu_wth, max_wth
         );
-        // debug!("lines: {:?}", lines);
 
         // oh god !!
         match max_wth {
@@ -473,12 +472,14 @@ impl WrapView {
                 .collect();
             cmp::min(row.saturating_add(rows.len()), row_max) as u16
         } else {
-            let rows: Vec<&ScrLine> = edit_lines
-                .iter()
-                .skip_while(|sline| sline.bc <= nbc)
-                .take_while(|sline| sline.bc <= obc)
-                .collect();
-            let row = row.saturating_sub(rows.len());
+            let row = {
+                let rows: Vec<&ScrLine> = edit_lines
+                    .iter()
+                    .skip_while(|sline| sline.bc <= nbc)
+                    .take_while(|sline| obc > sline.bc)
+                    .collect();
+                row.saturating_sub(rows.len())
+            };
             let scroll_off = self.scroll_off as usize;
             let item = wrap_lines(buf, (0..scroll_off).collect(), nu_wth, wth)
                 .into_iter()

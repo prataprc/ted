@@ -1306,10 +1306,13 @@ impl Change {
     }
 
     fn is_modified(&self) -> bool {
-        match self.cuds {
+        let mut modified = match self.cuds {
             Event::Noop => false,
             _ => true,
-        }
+        };
+        modified = modified || self.past.is_some();
+        modified = modified || self.news.len() > 0;
+        modified
     }
 }
 
