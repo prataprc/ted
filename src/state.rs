@@ -22,9 +22,10 @@ use structopt::StructOpt;
 use std::{
     cmp,
     convert::{TryFrom, TryInto},
-    fs,
+    ffi, fs,
     iter::FromIterator,
     mem, path,
+    str::FromStr,
     sync::mpsc,
     time,
 };
@@ -51,11 +52,14 @@ pub struct Opt {
     #[structopt(short = "u", long = "config")]
     pub toml_file: Option<String>,
 
-    #[structopt(long = "log", default_value = "")]
-    pub log_file: String,
+    #[structopt(long = "log")]
+    pub log_file: Option<String>,
 
     #[structopt(long = "nu")]
     pub nu: Option<usize>,
+
+    #[structopt(long = "pattern")]
+    pub pattern: Option<String>,
 
     #[structopt(short = "v", long = "verbose")]
     pub verbose: bool,
@@ -82,12 +86,17 @@ impl From<Opt> for Event {
     fn from(opts: Opt) -> Event {
         use crate::event::{Mto, DP};
 
-        let event = match opts.nu {
+        let mut evnt = match opts.nu {
             Some(nu) => Event::Mt(Mto::Row(nu, DP::None)),
             None => Event::Noop,
         };
 
-        event
+        evnt.push(match opts.pattern.clone() {
+            Some(patt) => Event::Mt(Mto::Pattern(1, Some(patt), DP::Right)),
+            None => Event::Noop,
+        });
+
+        evnt
     }
 }
 
@@ -96,7 +105,7 @@ pub struct State {
     /// Command line options, refer to [Opt][Opt] type.
     pub opts: Opt,
     /// State level configuration paramters.
-    pub config: config::Config,
+    pub config: Config,
     /// Toml instance of configuration parameters. Following is a list
     /// of possible configuration sources:
     ///
@@ -221,7 +230,7 @@ impl TryFrom<Opt> for State {
         let config_value = config::read_config(opts.toml_file.clone(), None)?;
         let config = {
             let config = err_at!(Invalid, config_value.clone().try_into())?;
-            config::Config::default().mixin(config)
+            Config::default().mixin(config)
         };
         // then the schemes.
         let schemes = Self::load_color_schemes()?;
@@ -471,13 +480,13 @@ fn init_logger(opts: &Opt) -> Result<()> {
         Fatal,
         dirs::home_dir().ok_or(format!("can't find home-directory"))
     )?;
-    let log_file: path::PathBuf = if opts.log_file.is_empty() {
-        [home_dir, path::Path::new(".ted.log").to_path_buf()]
-    } else {
-        [home_dir, path::Path::new(&opts.log_file).to_path_buf()]
-    }
-    .iter()
-    .collect();
+    let log_file: path::PathBuf = {
+        let log_file = match opts.log_file.as_ref() {
+            Some(log_file) => path::Path::new(log_file).to_path_buf(),
+            None => path::Path::new(".ted.log").to_path_buf(),
+        };
+        [home_dir, log_file].iter().collect()
+    };
 
     let level_filter = if opts.trace {
         simplelog::LevelFilter::Trace
@@ -507,3 +516,8 @@ fn init_logger(opts: &Opt) -> Result<()> {
     );
     Ok(())
 }
+
+config![
+    (scheme, String, "default".to_string()),
+    (max_tab_pages, u8, 16)
+];

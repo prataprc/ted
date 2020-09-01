@@ -4,15 +4,12 @@
 use lazy_static::lazy_static;
 #[allow(unused_imports)]
 use log::{debug, trace};
-use regex::Regex;
 use ropey::{self, Rope};
 
 use std::{
     borrow::Borrow,
     cell::{self, RefCell},
-    cmp,
-    convert::{TryFrom, TryInto},
-    fmt, io,
+    cmp, fmt, io,
     iter::FromIterator,
     mem,
     ops::RangeBounds,
@@ -909,11 +906,17 @@ impl NormalBuffer {
             Event::Mt(e @ Mto::Bracket(_, _, _, _)) => mto_bracket(buf, e)?,
             Event::Mt(e @ Mto::Pattern(_, Some(_), _)) => {
                 buf.mto_pattern = e.clone();
-                mto_pattern(buf, e)?
+
+                let cursor = mto_pattern(buf, e)?;
+                buf.set_cursor(cursor).clear_sticky_col();
+                Event::Noop
             }
             Event::Mt(Mto::PatternR(n, dir)) => {
                 let e = buf.mto_pattern.clone();
-                mto_pattern(buf, e.dir_xor(n, dir)?)?
+
+                let cursor = mto_pattern(buf, e.dir_xor(n, dir)?)?;
+                buf.set_cursor(cursor).clear_sticky_col();
+                Event::Noop
             }
             evnt => evnt,
         };
@@ -1858,41 +1861,44 @@ fn mto_bracket(buf: &mut Buffer, e: Mto) -> Result<Event> {
     Ok(Event::Noop)
 }
 
-fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<Event> {
-    let (n, patt, dp) = match evnt {
-        Mto::Pattern(n, Some(patt), dp) => Ok((n, patt, dp)),
-        _ => err_at!(Fatal, msg: format!("unreachable")),
-    }?;
+fn mto_pattern(buf: &mut Buffer, evnt: Mto) -> Result<usize> {
+    use regex::Regex;
 
-    let iter = {
-        let search: Search = patt.as_str().try_into()?;
-        let byte_off = {
-            let char_idx = buf.to_char_cursor();
-            buf.to_change().rope.char_to_byte(char_idx)
-        };
-        match dp {
-            DP::Right => search.find_fwd(&buf.to_string(), byte_off),
-            DP::Left => search.find_rev(&buf.to_string(), byte_off),
-            _ => unreachable!(),
+    let (n, patt, dp) = match evnt.clone() {
+        Mto::Pattern(n, Some(patt), dp) => {
+            let msg = format!("{}", patt);
+            let patt = err_at!(BadPattern, Regex::new(&patt), msg)?;
+            (n, patt, dp)
         }
+        _ => err_at!(Fatal, msg: format!("unreachable"))?,
+    };
+
+    let get_matches = |txt: String| -> Vec<(usize, usize)> {
+        let iter = patt.find_iter(&txt).map(|m| (m.start(), m.end()));
+        iter.collect()
+    };
+
+    let cursor = buf.to_char_cursor();
+    match dp {
+        DP::Left => {
+            let txt = buf.slice(..cursor);
+            let matches: Vec<(usize, usize)> = get_matches(txt);
+            match matches.into_iter().rev().skip(n.saturating_sub(1)).next() {
+                Some((start, _)) => Ok(start),
+                None => Ok(cursor),
+            }
+        }
+        DP::Right => {
+            let from = cursor.saturating_add(1);
+            let txt = buf.slice(from..);
+            let matches: Vec<(usize, usize)> = get_matches(txt);
+            match matches.into_iter().skip(n.saturating_sub(1)).next() {
+                Some((start, _)) => Ok(from + start),
+                None => Ok(cursor),
+            }
+        }
+        _ => err_at!(Fatal, msg: format!("unreachable"))?,
     }
-    .into_iter();
-
-    let n = n.saturating_sub(1);
-    let cursor = match dp {
-        DP::Left => match iter.skip(n).next() {
-            Some((s, _)) => Ok(s),
-            None => Ok(buf.to_char_cursor()),
-        },
-        DP::Right => match iter.skip(n).next() {
-            Some((s, _)) => Ok(s),
-            None => Ok(buf.to_char_cursor()),
-        },
-        _ => err_at!(Fatal, msg: format!("unreachable")),
-    }?;
-
-    buf.set_cursor(cursor);
-    Ok(Event::Noop)
 }
 
 fn mod_insert(buf: &mut Buffer, repeat: usize, pos: DP) -> Result<Event> {
@@ -2493,60 +2499,6 @@ impl<'a> Iterator for IterChar<'a> {
             self.iter.prev()
         } else {
             self.iter.next()
-        }
-    }
-}
-
-#[derive(Clone)]
-struct Search {
-    patt: Regex,
-}
-
-impl<'a> TryFrom<&'a str> for Search {
-    type Error = Error;
-
-    fn try_from(patt: &'a str) -> Result<Search> {
-        let patt = err_at!(BadPattern, Regex::new(patt), format!("{}", patt))?;
-        Ok(Search { patt })
-    }
-}
-
-impl Search {
-    fn find_fwd(&self, text: &str, byte_off: usize) -> Vec<(usize, usize)> {
-        let matches: Vec<(usize, usize)> = {
-            let iter = self.patt.find_iter(text).map(|m| (m.start(), m.end()));
-            iter.collect()
-        };
-
-        match Self::find(byte_off, &matches[..]) {
-            Some(i) => {
-                let mut ms = matches[i..].to_vec();
-                ms.extend(&matches[..i]);
-                ms
-            }
-            None => matches,
-        }
-    }
-
-    fn find_rev(&self, text: &str, byte_off: usize) -> Vec<(usize, usize)> {
-        let mut matches = self.find_fwd(text, byte_off);
-        matches.reverse();
-        matches
-    }
-
-    fn find(off: usize, rs: &[(usize, usize)]) -> Option<usize> {
-        match rs.len() {
-            0 => None,
-            1 => Some(0),
-            _ => {
-                let m = rs.len() / 2;
-                let (s, e) = rs[m].clone();
-                if e < off || off >= s {
-                    Self::find(off, &rs[m..]).map(|i| m + i)
-                } else {
-                    Self::find(off, &rs[..m])
-                }
-            }
         }
     }
 }

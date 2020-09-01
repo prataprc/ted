@@ -5,7 +5,6 @@ use toml;
 use std::{
     convert::{TryFrom, TryInto},
     ffi, fs, path,
-    str::FromStr,
 };
 
 use crate::{colors::ColorScheme, Error, Result};
@@ -98,11 +97,6 @@ macro_rules! config {
         }
     );
 }
-
-config![
-    (scheme, String, "default".to_string()),
-    (max_tab_pages, u8, 16)
-];
 
 struct ConfigFile(ffi::OsString);
 
