@@ -444,6 +444,12 @@ impl WinBuffer for Buffer {
         change.rope.len_chars()
     }
 
+    #[inline]
+    fn n_lines(&self) -> usize {
+        let change = &self.to_change();
+        change.rope.len_lines()
+    }
+
     fn to_last_line_idx(&self) -> usize {
         let n_lines = {
             let change = &self.to_change();

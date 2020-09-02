@@ -283,9 +283,9 @@ impl NoWrap {
             let from = nbc_xy.row.saturating_sub(nc_row as usize);
             let to = {
                 let to = from + (self.coord.hgt as usize);
-                cmp::max(buf.to_last_line_idx(), to)
+                cmp::max(to, buf.n_lines())
             };
-            (from..=to).collect()
+            (from..to).collect()
         };
         let nu_wth = {
             let row = lines.clone().into_iter().max().unwrap_or(0);

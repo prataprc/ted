@@ -94,6 +94,9 @@ pub trait WinBuffer {
     /// Return the number of characters in the buffer.
     fn n_chars(&self) -> usize;
 
+    /// Return the number of lines in the buffer.
+    fn n_lines(&self) -> usize;
+
     /// Return the index number of last line in the buffer, starts from 0.
     fn to_last_line_idx(&self) -> usize;
 

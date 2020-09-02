@@ -340,26 +340,31 @@ impl Application for Code {
         use crate::event::Mto;
 
         let inner = mem::replace(&mut self.inner, Inner::default());
-        let (mut inner, evnt) = match (inner, evnt) {
+        let (mut inner, evnt) = match (inner, evnt.clone()) {
             (Inner::Edit(edit), Event::Mr(mrk)) => {
+                debug!("code event {}", evnt);
                 mark::set_mark(&mut self.marks, mrk);
                 (Inner::Edit(edit), Event::Noop)
             }
             (Inner::Edit(edit), Event::Mt(Mto::Jump('`', _mindex))) => {
+                debug!("code event {}", evnt);
                 // TODO: use `:buffer` command to load the buffer.
                 // TODO: set the cursor, clear-sticky-col
                 (Inner::Edit(edit), Event::Noop)
             }
             (Inner::Edit(edit), Event::Mt(Mto::Jump('\'', _mindex))) => {
+                debug!("code event {}", evnt);
                 // TODO: use `:buffer` command to load the buffer.
                 // TODO: set the cursor, clear-sticky-col
                 // TODO: mto_line_home
                 (Inner::Edit(edit), Event::Noop)
             }
             (Inner::Edit(edit), Event::Mt(Mto::Jump(typ, mindex))) => {
+                debug!("code event {}", evnt);
                 (Inner::Edit(edit), Event::Mt(Mto::Jump(typ, mindex)))
             }
             (Inner::Edit(edit), Event::Char(':', m)) if m.is_empty() => {
+                debug!("code event {}", evnt);
                 let prefix = edit.wfile.to_event_prefix();
                 let wcmd = WindowCmd::new(self.to_coord_wcmd(), self)?;
                 let mut val = Command { edit, wcmd };
@@ -418,14 +423,21 @@ impl Application for Code {
                 edit.wstat.on_refresh()?;
                 // TODO: edit.tbcline.on_refresh(self)?;
             }
-            Inner::Prompt(prompt) => match prompt.prompts.first_mut() {
-                Some(p) => p.on_refresh()?,
-                None => (),
-            },
+            Inner::Prompt(prompt) => {
+                prompt.edit.wfile.on_refresh(self)?;
+                match prompt.prompts.first_mut() {
+                    Some(p) => p.on_refresh()?,
+                    None => (),
+                };
+            }
             Inner::Command(cmd) => {
+                cmd.edit.wfile.on_refresh(self)?;
                 cmd.wcmd.on_refresh(self)?;
             }
-            Inner::Less(less) => less.wless.on_refresh()?,
+            Inner::Less(less) => {
+                less.edit.wfile.on_refresh(self)?;
+                less.wless.on_refresh()?;
+            }
             Inner::None => unreachable!(),
         }
         self.inner = inner;
