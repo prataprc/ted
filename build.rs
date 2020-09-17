@@ -4,7 +4,6 @@ use which;
 
 use std::{env, ffi, path, process};
 
-#[macro_export]
 macro_rules! check_exit {
     ($res:expr, $n:expr) => {{
         match $res {
@@ -17,7 +16,6 @@ macro_rules! check_exit {
     }};
 }
 
-#[macro_export]
 macro_rules! err_at {
     (msg:$m:expr) => {
         Err(format!("{}:{} {}", file!(), line!(), $m))
