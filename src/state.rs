@@ -124,8 +124,14 @@ pub struct State {
 }
 
 enum Inner {
-    Mono { tab: Tab },
-    Multi { coord: Coord, tabs: Vec<Tab> },
+    Mono {
+        tab: Tab,
+    },
+    #[allow(dead_code)]
+    Multi {
+        coord: Coord,
+        tabs: Vec<Tab>,
+    },
     None,
 }
 

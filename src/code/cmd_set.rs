@@ -4,11 +4,15 @@ use log::{debug, error, trace};
 use crate::{code::cmd::Command, code::Code, event::Event, syntax, Result};
 
 pub struct Set {
+    #[allow(dead_code)]
     inner: Inner,
 }
 
 enum Inner {
-    Config { param: String },
+    #[allow(dead_code)]
+    Config {
+        param: String,
+    },
     None,
 }
 

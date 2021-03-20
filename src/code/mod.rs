@@ -32,6 +32,7 @@ use crate::{
 };
 
 pub struct Code {
+    #[allow(dead_code)]
     // full set of configuration paramter from [State][State].
     config_value: toml::Value,
     // application only configuration.
@@ -73,7 +74,9 @@ impl Inner {
 }
 
 struct Edit {
+    #[allow(dead_code)]
     wfile: WindowFile,
+    #[allow(dead_code)]
     wsugg: WindowSuggest,
     wstat: WindowStatus,
 }

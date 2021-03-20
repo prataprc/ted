@@ -83,6 +83,7 @@ pub fn set_mark(marks: &mut Marks, mark: Mark) -> Option<Mark> {
     old
 }
 
+#[allow(dead_code)]
 #[inline]
 pub fn del_mark(marks: &mut Marks, index: u8) -> Option<Mark> {
     marks[index as usize].take()

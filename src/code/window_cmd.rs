@@ -24,6 +24,7 @@ pub struct WindowCmd {
     buf: Buffer,
     scheme: ColorScheme,
     keymap: Keymap,
+    #[allow(dead_code)]
     wsugg: WindowSuggest,
 }
 

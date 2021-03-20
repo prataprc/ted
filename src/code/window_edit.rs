@@ -23,6 +23,7 @@ pub struct WindowEdit {
     cursor: Cursor,
     obc_xy: buffer::Cursor,
     curr_buf_id: String,
+    #[allow(dead_code)]
     altn_buf_id: Option<String>,
     syn: syntax::Syn,
     scheme: ColorScheme,
@@ -76,12 +77,14 @@ impl<'a, 'b> From<(&'a code::Code, &'b Buffer, Coord)> for WindowEdit {
 }
 
 impl WindowEdit {
+    #[allow(dead_code)]
     pub fn set_buffer(&mut self, buf: &Buffer) -> &mut Self {
         self.altn_buf_id = Some(self.curr_buf_id.clone());
         self.curr_buf_id = buf.to_id();
         self
     }
 
+    #[allow(dead_code)]
     pub fn flip_buffer(&mut self) -> &mut Self {
         match self.altn_buf_id.take() {
             Some(altn_buf_id) => {
