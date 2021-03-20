@@ -56,15 +56,15 @@ fn main() {
             grammar: "src/tss/tss/grammar.js".into(),
             sources: vec!["src/tss/tss/src/parser.c".into()],
         },
-        Parser {
-            name: "toml".to_string(),
-            dir: "src/tss/toml".into(),
-            grammar: "src/tss/toml/grammar.js".into(),
-            sources: vec![
-                "src/tss/toml/src/parser.c".into(),
-                "src/tss/toml/src/scanner.c".into(),
-            ],
-        },
+        //Parser {
+        //    name: "toml".to_string(),
+        //    dir: "src/tss/toml".into(),
+        //    grammar: "src/tss/toml/grammar.js".into(),
+        //    sources: vec![
+        //        "src/tss/toml/src/parser.c".into(),
+        //        "src/tss/toml/src/scanner.c".into(),
+        //    ],
+        //},
         Parser {
             name: "code_cmd".to_string(),
             dir: "src/tss/code_cmd".into(),

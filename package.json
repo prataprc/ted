@@ -17,7 +17,7 @@
   },
   "homepage": "https://github.com/prataprc/ted#readme",
   "dependencies": {
-    "nan": "^2.14.1",
+    "nan": "^2.14.2",
     "regexp-util": "^1.2.2"
   },
   "devDependencies": {
